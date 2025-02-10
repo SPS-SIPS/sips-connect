@@ -96,6 +96,10 @@ Core__LoginEndpoint=/v1/auth/login
 Core__RefreshEndpoint=/v1/auth/refresh
 Core__Username=YourSPS-Repository-Username
 Core__Password=YourSPS-Repository-Password
+Core__SAFExpression="*/10 * * * *" # Every 10 minutes
+Core__SAFPage=40
+Core__SAFTimeZoneInfo="Utc"
+Core__SAFMaxRetries=10
 
 ISO20022__SIPS=http://svip.url
 ISO20022__BIC=YourCompanyBIC
@@ -122,6 +126,8 @@ POSTGRES_PASSWORD=secure_password
 POSTGRES_DB=SIPS.Connect.DB
 
 ASPNETCORE_ENVIRONMENT=Development
+
+
 ```
 
 ## Architecture Overview
