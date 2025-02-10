@@ -43,7 +43,7 @@ public class GatewayController(
     {
         JsonObject md = _jsonAdapter.Transform(body, "StatusRequest");
         var query = _jsonAdapter.ToObject<StatusRequestDto>(md);
-        var response = await _transactionStatusService.Handle(query, ct);
+        var response = await _transactionStatusService.HandleAsync(query, ct);
         return APIResponseRenderer.GenerateAdminMessage(response, _jsonAdapter, "PaymentResponse");
     }
 }
