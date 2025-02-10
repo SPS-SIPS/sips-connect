@@ -1,6 +1,9 @@
 services:
   sips-connect:
     image: sips.connect
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     env_file:
@@ -15,8 +18,8 @@ services:
 
   sips-connect-db:
     image: postgres:16
-    # ports:
-    #   - "5432:5432"
+    ports:
+      - "5432:5432"
     env_file:
       - ./.env
     volumes:
