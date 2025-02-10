@@ -1,0 +1,608 @@
+{
+    "Endpoints": {
+        "VerificationRequest": {
+            "FieldMappings": [
+                {
+                    "InternalField": "Alias",
+                    "UserField": "accNo",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Type",
+                    "UserField": "accType",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "ToBIC",
+                    "UserField": "agent",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Code",
+                    "UserField": "QRCode",
+                    "Type": "string"
+                }
+            ]
+        },
+        "CB_VerificationRequest": {
+            "FieldMappings": [
+                {
+                    "InternalField": "Alias",
+                    "UserField": "accountNo",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Type",
+                    "UserField": "accountTYpe",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "FromBIC",
+                    "UserField": "agent",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "VerificationId",
+                    "UserField": "verificationId",
+                    "Type": "string"
+                }
+            ]
+        },
+        "VerificationResponse": {
+            "FieldMappings": [
+                {
+                    "InternalField": "IsVerified",
+                    "UserField": "isVerified",
+                    "Type": "bool"
+                },
+                {
+                    "InternalField": "Reason",
+                    "UserField": "message",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Id",
+                    "UserField": "pam",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Type",
+                    "UserField": "type",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Name",
+                    "UserField": "customer_name",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Currency",
+                    "UserField": "account_currency",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "SIPSRequestId",
+                    "UserField": "requestId",
+                    "Type": "string"
+                }
+            ]
+        },
+        "CB_VerificationResponse": {
+            "FieldMappings": [
+                {
+                    "InternalField": "IsVerified",
+                    "UserField": "isVerified",
+                    "Type": "bool"
+                },
+                {
+                    "InternalField": "Reason",
+                    "UserField": "message",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Id",
+                    "UserField": "accountNo",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Type",
+                    "UserField": "accountType",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Name",
+                    "UserField": "name",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Address",
+                    "UserField": "address",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Currency",
+                    "UserField": "currency",
+                    "Type": "string"
+                }
+            ]
+        },
+        "PaymentRequest": {
+            "FieldMappings": [
+                {
+                    "InternalField": "ToBIC",
+                    "UserField": "agent",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "LocalInstrument",
+                    "UserField": "lclInstrument",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CategoryPurpose",
+                    "UserField": "ctgPurp",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "EndToEndId",
+                    "UserField": "localId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Amount",
+                    "UserField": "amount",
+                    "Type": "double"
+                },
+                {
+                    "InternalField": "Currency",
+                    "UserField": "currency",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorName",
+                    "UserField": "drName",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorAccount",
+                    "UserField": "drAccount",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorAccountType",
+                    "UserField": "drAccountType",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorName",
+                    "UserField": "crName",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAccount",
+                    "UserField": "crAccount",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAccountType",
+                    "UserField": "crAccountType",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAgentBIC",
+                    "UserField": "crAgentBIC",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorIssuer",
+                    "UserField": "crIssuer",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "RemittanceInformation",
+                    "UserField": "narration",
+                    "Type": "string"
+                }
+            ]
+        },
+        "CB_PaymentRequest": {
+            "FieldMappings": [
+                {
+                    "InternalField": "FromBIC",
+                    "UserField": "fromBIC",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "LocalInstrument",
+                    "UserField": "localInstrument",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CategoryPurpose",
+                    "UserField": "categoryPurpose",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "TxId",
+                    "UserField": "txId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "EndToEndId",
+                    "UserField": "endToEndId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Amount",
+                    "UserField": "amount",
+                    "Type": "double"
+                },
+                {
+                    "InternalField": "Currency",
+                    "UserField": "currency",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorName",
+                    "UserField": "debtorName",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorAccount",
+                    "UserField": "debtorAccount",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorAccountType",
+                    "UserField": "debtorAccountType",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorName",
+                    "UserField": "creditorName",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAccount",
+                    "UserField": "creditorAccount",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAccountType",
+                    "UserField": "creditorAccountType",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAgentBIC",
+                    "UserField": "creditorAgentBIC",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorIssuer",
+                    "UserField": "creditorIssuer",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "RemittanceInformation",
+                    "UserField": "remittanceInformation",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Date",
+                    "UserField": "date",
+                    "Type": "datetime"
+                },
+                {
+                    "InternalField": "ToBIC",
+                    "UserField": "toBIC",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "SettlementMethod",
+                    "UserField": "settlementMethod",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "ChargeBearer",
+                    "UserField": "chargeBearer",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "BizMsgIdr",
+                    "UserField": "bizMsgIdr",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "MsgDefIdr",
+                    "UserField": "msgDefIdr",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "ClearingSystem",
+                    "UserField": "clearingSystem",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "MsgId",
+                    "UserField": "msgId",
+                    "Type": "string"
+                }
+            ]
+        },
+        "PaymentResponse": {
+            "FieldMappings": [
+                {
+                    "InternalField": "EndToEndId",
+                    "UserField": "localId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Status",
+                    "UserField": "status",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Reason",
+                    "UserField": "reason",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AdditionalInfo",
+                    "UserField": "additionalInfo",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AcceptanceDate",
+                    "UserField": "acceptanceDate",
+                    "Type": "datetime"
+                },
+                {
+                    "InternalField": "TxId",
+                    "UserField": "transactionId",
+                    "Type": "string"
+                }
+            ]
+        },
+        "CB_PaymentResponse": {
+            "FieldMappings": [
+                {
+                    "InternalField": "EndToEndId",
+                    "UserField": "endToEndId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Status",
+                    "UserField": "status",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Reason",
+                    "UserField": "reason",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AdditionalInfo",
+                    "UserField": "additionalInfo",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AcceptanceDate",
+                    "UserField": "acceptanceDate",
+                    "Type": "datetime"
+                },
+                {
+                    "InternalField": "TxId",
+                    "UserField": "txId",
+                    "Type": "string"
+                }
+            ]
+        },
+        "CB_StatusRequest": {
+            "FieldMappings": [
+                {
+                    "InternalField": "OriginalEndToEnd",
+                    "UserField": "endToEndId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "OrgnlTxId",
+                    "UserField": "txId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "FromBIC",
+                    "UserField": "agent",
+                    "Type": "string"
+                }
+            ]
+        },
+        "CB_PaymentStatusResponse": {
+            "FieldMappings": [
+                {
+                    "InternalField": "FromBIC",
+                    "UserField": "fromBIC",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "LocalInstrument",
+                    "UserField": "localInstrument",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CategoryPurpose",
+                    "UserField": "categoryPurpose",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "TxId",
+                    "UserField": "txId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "EndToEndId",
+                    "UserField": "endToEndId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Amount",
+                    "UserField": "amount",
+                    "Type": "double"
+                },
+                {
+                    "InternalField": "Currency",
+                    "UserField": "currency",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorName",
+                    "UserField": "debtorName",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorAccount",
+                    "UserField": "debtorAccount",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorAddress",
+                    "UserField": "debtorPostalAddress",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorAccountType",
+                    "UserField": "debtorAccountType",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorAgentBIC",
+                    "UserField": "debtorAgentBIC",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "DebtorIssuer",
+                    "UserField": "debtorIssuer",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorName",
+                    "UserField": "creditorName",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAddress",
+                    "UserField": "creditorPostalAddress",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAccount",
+                    "UserField": "creditorAccount",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAccountType",
+                    "UserField": "creditorAccountType",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorAgentBIC",
+                    "UserField": "creditorAgentBIC",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "CreditorIssuer",
+                    "UserField": "creditorIssuer",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "RemittanceInformation",
+                    "UserField": "remittanceInformation",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Date",
+                    "UserField": "date",
+                    "Type": "datetime"
+                },
+                {
+                    "InternalField": "ToBIC",
+                    "UserField": "toBIC",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "SettlementMethod",
+                    "UserField": "settlementMethod",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "ChargeBearer",
+                    "UserField": "chargeBearer",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Status",
+                    "UserField": "status",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Reason",
+                    "UserField": "reason",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AdditionalInfo",
+                    "UserField": "additionalInfo",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AcceptanceDate",
+                    "UserField": "acceptanceDate",
+                    "Type": "datetime"
+                },
+                {
+                    "InternalField": "BizMsgIdr",
+                    "UserField": "bizMsgIdr",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "MsgDefIdr",
+                    "UserField": "msgDefIdr",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "ClearingSystem",
+                    "UserField": "clearingSystem",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "MsgId",
+                    "UserField": "msgId",
+                    "Type": "string"
+                }
+            ]
+        },
+        "StatusRequest": {
+            "FieldMappings": [
+                {
+                    "InternalField": "EndToEnd",
+                    "UserField": "endToEnd",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "TxId",
+                    "UserField": "txId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "ToBIC",
+                    "UserField": "toBIC",
+                    "Type": "string"
+                }
+            ]
+        }
+    },
+    "DateFormats": [
+        "dd-MMM-yyyy",
+        "dd-MM-yyyy",
+        "dd-MM-yy"
+    ]
+}

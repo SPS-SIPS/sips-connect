@@ -1,0 +1,34 @@
+services:
+  sips-connect:
+    image: sips.connect
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./.env
+    volumes:
+      - ./logs:/logs
+      - ./certs:/certs
+    networks:
+      - sips-network
+    depends_on:
+      - sips-connect-db
+
+  sips-connect-db:
+    image: postgres:16
+    # ports:
+    #   - "5432:5432"
+    env_file:
+      - ./.env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - sips-network
+
+
+volumes:
+  pg_data:
+
+
+networks:
+  sips-network:
+    driver: bridge
