@@ -7,7 +7,7 @@
   - [Introduction](#introduction)
   - [Features](#features)
   - [Installation](#installation)
-    - [By Pulling the Repository](#by-pulling-the-repository)
+  - [Sample `.env` File](#sample-env-file)
   - [Architecture Overview](#architecture-overview)
   - [API Reference](#api-reference)
     - [Transaction Gateway](#transaction-gateway)
@@ -45,8 +45,6 @@ The **SIPS Connect Platform** is a robust solution designed to facilitate the se
 
 ## Installation
 
-### By Pulling the Repository
-
 Docker is required to run the SIPS Connect Platform. To install Docker, follow the instructions provided in the official Docker documentation: [https://docs.docker.com/get-docker/](https://docs.docker.com/get-docker/)
 
 To run the SIPS Connect Platform, follow these steps:
@@ -74,6 +72,57 @@ To run the SIPS Connect Platform, follow these steps:
    ```bash
     docker-compose logs -f
    ```
+
+## Sample `.env` File
+
+```env
+Serilog__WriteTo__File__Args__path=/path/to/logs
+Serilog__MinimumLevel__Override__Microsoft=Information
+Serilog__MinimumLevel__Override__System=Information
+Serilog__MinimumLevel__Default=Information
+Xades__CertificatePath=/path/to/certs/certificate.pem
+Xades__ChainPath=/path/to/certs/chain.pem
+Xades__PrivateKeyPath=/path/to/certs/private.key
+Xades__Algorithms__0=SHA256withRSA
+Xades__Algorithms__1=SHA1withRSA
+Xades__Algorithms__2=SHA512withRSA
+Xades__VerificationWindowMinutes=1000
+Xades__BIC=YourCompanyBIC
+Xades__WithoutPKI=false
+ConnectionStrings__db="Host=sips-connect-db;Database=SIPS.Connect.DB;Include Error Detail=True;Username=postgres;Password=secure_password;"
+Core__BaseUrl=http://SPS-Repository-Url
+Core__PublicKeysRepUrl=/v1/Certificates/Download
+Core__LoginEndpoint=/v1/auth/login
+Core__RefreshEndpoint=/v1/auth/refresh
+Core__Username=YourSPS-Repository-Username
+Core__Password=YourSPS-Repository-Password
+
+ISO20022__SIPS=http://svip.url
+ISO20022__BIC=YourCompanyBIC
+ISO20022__Agent=YourCompanyBIC
+ISO20022__Verification=http://your-corebank-verification-url
+ISO20022__Transfer=http://your-corebank-transfer-url
+ISO20022__Status=http://your-corebank-status-url
+ISO20022__Return=http://your-corebank-return-url
+ISO20022__Key=your-corebank-key
+ISO20022__Secret=your-corebank-secret
+
+-- For this check the SOMQR Standard Documentation
+Emv__AcquirerId="010006"
+Emv__FIType="01"
+Emv__FIName="SIT BANK"
+Emv__Version="01"
+Emv__CountryCode="SO"
+Emv__Tags__MerchantIdentifier=26
+Emv__Tags__AcquirerTag=1
+Emv__Tags__MerchantIdTag=44
+
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=secure_password
+POSTGRES_DB=SIPS.Connect.DB
+
+ASPNETCORE_ENVIRONMENT=Development
+```
 
 ## Architecture Overview
 
