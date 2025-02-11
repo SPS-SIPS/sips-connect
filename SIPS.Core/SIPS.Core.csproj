@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>SIPS.Core</PackageId>
+    <Version>1.0.1</Version>
+    <Authors>Abdulshakur Ahmed</Authors>
+    <Product>SIPS Core</Product>
+    <Description>SIPS CORE</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>LGPL-2.0-only</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Cronos" Version="0.9.0" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.1" />
+    <PackageReference Include="sips.adapter" Version="1.0.0" />
+    <PackageReference Include="sips.emv" Version="1.0.0" />
+    <PackageReference Include="sips.iso20022" Version="1.0.1" />
+    <PackageReference Include="sips.postgresql" Version="1.0.0" />
+    <PackageReference Include="sips.xmldsig.xades" Version="1.0.0" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <None Update="README.md">
+      <Pack>true</Pack>
+      <PackagePath>README.md</PackagePath>
+    </None>
+  </ItemGroup>
+
+</Project>

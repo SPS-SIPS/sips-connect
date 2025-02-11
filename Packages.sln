@@ -1,0 +1,52 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIPS.Adapter", "SIPS.Adapter\SIPS.Adapter.csproj", "{AC26AB2D-7287-47F8-BD69-CF828E6A918F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIPS.Core", "SIPS.Core\SIPS.Core.csproj", "{D7D815A9-DFEC-4634-96E9-0A6187107610}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIPS.Emv", "SIPS.Emv\SIPS.Emv.csproj", "{7D8126BE-3E57-40F7-872A-4B4512ECAE0D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIPS.ISO20022", "SIPS.ISO20022\SIPS.ISO20022.csproj", "{9CB25124-80D3-41F9-B327-E4CA4C0FD5A8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIPS.PostgreSQL", "SIPS.PostgreSQL\SIPS.PostgreSQL.csproj", "{2B07CAFF-E6C9-4D03-A476-DBE287A20907}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIPS.XMLDsig.Xades", "SIPS.XMLDsig.Xades\SIPS.XMLDsig.Xades.csproj", "{3DCD3F97-DD14-4205-BC85-4EB144534E3E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AC26AB2D-7287-47F8-BD69-CF828E6A918F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AC26AB2D-7287-47F8-BD69-CF828E6A918F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AC26AB2D-7287-47F8-BD69-CF828E6A918F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AC26AB2D-7287-47F8-BD69-CF828E6A918F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D7D815A9-DFEC-4634-96E9-0A6187107610}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D7D815A9-DFEC-4634-96E9-0A6187107610}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D7D815A9-DFEC-4634-96E9-0A6187107610}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D7D815A9-DFEC-4634-96E9-0A6187107610}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7D8126BE-3E57-40F7-872A-4B4512ECAE0D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D8126BE-3E57-40F7-872A-4B4512ECAE0D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D8126BE-3E57-40F7-872A-4B4512ECAE0D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D8126BE-3E57-40F7-872A-4B4512ECAE0D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9CB25124-80D3-41F9-B327-E4CA4C0FD5A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9CB25124-80D3-41F9-B327-E4CA4C0FD5A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9CB25124-80D3-41F9-B327-E4CA4C0FD5A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9CB25124-80D3-41F9-B327-E4CA4C0FD5A8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2B07CAFF-E6C9-4D03-A476-DBE287A20907}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B07CAFF-E6C9-4D03-A476-DBE287A20907}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B07CAFF-E6C9-4D03-A476-DBE287A20907}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B07CAFF-E6C9-4D03-A476-DBE287A20907}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3DCD3F97-DD14-4205-BC85-4EB144534E3E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3DCD3F97-DD14-4205-BC85-4EB144534E3E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3DCD3F97-DD14-4205-BC85-4EB144534E3E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3DCD3F97-DD14-4205-BC85-4EB144534E3E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

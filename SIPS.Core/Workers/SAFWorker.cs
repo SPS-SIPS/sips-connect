@@ -1,0 +1,72 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using SIPS.Core.Options;
+using SIPS.Core.Services;
+using SIPS.ISO20022.Interfaces;
+using SIPS.PostgreSQL.Enums;
+using SIPS.PostgreSQL.Interfaces;
+namespace SIPS.Core.Workers;
+public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> logger, IServiceProvider services) : CronJobService(config.CronExpression!, config.TimeZoneInfo!)
+{
+    private readonly ILogger<SAFWorker> _logger = logger;
+    private readonly IServiceProvider _services = services;
+
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("SAF Job Started, next occurrence will be at: {timeStamp} Utc", GetSchedule);
+        return base.StartAsync(cancellationToken);
+    }
+
+    public override async Task DoWork(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("SAF Job is working...");
+
+        await using var scope = _services.CreateAsyncScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IStorageBroker>() ?? throw new ArgumentNullException(nameof(IStorageBroker));
+        var options = scope.ServiceProvider.GetRequiredService<CoreOptions>() ?? throw new ArgumentNullException(nameof(CoreOptions));
+        var outgoing = scope.ServiceProvider.GetRequiredService<IOutgoingTransactionStatusHandler>() ?? throw new ArgumentNullException(nameof(IOutgoingTransactionStatusHandler));
+
+        var bic = options.BIC;
+
+        var query = storage.ISOMessages
+            .Where(x
+                => x.Status == TransactionStatus.Pending &&
+                    x.Round < options.SAFMaxRetries &&
+                    x.FromBIC == bic
+                )
+            .AsQueryable();
+
+        var count = await query.CountAsync(cancellationToken);
+        var pages = (int)Math.Ceiling((decimal)count / options.SAFPage);
+
+        _logger.LogInformation("SAF Job found {count} transactions to process in {pages} pages...", count, pages);
+
+        for (var i = 0; i < pages; i++)
+        {
+            var skip = i * options.SAFPage;
+
+            var transactions = await query.Include(x => x.Transactions).OrderByDescending(x => x.Date)
+                .Skip(skip)
+                .Take(options.SAFPage)
+                .ToListAsync(cancellationToken);
+
+            foreach (var transaction in transactions)
+            {
+                var response = await outgoing.HandleAsync(new ISO20022.Models.DTOs.CB.StatusRequestDto
+                {
+                    TxId = transaction.TxId!
+                }, cancellationToken);
+
+                _logger.LogInformation("SAF Job processed transaction {txId} with status {status}...", transaction.TxId, response.Data?.Status);
+            }
+            await storage.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public override Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation($"SAF Job stopped...");
+        return base.StopAsync(cancellationToken);
+    }
+}
