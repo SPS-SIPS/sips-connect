@@ -62,12 +62,18 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
             PostalCode = payload.PostalCode,
         };
 
-        var result = mp.GeneratePayload();
-
-        return Results.Ok(new
+        try
         {
-            data = result
-        });
+            var result = mp.GeneratePayload();
+            return Results.Ok(new
+            {
+                data = result
+            });
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPost("GeneratePersonQR")]
