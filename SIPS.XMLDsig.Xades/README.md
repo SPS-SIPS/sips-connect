@@ -28,6 +28,7 @@ dotnet add package SIPS.XMLDsig.Xades
   "Xades": {
     "CertificatePath": "",
     "PrivateKeyPath": "",
+    "PrivateKeyPassphrase": "", // Use only if the private key is encrypted with a passphrase
     "ChainPath": "",
     "Algorithms": [
       "SHA1withRSA",
