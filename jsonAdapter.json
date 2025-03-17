@@ -598,6 +598,88 @@
                     "Type": "string"
                 }
             ]
+        },
+        "CB_ReturnRequest": {
+            "FieldMappings": [
+                {
+                    "InternalField": "OrgnlTxId",
+                    "UserField": "txId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "OriginalEndToEnd",
+                    "UserField": "endToEndId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Reason",
+                    "UserField": "reason",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AdditionalInfo",
+                    "UserField": "additionalInfo",
+                    "Type": "string"
+                }
+            ]
+        },
+        "CB_ReturnResponse": {
+            "FieldMappings": [
+                {
+                    "InternalField": "OrgnlTxId",
+                    "UserField": "txId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "OriginalEndToEnd",
+                    "UserField": "endToEndId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Status",
+                    "UserField": "status",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Reason",
+                    "UserField": "reason",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AdditionalInfo",
+                    "UserField": "additionalInfo",
+                    "Type": "string"
+                }
+            ]
+        },
+        "ReturnRequest": {
+            "FieldMappings": [
+                {
+                    "InternalField": "OriginalTxId",
+                    "UserField": "txId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "OriginalEndToEndId",
+                    "UserField": "endToEndId",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "Reason",
+                    "UserField": "reason",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "AdditionalInfo",
+                    "UserField": "additionalInfo",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "ReturnId",
+                    "UserField": "returnId",
+                    "Type": "string"
+                }
+            ]
         }
     },
     "DateFormats": [

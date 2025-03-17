@@ -1,6 +1,7 @@
 using SIPS.Emv.Helpers;
 using SIPS.Emv.Models;
 using Microsoft.AspNetCore.Mvc;
+using static SIPS.Connect.Helpers.APIAuth;
 
 namespace SIPS.Connect.Controllers;
 [ApiController]
@@ -11,6 +12,8 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
     [HttpPost("GenerateMerchantQR")]
     public IResult GenerateCode(SomQRMerchantRequest payload)
     {
+        if (!Request.IsApiAuthorized(_configuration)) { return Results.Unauthorized(); }
+
         if (!ModelState.IsValid)
             return Results.BadRequest(ModelState);
 
@@ -31,6 +34,13 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
 
         if (!GetKeyFromConfiguration(_configuration, "Emv:Version", out var version))
             return Results.BadRequest(new { message = "Som QR Version not found!" });
+
+        // run validation if type == 2 then amount is required, also check if the amount is greater than 0 than type must be 2
+        if (payload.Type == 2 && payload.Amount <= 0)
+            return Results.BadRequest(new { message = "Amount is required for dynamic codes" });
+
+        if (payload.Type != 2 && payload.Amount > 0)
+            return Results.BadRequest(new { message = "Amount is not required for static codes" });
 
         var mp = new MerchantPayload
         {
@@ -60,6 +70,10 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
                 TerminalLabel = payload.TerminalLabel
             },
             PostalCode = payload.PostalCode,
+            TransactionAmount = payload.Amount,
+            // TipOrConvenienceIndicator = payload.TipOrConvenienceIndicator,
+            // ValueOfConvenienceFeeFixed = payload.ValueOfConvenienceFeeFixed,
+            // ValueOfConvenienceFeePercentage = payload.ValueOfConvenienceFeePercentage,
         };
 
         try
@@ -79,6 +93,8 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
     [HttpPost("GeneratePersonQR")]
     public IResult GenerateP2PCode(SomQRPersonRequest payload)
     {
+        if (!Request.IsApiAuthorized(_configuration)) { return Results.Unauthorized(); }
+
         if (!ModelState.IsValid)
         {
             return Results.BadRequest(ModelState);
@@ -122,6 +138,8 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
     [HttpGet("ParseMerchantQR")]
     public IResult ParseCode([FromQuery] string code)
     {
+        if (!Request.IsApiAuthorized(_configuration)) { return Results.Unauthorized(); }
+
         try
         {
             var merchantPayload = QRHelpers.ParseQR(code);
@@ -136,6 +154,8 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
     [HttpGet("ParsePersonQR")]
     public IResult ParseCodeP2P([FromQuery] string code)
     {
+        if (!Request.IsApiAuthorized(_configuration)) { return Results.Unauthorized(); }
+
         try
         {
             var p2p = QRHelpers.ParseP2PQR(code, false);

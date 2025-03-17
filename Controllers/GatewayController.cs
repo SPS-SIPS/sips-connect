@@ -6,6 +6,7 @@ using SIPS.ISO20022.Models.DTOs.CB;
 using Microsoft.AspNetCore.Mvc;
 using static SIPS.Connect.Helpers.APIResponseRenderer;
 using static SIPS.Connect.Constants;
+using static SIPS.Connect.Helpers.APIAuth;
 namespace SIPS.Connect.Controllers;
 [ApiController]
 [Produces("application/json")]
@@ -15,7 +16,8 @@ public class GatewayController(
     IOutgoingVerificationHandler verificationService,
     IOutgoingTransactionHandler transactionService,
     IOutgoingTransactionStatusHandler transactionStatusService,
-    IOutgoingReturnTransactionHandler returnTransactionService
+    IOutgoingReturnTransactionHandler returnTransactionService,
+    IConfiguration configuration
     ) : ControllerBase
 {
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
@@ -23,10 +25,12 @@ public class GatewayController(
     private readonly IOutgoingTransactionHandler _transactionService = transactionService;
     private readonly IOutgoingTransactionStatusHandler _transactionStatusService = transactionStatusService;
     private readonly IOutgoingReturnTransactionHandler _returnTransactionService = returnTransactionService;
+    private readonly IConfiguration _configuration = configuration;
 
     [HttpPost("Verify")]
     public async Task<ActionResult> VerifyPayee([FromBody] JsonObject body, CancellationToken ct)
     {
+        if (!Request.IsApiAuthorized(_configuration)) { return Unauthorized(); }
         JsonObject md = _jsonAdapter.Transform(body, VerificationRequest);
         var query = _jsonAdapter.ToObject<VerificationRequestDto>(md);
         var response = await _verificationService.HandleAsync(query, ct);
@@ -36,6 +40,7 @@ public class GatewayController(
     [HttpPost("Payment")]
     public async Task<ActionResult> MakePayment([FromBody] JsonObject body, CancellationToken ct)
     {
+        if (!Request.IsApiAuthorized(_configuration)) { return Unauthorized(); }
         JsonObject md = _jsonAdapter.Transform(body, PaymentRequest);
         var query = _jsonAdapter.ToObject<PaymentRequestDto>(md);
         var response = await _transactionService.HandleAsync(query, ct);
@@ -45,6 +50,7 @@ public class GatewayController(
     [HttpPost("Status")]
     public async Task<ActionResult> GetStatus([FromBody] JsonObject body, CancellationToken ct)
     {
+        if (!Request.IsApiAuthorized(_configuration)) { return Unauthorized(); }
         JsonObject md = _jsonAdapter.Transform(body, StatusRequest);
         var query = _jsonAdapter.ToObject<StatusRequestDto>(md);
         var response = await _transactionStatusService.HandleAsync(query, ct);
@@ -54,6 +60,7 @@ public class GatewayController(
     [HttpPost("Return")]
     public async Task<ActionResult> GetReturn([FromBody] JsonObject body, CancellationToken ct)
     {
+        if (!Request.IsApiAuthorized(_configuration)) { return Unauthorized(); }
         JsonObject md = _jsonAdapter.Transform(body, ReturnRequest);
         var query = _jsonAdapter.ToObject<ReturnPaymentRequestDto>(md);
         Console.WriteLine("md.OriginalTxId" + query.OriginalTxId);

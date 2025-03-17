@@ -1,8 +1,15 @@
 namespace SIPS.Connect;
 public static class Constants
 {
-    public const string DomainId = "so.somqr.SIPS";
+    public const string DomainId = "so.somqr.sips";
     public const string PayloadFormatIndicator = "02";
+    public const string VerificationRequest = "VerificationRequest";
+    public const string VerificationResponse = "VerificationResponse";
+    public const string PaymentRequest = "PaymentRequest";
+    public const string PaymentResponse = "PaymentResponse";
+    public const string StatusRequest = "StatusRequest";
+    public const string ReturnRequest = "ReturnRequest";
+    public const string ReturnResponse = "ReturnResponse";
 }
 
 public static class PointOfInitializationMethod
