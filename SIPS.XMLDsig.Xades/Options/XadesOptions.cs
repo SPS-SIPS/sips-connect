@@ -3,6 +3,7 @@ public class XadesOptions
 {
     public string? CertificatePath { get; set; }
     public string? PrivateKeyPath { get; set; }
+    public string? PrivateKeyPassphrase { get; set; }
     public string? ChainPath { get; set; }
     public string[]? Algorithms { get; set; }
     public int VerificationWindowMinutes { get; set; } = 100;

@@ -26,10 +26,29 @@ public sealed class CertificateService : ICertificateService
     private AsymmetricKeyParameter LoadPrivateKey()
     {
         var prvKeyPath = _configuration.PrivateKeyPath ?? throw new ArgumentNullException("XadesConfig.PrivateKeyPath is required in appSettings.json");
+        var prvKeyPassphrase = _configuration.PrivateKeyPassphrase;
         var privateKeyPem = File.ReadAllText(Path.Combine(currentDirectory, prvKeyPath));
+
         using StringReader reader = new(privateKeyPem);
-        PemReader pemReader = new(reader);
-        return (AsymmetricKeyParameter)pemReader.ReadObject();
+        PemReader pemReader = !string.IsNullOrEmpty(prvKeyPassphrase)
+            ? new PemReader(reader, new PasswordFinder(prvKeyPassphrase!))
+            : new PemReader(reader);
+
+        var obj = pemReader.ReadObject();
+
+        if (obj is AsymmetricCipherKeyPair keyPair)
+        {
+            return keyPair.Private;
+        }
+
+        return (AsymmetricKeyParameter)obj;
+    }
+
+    private class PasswordFinder(string password) : IPasswordFinder
+    {
+        private readonly char[] _password = password.ToCharArray();
+
+        public char[] GetPassword() => _password;
     }
 
     private X509Certificate[] LoadCertificateChain()
