@@ -1,5 +1,4 @@
 using System.Text;
-using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Interfaces;
 using SIPS.ISO20022.Models.DTOs;
@@ -7,35 +6,42 @@ using SIPS.ISO20022.Options;
 using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
+using SIPS.PostgreSQL.Models;
+using Org.BouncyCastle.Ocsp;
 namespace SIPS.Core.Services;
-public sealed class OutgoingTransactionHandler(
+public sealed class OutgoingReturnTransactionHandler(
     ISO20022Options options,
-    ILogger<OutgoingTransactionHandler> logger,
+    ILogger<OutgoingReturnTransactionHandler> logger,
     IInterfaceHttpClient httpClient,
     INativeSigner signer,
     INativeVerifier verifier,
     IIncomingRecorder record
-    ) : IOutgoingTransactionHandler
+    ) : IOutgoingReturnTransactionHandler
 {
     private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ISO20022Options _configuration = options;
-    private readonly ILogger<OutgoingTransactionHandler> _logger = logger;
+    private readonly ILogger<OutgoingReturnTransactionHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
     private readonly INativeVerifier _verifier = verifier;
     private readonly IIncomingRecorder _record = record;
-    public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
+    public async Task<Response<ReturnPaymentResponseDto>> HandleAsync(ReturnPaymentRequestDto message, CancellationToken ct)
     {
-        _logger.LogInformation("Processing Outgoing Transaction Request");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
-        var ourAgentBic = _configuration.Agent ?? throw new InvalidOperationException("Agent BIC not found in configuration.");
         var txId = Transformers.GenerateId(_configuration.BIC!);
 
         try
         {
-            var (document, bizMsgIdr, type, msgId) = BuildRequest(message, fromBIC, ourAgentBic, txId);
+            var originalMessage = await _record.GetISOMessageWithTransactionsByTxIdAsync(message.OriginalTxId, ct);
+            if (originalMessage == null || originalMessage.Transactions.Count == 0)
+            {
+                return Response<ReturnPaymentResponseDto>.Fail("Transaction not found" + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
+            }
+            var transaction = originalMessage.Transactions.FirstOrDefault();
+            originalMessage.ReturnId = message.ReturnId;
+            var (document, bizMsgIdr, type, msgId) = BuildRequest(transaction!, fromBIC, message.ReturnId, reason: message.Reason, additionalInfo: message.AdditionalInfo);
             var signed = _signer.SignEnvelope(document);
-            var entity = CreateISOMessage(message, fromBIC, ourAgentBic, txId, signed, bizMsgIdr, type, msgId);
+            var entity = CreateISOMessage(message, transaction!, fromBIC, txId, signed, msgId, type, bizMsgIdr);
             var record = await _record.ISOMessageAsync(entity, ct);
             // Call the API to get the account details
             var responseMessage = await CallSIPSAsync(url, signed, ct);
@@ -48,14 +54,13 @@ public sealed class OutgoingTransactionHandler(
             {
                 _logger.LogError("Failed to parse the message: {message}", responseMessage.Data);
                 await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, ct);
-                return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
+                return Response<ReturnPaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
             await PersistISOMessageAsync(record, rs!.Status!, rs.Reason!, rs.AdditionalInfo, responseMessage.Data!, ct, rs.TxId, rs.Original?.EndToEndId ?? "");
 
-            return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+            return Response<ReturnPaymentResponseDto>.Success(new ReturnPaymentResponseDto
             {
                 Status = rs!.Status!,
-                AcceptanceDate = rs.AcceptanceDate,
                 TxId = rs.TxId,
                 EndToEndId = rs?.Original?.EndToEndId ?? "",
                 Reason = rs!.Reason,
@@ -65,49 +70,37 @@ public sealed class OutgoingTransactionHandler(
         catch (Exception ex)
         {
             _logger.LogError("Failed to Send Request To SIPS Error: {Error}", ex);
-            return Response<PaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
+            return Response<ReturnPaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
         }
     }
-    private static (string document, string bizMsgIdr, string type, string msgId) BuildRequest(PaymentRequestDto message, string fromBIC, string agentBIC, string txId)
+    private static (string document, string bizMsgIdr, string type, string msgId) BuildRequest(Transaction transaction, string fromBIC, string returnId, string reason, string additionalInfo)
     {
-        return PaymentRequestBuilder.Build(new PaymentRequestBuilder.Request
+        return ReturnPaymentRequestBuilder.Build(new ReturnPaymentRequestBuilder.Request
         {
             From = fromBIC,
-            To = message.ToBIC,
+            To = transaction.FromBIC,
             CreDt = DateTime.UtcNow,
-            LocalInstrument = message.LocalInstrument,
-            CategoryPurpose = message.CategoryPurpose,
-            EndToEndId = message.EndToEndId,
-            Amount = message.Amount,
-            Currency = message.Currency,
-            Debtor = new ISO20022.Models.Person
-            {
-                Name = message.DebtorName,
-                Account = message.DebtorAccount,
-                AccountType = message.DebtorAccountType,
-                AgentBIC = agentBIC,
-                Issuer = "C"
-            },
-            Creditor = new ISO20022.Models.Person
-            {
-                Name = message.CreditorName,
-                Account = message.CreditorAccount,
-                AccountType = message.CreditorAccountType,
-                AgentBIC = message.CreditorAgentBIC,
-                Issuer = message.CreditorIssuer ?? "C"
-            },
-            Ustrd = message.RemittanceInformation,
-            TxId = txId
+            LocalInstrument = transaction.LocalInstrument,
+            CategoryPurpose = transaction.CategoryPurpose,
+            OriginalEndToEnd = transaction.EndToEndId,
+            OrgnlTxId = transaction.TxId,
+            OriginalAmount = transaction.Amount,
+            OriginalCurrency = transaction.Currency,
+            SettlementMethod = ISO20022.Schemas.RPDocument.SettlementMethod1Code.CLRG,
+            NumberOfTransactions = 1,
+            ReturnId = returnId,
+            ReturnReason = reason,
+            AdditionalInfo = additionalInfo
         });
     }
-    private static PostgreSQL.Models.ISOMessage CreateISOMessage(PaymentRequestDto message, string fromBIC, string agentBIC, string txId, string signedMessage, string bizMsgIdr, string msgDefIdr, string msgId)
+    private static PostgreSQL.Models.ISOMessage CreateISOMessage(ReturnPaymentRequestDto message, Transaction transaction, string fromBIC, string txId, string signedMessage, string msgId, string msgDefIdr, string bizMsgIdr)
     {
         var entity = new PostgreSQL.Models.ISOMessage
         {
-            MessageType = PostgreSQL.Enums.ISOMessageType.TransactionRequest,
+            MessageType = PostgreSQL.Enums.ISOMessageType.ReturnRequest,
             Date = DateTimeOffset.Now.ToUniversalTime(),
             FromBIC = fromBIC,
-            ToBIC = message.ToBIC,
+            ToBIC = transaction.FromBIC,
             Message = Encoding.UTF8.GetBytes(signedMessage),
             BizMsgIdr = bizMsgIdr,
             MsgDefIdr = msgDefIdr,
@@ -115,26 +108,25 @@ public sealed class OutgoingTransactionHandler(
         };
         entity.Transactions.Add(new PostgreSQL.Models.Transaction
         {
-            Type = PostgreSQL.Enums.TransactionType.Withdrawal,
+            Type = PostgreSQL.Enums.TransactionType.ReturnDeposit,
             FromBIC = fromBIC,
-            LocalInstrument = message.LocalInstrument,
-            CategoryPurpose = message.CategoryPurpose,
-            EndToEndId = message.EndToEndId,
+            LocalInstrument = transaction.LocalInstrument,
+            CategoryPurpose = transaction.CategoryPurpose,
+            EndToEndId = transaction.EndToEndId,
             TxId = txId,
-            Amount = message.Amount,
-            Currency = message.Currency,
-            DebtorName = message.DebtorName,
-            DebtorAccount = message.DebtorAccount,
-            DebtorAccountType = message.DebtorAccountType,
-            DebtorAgentBIC = agentBIC,
-            DebtorIssuer = message.DebtorIssuer ?? "C",
-
-            CreditorName = message.CreditorName,
-            CreditorAccount = message.CreditorAccount,
-            CreditorAccountType = message.CreditorAccountType,
-            CreditorAgentBIC = message.CreditorAgentBIC,
-            CreditorIssuer = message.CreditorIssuer ?? "C",
-            RemittanceInformation = message.RemittanceInformation
+            Amount = transaction.Amount,
+            Currency = transaction.Currency,
+            RemittanceInformation = message.Reason + " " + message.AdditionalInfo,
+            DebtorAccount = string.Empty,
+            CreditorAccount = string.Empty,
+            DebtorAccountType = string.Empty,
+            DebtorAgentBIC = string.Empty,
+            DebtorIssuer = string.Empty,
+            DebtorName = string.Empty,
+            CreditorAccountType = string.Empty,
+            CreditorAgentBIC = string.Empty,
+            CreditorIssuer = string.Empty,
+            CreditorName = string.Empty,
         });
 
         return entity;
@@ -144,7 +136,7 @@ public sealed class OutgoingTransactionHandler(
         var content = new StringContent(signed, Encoding.UTF8, "application/xml");
         return await _httpClient.Send4XML(url, content, ct);
     }
-    private async Task<Response<PaymentResponseDto>> HandleSIPSCallExceptionAsync(
+    private async Task<Response<ReturnPaymentResponseDto>> HandleSIPSCallExceptionAsync(
     PostgreSQL.Models.ISOMessage record,
     Response<string>? responseMessage,
     CancellationToken ct)
@@ -195,16 +187,16 @@ public sealed class OutgoingTransactionHandler(
         {
             _logger.LogError("Failed to verify the signature: {Verbose}", responseMessage.Data);
             await PersistISOMessageAsync(record, RJCT, "Failed to verify the signature", "Failed to verify the signature", responseMessage.Data, ct);
-            return Response<PaymentResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
+            return Response<ReturnPaymentResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
         }
 
         // If all checks pass, return a successful response.
-        return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+        return Response<ReturnPaymentResponseDto>.Success(new ReturnPaymentResponseDto
         {
             Status = ACSC,
         });
     }
-    private async Task<Response<PaymentResponseDto>> LogPersistAndReturnAsync(
+    private async Task<Response<ReturnPaymentResponseDto>> LogPersistAndReturnAsync(
         PostgreSQL.Models.ISOMessage record,
         string logMessage,
         string persistMessage,
@@ -215,7 +207,7 @@ public sealed class OutgoingTransactionHandler(
     {
         _logger.LogError("Failed to receive valid response from SIPS: {Message}", logMessage);
         await PersistISOMessageAsync(record, RJCT, persistMessage, persistMessage, data, ct);
-        return Response<PaymentResponseDto>.Fail(failMessage, statusCode);
+        return Response<ReturnPaymentResponseDto>.Fail(failMessage, statusCode);
     }
     private static bool TryParse(string message, out PaymentRequestResponseBuilder.Response? response)
     {

@@ -43,7 +43,7 @@ public sealed class OutgoingVerificationHandler(
         try
         {
             // Build and sign the verification request.
-            if (!BuildRequest(message, fromBIC, out var signedRequest))
+            if (!BuildRequest(message, fromBIC, out var signedRequest, out var bizMsgIdr, out var type))
             {
                 return Response<VerificationResponseDto>.Fail("Failed to build acmt.023 message from your request", System.Net.HttpStatusCode.BadRequest);
             }
@@ -56,7 +56,9 @@ public sealed class OutgoingVerificationHandler(
                 FromBIC = fromBIC,
                 ToBIC = message.ToBIC,
                 Message = Encoding.UTF8.GetBytes(signedRequest),
-                Status = PostgreSQL.Enums.TransactionStatus.Pending
+                Status = PostgreSQL.Enums.TransactionStatus.Pending,
+                BizMsgIdr = bizMsgIdr,
+                MsgDefIdr = type,
             };
 
             var record = await _record.ISOMessageAsync(isoMessage, ct);
@@ -68,7 +70,7 @@ public sealed class OutgoingVerificationHandler(
             // Validate the SIPS response.
             if (!responseMessage.IsSuccess || string.IsNullOrEmpty(responseMessage.Data))
             {
-                await PersistISOMessageAsync(record, false, "Failed to receive valid response from SIPS", responseMessage.Message, responseMessage.Data ?? "", ct);
+                await PersistISOMessageAsync(record, false, "Failed to receive valid response from SIPS", responseMessage.Message, responseMessage.Data ?? "", "", ct);
                 return Response<VerificationResponseDto>.Fail(Transformers.TransformSIPSHttpError(responseMessage.StatusCode), responseMessage.StatusCode);
             }
 
@@ -76,14 +78,14 @@ public sealed class OutgoingVerificationHandler(
             var (isSignatureValid, verbose) = await _verifier.VerifySignature(responseMessage.Data, false, ct);
             if (!isSignatureValid)
             {
-                await PersistISOMessageAsync(record, false, "Failed to verify the signature from SIPS", "Signature verification failed", responseMessage.Data, ct);
+                await PersistISOMessageAsync(record, false, "Failed to verify the signature from SIPS", "Signature verification failed", responseMessage.Data, "", ct);
                 _logger.LogError("Failed to verify the signature: verbose {Verbose}", verbose);
                 return Response<VerificationResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
             }
 
             // Parse the SIPS response.
             var parsedResponse = PayeeVerificationResponseBuilder.Parse(responseMessage.Data);
-            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason, string.Empty, responseMessage.Data, ct);
+            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason, string.Empty, responseMessage.Data, parsedResponse.Id, ct);
 
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto
             {
@@ -103,9 +105,9 @@ public sealed class OutgoingVerificationHandler(
         }
     }
 
-    private bool BuildRequest(VerificationRequestDto message, string fromBIC, out string signedMessage)
+    private bool BuildRequest(VerificationRequestDto message, string fromBIC, out string signedMessage, out string bizMsgIdr, out string type)
     {
-        var unsignedMessage = PayeeVerificationBuilder.Build(new PayeeVerificationBuilder.Request
+        (string document, bizMsgIdr, type) = PayeeVerificationBuilder.Build(new PayeeVerificationBuilder.Request
         {
             From = fromBIC,
             Alias = message.Alias,
@@ -113,9 +115,9 @@ public sealed class OutgoingVerificationHandler(
             To = message.ToBIC,
         });
 
-        if (unsignedMessage != null)
+        if (document != null)
         {
-            signedMessage = _signer.SignEnvelope(unsignedMessage);
+            signedMessage = _signer.SignEnvelope(document);
             return !string.IsNullOrEmpty(signedMessage);
         }
         else
@@ -132,12 +134,13 @@ public sealed class OutgoingVerificationHandler(
         return await _httpClient.Send4XML(url, content, ct);
     }
 
-    private async Task PersistISOMessageAsync(ISOMessage isoMessage, bool isVerified, string reason, string additionalInfo, string response, CancellationToken ct)
+    private async Task PersistISOMessageAsync(ISOMessage isoMessage, bool isVerified, string reason, string additionalInfo, string response, string originalId, CancellationToken ct)
     {
         isoMessage.Status = isVerified ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
         isoMessage.Response = Encoding.UTF8.GetBytes(response);
+        isoMessage.TxId = originalId;
         await _record.ISOMessageResponseAsync(isoMessage, ct);
     }
 }

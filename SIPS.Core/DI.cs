@@ -20,12 +20,16 @@ public static class DI
         services.AddSingleton<ICacheService, CacheService>();
         services.AddSingleton<ICertificateDownloadService, CertificateDownloadService>();
         services.AddScoped<IIncoming, Incoming>();
+
         services.AddScoped<IIncomingVerificationHandler, IncomingVerificationHandler>();
         services.AddScoped<IIncomingTransactionHandler, IncomingTransactionHandler>();
-        services.AddScoped<IOutgoingVerificationHandler, OutgoingVerificationHandler>();
         services.AddScoped<IIncomingTransactionStatusHandler, IncomingTransactionStatusHandler>();
+        services.AddScoped<IIncomingReturnTransactionHandler, IncomingReturnTransactionHandler>();
+
+        services.AddScoped<IOutgoingVerificationHandler, OutgoingVerificationHandler>();
         services.AddScoped<IOutgoingTransactionStatusHandler, OutgoingTransactionStatusHandler>();
         services.AddScoped<IOutgoingTransactionHandler, OutgoingTransactionHandler>();
+        services.AddScoped<IOutgoingReturnTransactionHandler, OutgoingReturnTransactionHandler>();
 
         services.AddJsonAdapter();
         services.AddXades();

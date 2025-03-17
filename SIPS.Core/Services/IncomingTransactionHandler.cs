@@ -129,6 +129,9 @@ public sealed class IncomingTransactionHandler(
             FromBIC = request.From,
             ToBIC = request.To,
             Message = Encoding.UTF8.GetBytes(message),
+            BizMsgIdr = request.BizMsgIdr,
+            MsgDefIdr = request.MsgDefIdr,
+            MsgId = request.MsgId,
         };
         entity.Transactions.Add(new PostgreSQL.Models.Transaction
         {

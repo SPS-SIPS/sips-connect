@@ -1,6 +1,8 @@
 namespace SIPS.Core;
 public static class Constants
 {
+    public const string CB_ReturnRequest = "CB_ReturnRequest";
+    public const string CB_ReturnResponse = "CB_ReturnResponse";
     public const string CB_StatusRequest = "CB_StatusRequest";
     public const string CB_StatusResponse = "CB_StatusResponse";
     public const string CB_PaymentStatusResponse = "CB_PaymentStatusResponse";

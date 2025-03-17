@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using SIPS.Adapter;
-using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Interfaces;
 using SIPS.ISO20022.Models.DTOs;
@@ -133,7 +132,10 @@ public sealed class IncomingVerificationHandler(
                        FromBIC = request.From,
                        ToBIC = request.To,
                        Message = Encoding.UTF8.GetBytes(message),
-                       Status = PostgreSQL.Enums.TransactionStatus.Pending
+                       Status = PostgreSQL.Enums.TransactionStatus.Pending,
+                       BizMsgIdr = request.BizMsgIdr,
+                       MsgDefIdr = request.MsgDefIdr,
+                       MsgId = request.MsgId
                    }
                , ct);
     }

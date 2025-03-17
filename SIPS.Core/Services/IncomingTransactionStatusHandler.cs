@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using SIPS.Adapter;
-using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Interfaces;
 using SIPS.ISO20022.Models.DTOs.CB;
@@ -13,6 +12,8 @@ using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Services;
 using Microsoft.Extensions.Logging;
+using SIPS.PostgreSQL.Models;
+using SIPS.PostgreSQL.Enums;
 namespace SIPS.Core.Services;
 public sealed class IncomingTransactionStatusHandler(
     ISO20022Options options,
@@ -55,8 +56,12 @@ public sealed class IncomingTransactionStatusHandler(
 
         if (isoMessage == null)
         {
+            // Persist the incoming message - for reference
+            await CreateISOMessage(request, message, ct);
             return AdminMessage.Generate("Failed to get the Message.");
         }
+
+        var record = await CreateISOMessageAsync(message, isoMessage, ct);
 
         var response = new PaymentStatusRequestResponseBuilder.Response
         {
@@ -80,13 +85,14 @@ public sealed class IncomingTransactionStatusHandler(
             }
             else
             {
+                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", "", ct);
                 response.AdditionalInfo = "Failed to get response from CB.";
             }
 
             // Build the response
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
             // Persist the message
-            await PersistISOMessageAsync(isoMessage, response.Status, response.Reason, response.AdditionalInfo, rsp, ct);
+            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -94,7 +100,7 @@ public sealed class IncomingTransactionStatusHandler(
             _logger.LogError(ex, "INCOMING PS Handler Exception for TxId {TxId}", request.OrgnlTxId);
             response.AdditionalInfo = "Failed to transfer: " + ex.Message;
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await PersistISOMessageAsync(isoMessage, response.Status, response.Reason, response.AdditionalInfo, rsp, ct);
+            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
     }
@@ -186,12 +192,46 @@ public sealed class IncomingTransactionStatusHandler(
         response.Original.Creditor.Issuer = deserializedContent.CreditorIssuer;
         response.Original.Ustrd = deserializedContent?.RemittanceInformation;
     }
-    private async Task PersistISOMessageAsync(PostgreSQL.Models.ISOMessage isoMessage, string status, string reason, string? additionalInfo, string rsp, CancellationToken ct)
+    private async Task PersistISOMessageAsync(ISOMessageStatus isoMessage, string status, string reason, string? additionalInfo, string rsp, CancellationToken ct)
     {
         isoMessage.Response = Encoding.UTF8.GetBytes(rsp);
-        isoMessage.Status = status == ACSC ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
+        isoMessage.Status = status == ACSC ? TransactionStatus.Success : TransactionStatus.Failed;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
-        await _record.ISOMessageResponseAsync(isoMessage, ct);
+        // Persist the message status
+        isoMessage.ISOMessage.Status = status == ACSC ? TransactionStatus.Success : TransactionStatus.Failed;
+        await _record.ISOMessageStatusResponseAsync(isoMessage, ct);
+    }
+    private async Task<ISOMessageStatus> CreateISOMessageAsync(string request, ISOMessage isoMessage, CancellationToken ct)
+    {
+        var entity = new ISOMessageStatus
+        {
+            ISOMessageId = isoMessage.Id,
+            Date = DateTimeOffset.Now.ToUniversalTime(),
+            Message = Encoding.UTF8.GetBytes(request),
+            Status = TransactionStatus.Pending,
+        };
+
+        return await _record.ISOMessageStatusAsync(entity, ct);
+    }
+
+    private async Task<ISOMessage> CreateISOMessage(PaymentStatusRequestBuilder.Request request, string message, CancellationToken ct)
+    {
+        // record the incoming message
+        return await _record.ISOMessageAsync(
+                   new ISOMessage
+                   {
+                       MessageType = ISOMessageType.StatusRequest,
+                       Date = DateTimeOffset.Now.ToUniversalTime(),
+                       FromBIC = request.From,
+                       ToBIC = request.To,
+                       Message = Encoding.UTF8.GetBytes(message),
+                       Status = TransactionStatus.Failed,
+                       Reason = "Failed to get the Message from the database.",
+                       BizMsgIdr = request.BizMsgIdr,
+                       MsgDefIdr = request.MsgDefIdr,
+                       MsgId = request.MsgId
+                   }
+               , ct);
     }
 }
