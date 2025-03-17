@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SIPS.PostgreSQL.Persistence;
@@ -11,9 +12,11 @@ using SIPS.PostgreSQL.Persistence;
 namespace SIPS.PostgreSQL.Migrations
 {
     [DbContext(typeof(StorageBroker))]
-    partial class StorageBrokerModelSnapshot : ModelSnapshot
+    [Migration("20250311125340_AddedIndexesToTransactions")]
+    partial class AddedIndexesToTransactions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -34,11 +37,6 @@ namespace SIPS.PostgreSQL.Migrations
                     b.Property<string>("AdditionalInfo")
                         .HasColumnType("text")
                         .HasColumnName("additionalinfo");
-
-                    b.Property<string>("BizMsgIdr")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("bizmsgidr");
 
                     b.Property<DateTimeOffset>("Date")
                         .HasColumnType("timestamp with time zone")
@@ -63,16 +61,6 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("messagetype");
 
-                    b.Property<string>("MsgDefIdr")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("msgdefidr");
-
-                    b.Property<string>("MsgId")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("msgid");
-
                     b.Property<string>("Reason")
                         .HasColumnType("text")
                         .HasColumnName("reason");
@@ -80,10 +68,6 @@ namespace SIPS.PostgreSQL.Migrations
                     b.Property<byte[]>("Response")
                         .HasColumnType("bytea")
                         .HasColumnName("response");
-
-                    b.Property<string>("ReturnId")
-                        .HasColumnType("text")
-                        .HasColumnName("returnid");
 
                     b.Property<int>("Round")
                         .HasColumnType("integer")

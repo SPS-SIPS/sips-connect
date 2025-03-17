@@ -7,6 +7,9 @@ public class ISOMessage
     public int Id { get; set; }
     public ISOMessageType MessageType { get; set; }
     public TransactionStatus Status { get; set; }
+    public string MsgId { get; set; } = string.Empty;
+    public string BizMsgIdr { get; set; } = string.Empty;
+    public string MsgDefIdr { get; set; } = string.Empty;
     public int Round { get; set; } = 1;
     public string? TxId { get; set; }
     public string? EndToEndId { get; set; }
@@ -17,6 +20,7 @@ public class ISOMessage
     public string ToBIC { get; set; } = null!;
     public byte[] Message { get; set; } = null!;
     public byte[]? Response { get; set; }
+    public string? ReturnId { get; set; }
     public ICollection<Transaction> Transactions { get; set; } = [];
     public ICollection<ISOMessageStatus> Statuses { get; set; } = [];
 }

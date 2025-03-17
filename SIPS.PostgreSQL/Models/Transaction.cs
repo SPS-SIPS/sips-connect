@@ -48,6 +48,9 @@ public sealed class TransactionConfiguration : IEntityTypeConfiguration<Transact
         builder.Property(e => e.Amount)
                 .HasPrecision(18, 2);
 
+        builder.HasIndex(e => e.TxId);
+        builder.HasIndex(e => e.EndToEndId);
+
         builder.HasOne(e => e.ISOMessage)
             .WithMany(e => e.Transactions)
             .HasForeignKey(e => e.ISOMessageId)

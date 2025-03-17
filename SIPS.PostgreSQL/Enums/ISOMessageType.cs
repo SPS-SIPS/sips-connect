@@ -6,5 +6,9 @@ public enum ISOMessageType
     TransactionRequest,
     StatusRequest,
     ReturnRequest,
+    VerificationResponse,
+    TransactionResponse,
+    StatusResponse,
+    ReturnResponse,
     InvalidMessageType
 }

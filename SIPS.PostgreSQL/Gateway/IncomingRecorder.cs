@@ -28,6 +28,14 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         .Where(x => x.TxId == txId && x.MessageType == ISOMessageType.TransactionRequest)
         .FirstOrDefaultAsync(ct);
     }
+
+    public async Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct)
+    {
+        return await _storage.ISOMessages
+        .Where(x => x.TxId == txId && x.MessageType == ISOMessageType.TransactionRequest)
+        .Include(x => x.Transactions)
+        .FirstOrDefaultAsync(ct);
+    }
     public async Task<ISOMessageStatus> ISOMessageStatusAsync(ISOMessageStatus message, CancellationToken ct)
     {
         await _storage.ISOMessageStatuses.AddAsync(message, ct);
@@ -52,6 +60,7 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
 
         return entity;
     }
+
     public async Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus message, CancellationToken ct)
     {
         var entity = await _storage.ISOMessageStatuses.FindAsync([message.Id], ct);
