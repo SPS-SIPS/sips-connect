@@ -1,7 +1,7 @@
 using SIPS.Adapter;
 using SIPS.ISO20022.Models.DTOs;
 using Microsoft.AspNetCore.Mvc;
-namespace SIPS.Connect.Controllers;
+namespace SIPS.Connect.Helpers;
 
 public static class APIResponseRenderer
 {
