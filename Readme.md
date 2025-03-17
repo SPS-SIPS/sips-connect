@@ -13,6 +13,8 @@
     - [Transaction Gateway](#transaction-gateway)
       - [POST `/api/v1/gateway/Verify`](#post-apiv1gatewayverify)
       - [POST `/api/v1/gateway/Payment`](#post-apiv1gatewaypayment)
+      - [POST `/api/v1/gateway/status`](#post-apiv1gatewaystatus)
+      - [POST `/api/v1/gateway/return`](#post-apiv1gatewayreturn)
     - [Incoming Messages](#incoming-messages)
       - [POST `/api/v1/incoming`](#post-apiv1incoming)
       - [POST `/api/v1/incoming`](#post-apiv1incoming-1)
@@ -83,6 +85,7 @@ Serilog__MinimumLevel__Default=Information
 Xades__CertificatePath=/path/to/certs/certificate.pem
 Xades__ChainPath=/path/to/certs/chain.pem
 Xades__PrivateKeyPath=/path/to/certs/private.key
+Xades__PrivateKeyPassphrase=your_private_key_passphrase # Optional if the private key is not encrypted
 Xades__Algorithms__0=SHA256withRSA
 Xades__Algorithms__1=SHA1withRSA
 Xades__Algorithms__2=SHA512withRSA
@@ -120,6 +123,9 @@ Emv__CountryCode="SO"
 Emv__Tags__MerchantIdentifier=26
 Emv__Tags__AcquirerTag=1
 Emv__Tags__MerchantIdTag=44
+
+API__Key=YourAPI__Key
+API__Secret=YourAPI__Secret
 
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=secure_password
@@ -208,6 +214,122 @@ Processes payment requests by handling `PaymentRequest` JSON objects from the pr
   {
     "PaymentResponse": {
       /* Payment confirmation */
+    }
+  }
+  ```
+
+- **Error Responses:**
+  - `400 Bad Request` – Invalid request format or parameters.
+  - `401 Unauthorized` – Missing or invalid authentication credentials.
+  - `404 Not Found` – Endpoint or resource not found.
+  - `500 Internal Server Error` – Server encountered an unexpected condition.
+
+#### POST `/api/v1/gateway/status`
+
+**Description:**  
+Processes payment status requests by handling `StatusRequest` JSON objects from the provided adapter.
+
+**Request:**
+
+- **Headers:**
+
+  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Content-Type: application/json`
+
+- **Body:**
+  ```json
+  {
+    "StatusRequest": {
+      /* Status details */
+    }
+  }
+  ```
+
+**Response:**
+
+- **200 OK:**
+
+  ```json
+  {
+    "CB_PaymentStatusResponse": {
+      /* Payment Status Response */
+    }
+  }
+  ```
+
+- **Error Responses:**
+  - `400 Bad Request` – Invalid request format or parameters.
+  - `401 Unauthorized` – Missing or invalid authentication credentials.
+  - `404 Not Found` – Endpoint or resource not found.
+  - `500 Internal Server Error` – Server encountered an unexpected condition.
+- #### POST `/api/v1/gateway/status`
+
+**Description:**  
+Processes payment status requests by handling `StatusRequest` JSON objects from the provided adapter.
+
+**Request:**
+
+- **Headers:**
+
+  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Content-Type: application/json`
+
+- **Body:**
+  ```json
+  {
+    "StatusRequest": {
+      /* Status details */
+    }
+  }
+  ```
+
+**Response:**
+
+- **200 OK:**
+
+  ```json
+  {
+    "CB_PaymentStatusResponse": {
+      /* Payment Status Response */
+    }
+  }
+  ```
+
+- **Error Responses:**
+  - `400 Bad Request` – Invalid request format or parameters.
+  - `401 Unauthorized` – Missing or invalid authentication credentials.
+  - `404 Not Found` – Endpoint or resource not found.
+  - `500 Internal Server Error` – Server encountered an unexpected condition.
+
+#### POST `/api/v1/gateway/return`
+
+**Description:**  
+Processes payment return requests by handling `ReturnRequest` JSON objects from the provided adapter.
+
+**Request:**
+
+- **Headers:**
+
+  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Content-Type: application/json`
+
+- **Body:**
+  ```json
+  {
+    "ReturnRequest": {
+      /* Return details */
+    }
+  }
+  ```
+
+**Response:**
+
+- **200 OK:**
+
+  ```json
+  {
+    "CB_ReturnResponse": {
+      /* Payment return Response */
     }
   }
   ```
