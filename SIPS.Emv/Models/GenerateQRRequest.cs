@@ -22,6 +22,7 @@ public sealed class SomQRMerchantRequest
     public string? PostalCode { get; set; }
     public string? StoreLabel { get; set; }
     public string? TerminalLabel { get; set; }
+    public decimal Amount { get; set; } = 0;
 }
 
 public sealed class SomQRPersonRequest : IValidatableObject

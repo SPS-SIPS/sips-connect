@@ -14,7 +14,7 @@ public class P2PPayload : IValidatableObject
     [Range(11, 12)]
     public string? PointOfInitializationMethod { get; set; }
 
-    [EmvSpecification(02, MaxLength = 2)]
+    [EmvSpecification(27, MaxLength = 2)]
     [Required]
     public string? SchemeIdentifier { get; set; }
 
