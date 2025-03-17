@@ -3,6 +3,7 @@ namespace SIPS.ISO20022.Models.DTOs;
 public sealed class VerificationResponseDto
 {
     public bool IsVerified { get; set; }
+    // Absent if IsVerified is true.
     public string Reason { get; set; } = string.Empty;
     public string SIPSRequestId { get; set; } = string.Empty;
     public string? Id { get; set; }

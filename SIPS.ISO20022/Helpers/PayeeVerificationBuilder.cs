@@ -18,7 +18,7 @@ public static class PayeeVerificationBuilder
         public string Type { get; set; } = string.Empty;
         public string? SIPSRequestId { get; set; }
     }
-    private static AppHdr AppHeader(string from, string to, SupportedMessageTypes type)
+    private static AppHdr AppHeader(string from, string to, SupportedMessageTypes type, string bizMsgIdr)
     {
         AppHdr hdr = new()
         {
@@ -48,18 +48,18 @@ public static class PayeeVerificationBuilder
                     }
                 }
             },
-            BizMsgIdr = Transformers.GenerateId(from),
+            BizMsgIdr = bizMsgIdr,
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
         };
         return hdr;
     }
 
-    public static string Build(Request request)
+    public static (string document, string bizMsgIdr, string type) Build(Request request)
     {
         var messageType = SupportedMessageTypes.VerificationRequest;
-
-        var appHdr = AppHeader(request.From, request.To, messageType);
+        var bizMsgIdr = Transformers.GenerateId(request.From);
+        var appHdr = AppHeader(request.From, request.To, messageType, bizMsgIdr);
 
         var document = new Document
         {
@@ -121,7 +121,7 @@ public static class PayeeVerificationBuilder
             AppHdr = appHdr,
             Document = document
         };
-        return Transformers.GeneratePrefixedXml(envelope.Untyped, docNS: messageType.GroupId);
+        return (Transformers.GeneratePrefixedXml(envelope.Untyped, docNS: messageType.GroupId), bizMsgIdr, messageType.Id);
     }
     public static Request Parse(string content)
     {
@@ -138,6 +138,7 @@ public static class PayeeVerificationBuilder
             MsgId = document.IdVrfctnReq?.Assgnmt?.MsgId ?? "",
             CreDt = document.IdVrfctnReq?.Assgnmt?.CreDtTm ?? DateTime.UtcNow,
             MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",
+            BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "",
         };
     }
 }

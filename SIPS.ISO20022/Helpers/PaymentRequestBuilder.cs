@@ -29,7 +29,7 @@ public static class PaymentRequestBuilder
         public string? Ustrd { get; set; }
     }
 
-    private static AppHdr AppHeader(string from, string to, SupportedMessageTypes type)
+    private static AppHdr AppHeader(string from, string to, SupportedMessageTypes type, string bizMsgIdr)
     {
         AppHdr hdr = new()
         {
@@ -59,18 +59,19 @@ public static class PaymentRequestBuilder
                     }
                 }
             },
-            BizMsgIdr = Transformers.GenerateId(from),
+            BizMsgIdr = bizMsgIdr,
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
         };
         return hdr;
     }
 
-    public static string Build(Request request)
+    public static (string document, string bizMsgIdr, string type, string msgId) Build(Request request)
     {
         var messageType = SupportedMessageTypes.CreditTransferRequest;
-
-        var appHdr = AppHeader(request.From, request.To, messageType);
+        var bizMsgIdr = Transformers.GenerateId(request.From);
+        var msgId = Transformers.GenerateId(request.From);
+        var appHdr = AppHeader(request.From, request.To, messageType, bizMsgIdr);
 
         var document = new Document
         {
@@ -78,7 +79,7 @@ public static class PaymentRequestBuilder
             {
                 GrpHdr = new GroupHeader96
                 {
-                    MsgId = Transformers.GenerateId(request.From),
+                    MsgId = msgId,
                     CreDtTm = DateTime.UtcNow,
                     NbOfTxs = "1",
                     SttlmInf = new SettlementInstruction11
@@ -220,7 +221,9 @@ public static class PaymentRequestBuilder
             AppHdr = appHdr,
             Document = document
         };
-        return Transformers.GeneratePrefixedXml(envelope.Untyped, docNS: messageType.GroupId);
+        var result = Transformers.GeneratePrefixedXml(envelope.Untyped, docNS: messageType.GroupId);
+
+        return (result, bizMsgIdr, messageType.Id, msgId);
     }
     public static Request Parse(string content)
     {

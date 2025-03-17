@@ -231,10 +231,10 @@ public static class PayeeVerificationResponseBuilder
             To = document.IdVrfctnRpt?.Assgnmt?.Assgne?.Agt?.FinInstnId?.Othr?.Id ?? "",
             MsgDefIdr = envelope.AppHdr.MsgDefIdr,
             MsgId = document.IdVrfctnRpt?.OrgnlAssgnmt?.MsgId ?? "",
-            BizMsgIdr = document.IdVrfctnRpt?.Assgnmt?.MsgId ?? "",
             CreDt = document.IdVrfctnRpt?.Assgnmt?.CreDtTm ?? DateTime.UtcNow,
             Verified = document.IdVrfctnRpt?.Rpt?[0]?.Vrfctn ?? false,
             Reason = document.IdVrfctnRpt?.Rpt?[0]?.Rsn?.Prtry ?? "",
+            VerificationId = document.IdVrfctnRpt?.Rpt?[0]?.OrgnlId ?? ""
         };
         if (response.Verified)
         {
