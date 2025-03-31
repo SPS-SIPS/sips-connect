@@ -72,7 +72,10 @@ public static class PaymentStatusRequestBuilder
                     {
                         FinInstnId = new Schemas.PSDocument.FinancialInstitutionIdentification18
                         {
-                            BICFI = request.From,
+                            Othr = new Schemas.PSDocument.GenericFinancialIdentification1
+                            {
+                                Id = request.From
+                            },
 
                         }
                     },
@@ -80,7 +83,10 @@ public static class PaymentStatusRequestBuilder
                     {
                         FinInstnId = new Schemas.PSDocument.FinancialInstitutionIdentification18
                         {
-                            BICFI = request.To
+                            Othr = new Schemas.PSDocument.GenericFinancialIdentification1
+                            {
+                                Id = request.To
+                            }
                         }
                     },
                 },
@@ -108,8 +114,8 @@ public static class PaymentStatusRequestBuilder
 
         return new Request
         {
-            From = document.FIToFIPmtStsReq.GrpHdr?.InstdAgt?.FinInstnId?.BICFI ?? "",
-            To = document.FIToFIPmtStsReq.GrpHdr?.InstgAgt?.FinInstnId?.BICFI ?? "",
+            From = document.FIToFIPmtStsReq.GrpHdr?.InstgAgt?.FinInstnId?.Othr?.Id ?? "",
+            To = document.FIToFIPmtStsReq.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "",
             MsgId = document.FIToFIPmtStsReq?.GrpHdr?.MsgId ?? "",
             CreDt = document.FIToFIPmtStsReq?.GrpHdr?.CreDtTm ?? DateTime.UtcNow,
             MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",

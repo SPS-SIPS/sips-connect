@@ -98,6 +98,7 @@ public static class PaymentStatusRequestResponseBuilder
         var messageType = SupportedMessageTypes.CreditTransferResponse;
 
         var appHdr = AppHeader(request, messageType);
+        var isReject = request.Status == "RJCT";
 
         var document = new Document
         {
@@ -146,8 +147,8 @@ public static class PaymentStatusRequestResponseBuilder
                                 AddtlInf = [request.AdditionalInfo ?? request.Status]
                             }
                         ],
-                        AccptncDtTm = request.AcceptanceDate,
-                        OrgnlTxRef = new OriginalTransactionReference35 {
+                        AccptncDtTm = !isReject ? request.AcceptanceDate : null,
+                        OrgnlTxRef =!isReject ? new OriginalTransactionReference35 {
                             IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {
                                 Ccy = request.Original.Currency,
                                 TypedValue = request.Original.Amount
@@ -188,7 +189,7 @@ public static class PaymentStatusRequestResponseBuilder
                                     }
                                 }
                             },
-                        },
+                        }: null,
                     }
                 ]
             }

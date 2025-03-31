@@ -68,7 +68,7 @@ public static class ReturnPaymentRequestBuilder
 
     public static (string document, string bizMsgIdr, string type, string msgId) Build(Request request)
     {
-        var messageType = SupportedMessageTypes.CreditTransferStatusRequest;
+        var messageType = SupportedMessageTypes.CreditTransferReturnRequest;
         var bizMsgIdr = Transformers.GenerateId(request.From);
         var msgId = Transformers.GenerateId(request.From);
         var appHdr = AppHeader(request.From, request.To, messageType, bizMsgIdr);
@@ -105,14 +105,20 @@ public static class ReturnPaymentRequestBuilder
                     {
                         FinInstnId = new Schemas.RPDocument.FinancialInstitutionIdentification18
                         {
-                            BICFI = request.From
+                            Othr = new Schemas.RPDocument.GenericFinancialIdentification1
+                            {
+                                Id = request.From
+                            }
                         }
                     },
                     InstdAgt = new Schemas.RPDocument.BranchAndFinancialInstitutionIdentification6
                     {
                         FinInstnId = new Schemas.RPDocument.FinancialInstitutionIdentification18
                         {
-                            BICFI = request.To
+                            Othr = new Schemas.RPDocument.GenericFinancialIdentification1
+                            {
+                                Id = request.To
+                            }
                         }
                     },
                 },

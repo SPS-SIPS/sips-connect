@@ -134,18 +134,10 @@ public static class ReturnPaymentResponseBuilder
                             OrgnlMsgNmId = request.Original.MsgDefIdr,
                             OrgnlCreDtTm = request.Original.CreDt
                         },
-                        OrgnlEndToEndId = request.Original.OriginalEndToEnd,
+                        OrgnlEndToEndId =request.Original.OriginalEndToEnd,
                         OrgnlTxId = request.Original.OrgnlTxId,
                         TxSts = request.Status,
-                        StsRsnInf = request.Status != "ACSC"? [
-                            new StatusReasonInformation12 {
-                                Rsn = new StatusReason6Choice {
-                                    Prtry = request.Reason ?? request.Status
-                                },
-                                AddtlInf = [request.AdditionalInfo ?? request.Status]
-                            }
-                        ]: null,
-                        OrgnlTxRef = new OriginalTransactionReference35 {
+                        OrgnlTxRef =new OriginalTransactionReference35 {
                             IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {
                                 Ccy = request.Original.OriginalCurrency,
                                 TypedValue = request.Original.OriginalAmount
@@ -161,6 +153,20 @@ public static class ReturnPaymentResponseBuilder
                 ]
             }
         };
+
+        if (request.Status == "RJCT")
+        {
+            document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf = [
+                new StatusReasonInformation12
+                {
+                    Rsn = new StatusReason6Choice
+                    {
+                        Prtry = request.Reason ?? request.Status
+                    },
+                    AddtlInf = [request.AdditionalInfo ?? request.Status]
+                }
+            ];
+        }
 
         var envelope = new FPEnvelope
         {
