@@ -10,6 +10,7 @@ public class AdapterController(IConfiguration configuration, IWebHostEnvironment
 {
     private readonly IConfiguration _configuration = configuration;
     private readonly string _jsonFilePath = Path.Combine(env.ContentRootPath, "jsonAdapter.json");
+    private static readonly JsonSerializerOptions options = new() { WriteIndented = true };
 
     [HttpGet]
     public IActionResult GetEndpoints()
@@ -59,7 +60,7 @@ public class AdapterController(IConfiguration configuration, IWebHostEnvironment
             }
         }
 
-        var updatedJson = JsonSerializer.Serialize(existingData, new JsonSerializerOptions { WriteIndented = true });
+        var updatedJson = JsonSerializer.Serialize(existingData, options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
 
         return Ok("Endpoints updated successfully.");
@@ -79,5 +80,6 @@ public class AdapterController(IConfiguration configuration, IWebHostEnvironment
     {
         public string InternalField { get; set; } = string.Empty;
         public string UserField { get; set; } = string.Empty;
+        public string? Type { get; set; } = string.Empty;
     }
 }
