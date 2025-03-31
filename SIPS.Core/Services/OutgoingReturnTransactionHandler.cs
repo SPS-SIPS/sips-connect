@@ -7,7 +7,6 @@ using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
 using SIPS.PostgreSQL.Models;
-using Org.BouncyCastle.Ocsp;
 namespace SIPS.Core.Services;
 public sealed class OutgoingReturnTransactionHandler(
     ISO20022Options options,
@@ -38,6 +37,10 @@ public sealed class OutgoingReturnTransactionHandler(
                 return Response<ReturnPaymentResponseDto>.Fail("Transaction not found" + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
             }
             var transaction = originalMessage.Transactions.FirstOrDefault();
+            if (transaction == null)
+            {
+                return Response<ReturnPaymentResponseDto>.Fail("Transaction not found" + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
+            }
             originalMessage.ReturnId = message.ReturnId;
             var (document, bizMsgIdr, type, msgId) = BuildRequest(transaction!, fromBIC, message.ReturnId, reason: message.Reason, additionalInfo: message.AdditionalInfo);
             var signed = _signer.SignEnvelope(document);
@@ -56,15 +59,15 @@ public sealed class OutgoingReturnTransactionHandler(
                 await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, ct);
                 return Response<ReturnPaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
-            await PersistISOMessageAsync(record, rs!.Status!, rs.Reason!, rs.AdditionalInfo, responseMessage.Data!, ct, rs.TxId, rs.Original?.EndToEndId ?? "");
+            await PersistISOMessageAsync(record, rs!.Status!, rs.Reason!, rs.AdditionalInfo, responseMessage.Data!, ct, rs.TxId, rs.Original?.OriginalEndToEnd ?? "");
 
             return Response<ReturnPaymentResponseDto>.Success(new ReturnPaymentResponseDto
             {
                 Status = rs!.Status!,
                 TxId = rs.TxId,
-                EndToEndId = rs?.Original?.EndToEndId ?? "",
+                EndToEndId = rs?.Original?.OriginalEndToEnd ?? "",
                 Reason = rs!.Reason,
-                AdditionalInfo = rs.AdditionalInfo
+                AdditionalInfo = rs.AdditionalInfo,
             });
         }
         catch (Exception ex)
@@ -93,9 +96,9 @@ public sealed class OutgoingReturnTransactionHandler(
             AdditionalInfo = additionalInfo
         });
     }
-    private static PostgreSQL.Models.ISOMessage CreateISOMessage(ReturnPaymentRequestDto message, Transaction transaction, string fromBIC, string txId, string signedMessage, string msgId, string msgDefIdr, string bizMsgIdr)
+    private static ISOMessage CreateISOMessage(ReturnPaymentRequestDto message, Transaction transaction, string fromBIC, string txId, string signedMessage, string msgId, string msgDefIdr, string bizMsgIdr)
     {
-        var entity = new PostgreSQL.Models.ISOMessage
+        var entity = new ISOMessage
         {
             MessageType = PostgreSQL.Enums.ISOMessageType.ReturnRequest,
             Date = DateTimeOffset.Now.ToUniversalTime(),
@@ -106,7 +109,7 @@ public sealed class OutgoingReturnTransactionHandler(
             MsgDefIdr = msgDefIdr,
             MsgId = msgId
         };
-        entity.Transactions.Add(new PostgreSQL.Models.Transaction
+        entity.Transactions.Add(new Transaction
         {
             Type = PostgreSQL.Enums.TransactionType.ReturnDeposit,
             FromBIC = fromBIC,
@@ -197,7 +200,7 @@ public sealed class OutgoingReturnTransactionHandler(
         });
     }
     private async Task<Response<ReturnPaymentResponseDto>> LogPersistAndReturnAsync(
-        PostgreSQL.Models.ISOMessage record,
+        ISOMessage record,
         string logMessage,
         string persistMessage,
         string data,
@@ -209,9 +212,9 @@ public sealed class OutgoingReturnTransactionHandler(
         await PersistISOMessageAsync(record, RJCT, persistMessage, persistMessage, data, ct);
         return Response<ReturnPaymentResponseDto>.Fail(failMessage, statusCode);
     }
-    private static bool TryParse(string message, out PaymentRequestResponseBuilder.Response? response)
+    private static bool TryParse(string message, out ReturnPaymentResponseBuilder.Response? response)
     {
-        response = PaymentRequestResponseBuilder.Parse(message);
+        response = ReturnPaymentResponseBuilder.Parse(message);
 
         if (response == null)
         {
