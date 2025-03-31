@@ -5,7 +5,7 @@ using static SIPS.Connect.Helpers.APIAuth;
 namespace SIPS.Connect.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class AdapterController(IConfiguration configuration, IWebHostEnvironment env) : ControllerBase
 {
     private readonly IConfiguration _configuration = configuration;
@@ -27,7 +27,7 @@ public class AdapterController(IConfiguration configuration, IWebHostEnvironment
         return Ok(endpoints);
     }
 
-    [HttpPost("updateEndpoints")]
+    [HttpPut]
     public IActionResult UpdateEndpoints([FromBody] Root request)
     {
         if (!Request.IsApiAuthorized(_configuration)) { return Unauthorized(); }
