@@ -612,6 +612,11 @@
                     "Type": "string"
                 },
                 {
+                    "InternalField": "FromBIC",
+                    "UserField": "agent",
+                    "Type": "string"
+                },
+                {
                     "InternalField": "Reason",
                     "UserField": "reason",
                     "Type": "string"
@@ -619,6 +624,11 @@
                 {
                     "InternalField": "AdditionalInfo",
                     "UserField": "additionalInfo",
+                    "Type": "string"
+                },
+                {
+                    "InternalField": "ReturnId",
+                    "UserField": "returnId",
                     "Type": "string"
                 }
             ]

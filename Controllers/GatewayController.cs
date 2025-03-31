@@ -65,6 +65,6 @@ public class GatewayController(
         var query = _jsonAdapter.ToObject<ReturnPaymentRequestDto>(md);
         Console.WriteLine("md.OriginalTxId" + query.OriginalTxId);
         var response = await _returnTransactionService.HandleAsync(query, ct);
-        return GenerateAdminMessage(response, _jsonAdapter, ReturnResponse);
+        return GenerateAdminMessage(response, _jsonAdapter, PaymentResponse);
     }
 }
