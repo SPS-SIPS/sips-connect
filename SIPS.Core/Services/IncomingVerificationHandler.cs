@@ -56,8 +56,8 @@ public sealed class IncomingVerificationHandler(
 
         var response = new PayeeVerificationResponseBuilder.Request
         {
-            From = request.From,
-            To = request.To,
+            From = request.To,
+            To = request.From,
             MsgDefIdr = request.MsgDefIdr,
             BizMsgIdr = request.BizMsgIdr,
             MsgId = request.MsgId,

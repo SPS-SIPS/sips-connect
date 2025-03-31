@@ -65,14 +65,25 @@ public sealed class IncomingTransactionStatusHandler(
 
         var response = new PaymentStatusRequestResponseBuilder.Response
         {
-            From = request.From,
-            To = request.To,
+            From = request.To,
+            To = request.From,
             MsgDefIdr = request.MsgDefIdr,
             BizMsgIdr = request.BizMsgIdr,
             MsgId = request.MsgId,
             CreDt = request.CreDt,
             Status = RJCT,
             Reason = MISS,
+            Original = new PaymentRequestBuilder.Request
+            {
+                From = request.From,
+                To = request.To,
+                MsgDefIdr = request.MsgDefIdr,
+                BizMsgIdr = request.BizMsgIdr,
+                MsgId = request.MsgId,
+                CreDt = request.CreDt,
+                TxId = request.OrgnlTxId,
+                EndToEndId = request.OriginalEndToEnd,
+            }
         };
 
         try
@@ -149,6 +160,7 @@ public sealed class IncomingTransactionStatusHandler(
     }
     private void ParseCallbackResult(JsonObject data, PaymentStatusRequestResponseBuilder.Response response)
     {
+        Console.WriteLine("Callback result: " + data.ToString());
         var js = JsonSerializer.Deserialize<JsonObject>(data, _jsonSerializerOptions);
 
         var md = _jsonAdapter.Transform(js!, CB_PaymentStatusResponse);

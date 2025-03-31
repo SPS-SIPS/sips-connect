@@ -56,8 +56,8 @@ public sealed class IncomingTransactionHandler(
         var record = await _record.ISOMessageAsync(entity, ct);
         var response = new PaymentRequestResponseBuilder.Response
         {
-            From = request.From,
-            To = request.To,
+            From = request.To,
+            To = request.From,
             MsgDefIdr = request.MsgDefIdr,
             BizMsgIdr = request.BizMsgIdr,
             MsgId = request.MsgId,

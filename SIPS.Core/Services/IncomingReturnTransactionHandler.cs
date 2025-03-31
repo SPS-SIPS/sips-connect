@@ -57,14 +57,34 @@ public sealed class IncomingReturnTransactionHandler(
         var originalMessage = await _record.GetISOMessageWithTransactionsByTxIdAsync(request.OrgnlTxId, ct);
         var response = new ReturnPaymentResponseBuilder.Response
         {
-            From = request.From,
-            To = request.To,
+            From = request.To,
+            To = request.From,
             MsgDefIdr = request.MsgDefIdr,
             BizMsgIdr = request.BizMsgIdr,
             MsgId = request.MsgId,
             CreDt = request.CreDt,
             Status = RJCT,
             Reason = MISS,
+            AdditionalInfo = "Failed to get the Message.",
+            Original = new ReturnPaymentRequestBuilder.Request
+            {
+                From = request.From,
+                To = request.To,
+                MsgDefIdr = request.MsgDefIdr,
+                BizMsgIdr = request.BizMsgIdr,
+                MsgId = request.MsgId,
+                CreDt = request.CreDt,
+                OrgnlTxId = request.OrgnlTxId,
+                OriginalEndToEnd = request.OriginalEndToEnd,
+                ReturnId = request.ReturnId,
+                ClearingSystem = request.ClearingSystem,
+                LocalInstrument = request.LocalInstrument,
+                CategoryPurpose = request.CategoryPurpose,
+                OriginalAmount = request.OriginalAmount,
+                OriginalCurrency = request.OriginalCurrency,
+                ReturnReason = request.ReturnReason,
+                AdditionalInfo = request.AdditionalInfo,
+            }
         };
 
         // Check if the message is a transaction request message and if it is not null
@@ -133,7 +153,10 @@ public sealed class IncomingReturnTransactionHandler(
         {
             FromBIC = request.From,
             OriginalEndToEnd = request.OriginalEndToEnd,
-            OrgnlTxId = request.OrgnlTxId
+            OrgnlTxId = request.OrgnlTxId,
+            ReturnId = request.ReturnId,
+            Reason = request.ReturnReason,
+            AdditionalInfo = request.AdditionalInfo,
         }, CB_ReturnRequest);
 
         var requestToCB = JsonSerializer.Serialize(md, _jsonSerializerOptions);
@@ -160,6 +183,7 @@ public sealed class IncomingReturnTransactionHandler(
         {
             response.Status = RJCT;
             response.Reason = MISS;
+            response.AdditionalInfo = "Failed to parse the message.";
             return;
         }
 
