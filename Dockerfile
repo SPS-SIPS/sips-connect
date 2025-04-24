@@ -17,5 +17,9 @@ RUN dotnet publish "SIPS.Connect.csproj" -c Release -o /app/publish
 
 FROM base AS final
 WORKDIR /app
+# bring in the wait-for-it script from build context
+COPY --from=build /src/wait-for-it.sh . 
+RUN chmod +x wait-for-it.sh
+
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "SIPS.Connect.dll"]
+ENTRYPOINT ["./wait-for-it.sh","sips-connect-db:5432","--timeout=60","--strict","--","dotnet","SIPS.Connect.dll"]
