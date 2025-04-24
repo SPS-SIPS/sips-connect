@@ -1,6 +1,7 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using static SIPS.Connect.Helpers.APIAuth;
+using static SIPS.Connect.KnownRoles;
 
 namespace SIPS.Connect.Controllers;
 
@@ -13,9 +14,9 @@ public class AdapterController(IConfiguration configuration, IWebHostEnvironment
     private static readonly JsonSerializerOptions options = new() { WriteIndented = true };
 
     [HttpGet]
+    [Authorize (Roles = Admin)]
     public IActionResult GetEndpoints()
     {
-        if (!Request.IsApiAuthorized(_configuration)) { return Unauthorized(); }
         var endpoints = new Dictionary<string, Endpoint>();
         _configuration.GetSection("Endpoints").Bind(endpoints);
 
@@ -28,10 +29,9 @@ public class AdapterController(IConfiguration configuration, IWebHostEnvironment
     }
 
     [HttpPut]
+     [Authorize(Roles = Admin)]
     public IActionResult UpdateEndpoints([FromBody] Root request)
     {
-        if (!Request.IsApiAuthorized(_configuration)) { return Unauthorized(); }
-
         var fileContent = System.IO.File.ReadAllText(_jsonFilePath);
         var existingData = JsonSerializer.Deserialize<Root>(fileContent);
         if (existingData?.Endpoints == null)

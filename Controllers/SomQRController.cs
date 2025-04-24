@@ -1,7 +1,8 @@
 using SIPS.Emv.Helpers;
 using SIPS.Emv.Models;
 using Microsoft.AspNetCore.Mvc;
-using static SIPS.Connect.Helpers.APIAuth;
+using static SIPS.Connect.KnownRoles;
+using Microsoft.AspNetCore.Authorization;
 
 namespace SIPS.Connect.Controllers;
 [ApiController]
@@ -10,10 +11,9 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
 {
     private readonly IConfiguration _configuration = configuration;
     [HttpPost("GenerateMerchantQR")]
+    [Authorize(Roles = QR)]
     public IResult GenerateCode(SomQRMerchantRequest payload)
     {
-        if (!Request.IsApiAuthorized(_configuration)) { return Results.Unauthorized(); }
-
         if (!ModelState.IsValid)
             return Results.BadRequest(ModelState);
 
@@ -91,10 +91,9 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
     }
 
     [HttpPost("GeneratePersonQR")]
+    [Authorize(Roles = QR)]
     public IResult GenerateP2PCode(SomQRPersonRequest payload)
     {
-        if (!Request.IsApiAuthorized(_configuration)) { return Results.Unauthorized(); }
-
         if (!ModelState.IsValid)
         {
             return Results.BadRequest(ModelState);
@@ -136,10 +135,9 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
 
 
     [HttpGet("ParseMerchantQR")]
+    [Authorize(Roles = Gateway)]
     public IResult ParseCode([FromQuery] string code)
     {
-        if (!Request.IsApiAuthorized(_configuration)) { return Results.Unauthorized(); }
-
         try
         {
             var merchantPayload = QRHelpers.ParseQR(code);
@@ -152,10 +150,9 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
     }
 
     [HttpGet("ParsePersonQR")]
+    [Authorize(Roles = QR)]
     public IResult ParseCodeP2P([FromQuery] string code)
     {
-        if (!Request.IsApiAuthorized(_configuration)) { return Results.Unauthorized(); }
-
         try
         {
             var p2p = QRHelpers.ParseP2PQR(code, false);

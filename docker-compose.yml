@@ -1,11 +1,27 @@
 services:
+  sips-connect-db:
+    image: postgres:16
+    # ports:
+    #   - "5432:5432"
+    env_file:
+      - ./.env
+    networks:
+      - sips-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "postgres", "-U", "postgres"]
+      interval: '10s'
+      timeout: '30s'
+      retries: 5
+      start_period: '20s'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
   sips-connect:
     image: sips.connect
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "8091:8080"
     env_file:
       - ./.env
     volumes:
@@ -15,18 +31,20 @@ services:
       - sips-network
     depends_on:
       - sips-connect-db
-
-  sips-connect-db:
-    image: postgres:16
-    ports:
-      - "5432:5432"
+  idp:
+    image: keycloak/keycloak:latest
+    container_name: keycloak_idp
     env_file:
       - ./.env
+    command: "start-dev --import-realm --verbose"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - ./realm-config:/opt/keycloak/data/import
+    ports:
+      - "8092:8080"
     networks:
       - sips-network
-
+    depends_on:
+      - sips-connect-db
 
 volumes:
   pg_data:

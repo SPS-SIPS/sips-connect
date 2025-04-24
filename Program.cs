@@ -3,10 +3,15 @@ using static SIPS.Connect.Config.DI;
 using static SIPS.Connect.Extensions.InitializerExtensions;
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Configuration.AddEnvironmentVariables();
-
 builder.Configuration
-    .AddJsonFile("jsonAdapter.json", optional: false, reloadOnChange: true);
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile(
+        $"appsettings.{builder.Environment.EnvironmentName}.json",
+        optional: true,
+        reloadOnChange: true
+    )
+    .AddJsonFile("jsonAdapter.json", optional: false, reloadOnChange: true)
+    .AddEnvironmentVariables();
 
 builder.Host.UseSerilog((context, configuration) =>
 {
@@ -37,5 +42,6 @@ app.UseRouting();
 app.UseCors("default");
 
 app.MapControllers();
-
+app.UseAuthentication();
+app.UseAuthorization();
 app.Run();
