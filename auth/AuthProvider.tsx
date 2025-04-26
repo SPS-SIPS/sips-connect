@@ -1,76 +1,59 @@
-import React, {createContext, useState, useContext, ReactNode, useEffect} from 'react';
-import BubbleLoading from "../component/Loading/BubbleLoading/BubbleLoading";
-import {apiAuth} from "../constants";
-interface AuthContextType {
-    authToken: string | null;
-    setAuthToken: (token: string | null) => void;
-}
+import React, { createContext, useContext, useEffect, useState } from "react";
+import Keycloak from "keycloak-js";
 
-const AuthContext = createContext<AuthContextType>({
-    authToken: null,
-    setAuthToken: () => {},
-});
+type AuthContextType = {
+    isAuthenticated: boolean;
+    isLoading: boolean;
+    keycloak: Keycloak | null;
+    login: () => void;
+    logout: () => void;
+};
 
-interface AuthProviderProps {
-    children: ReactNode;
-}
+const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
-export const AuthProvider = ({children}: AuthProviderProps) => {
-    const [authToken, setAuthTokenState] = useState<string | null>(null);
+export const KeycloakAuthProvider = ({ children }: { children: React.ReactNode }) => {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-
-    const setAuthToken = (token: string | null) => {
-        setAuthTokenState(token);
-    };
-
+    const [keycloak, setKeycloak] = useState<Keycloak | null>(null);
 
     useEffect(() => {
-        let isMounted = true;
+        const initKeycloak = async () => {
+            const keycloakInstance = new Keycloak({
+                url: process.env.NEXT_PUBLIC_KEYCLOAK_URL!,
+                realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM!,
+                clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID!,
+            });
 
-        const refreshToken = async () => {
             try {
-                // const response = await axios.post('/api/v1/auth/refresh-token', {}, {
-                //     withCredentials: true
-                // });
-                if (isMounted) {
-                    const newAccessToken = apiAuth;
-                    setAuthToken(newAccessToken);
+                const authenticated = await keycloakInstance.init({
+                    onLoad: "check-sso",
+                    silentCheckSsoRedirectUri: window.location.origin + "/silent-check-sso.html",
+                });
+
+                setIsAuthenticated(authenticated);
+                setKeycloak(keycloakInstance);
+
+                if (!authenticated) {
+                    keycloakInstance.login();
                 }
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
             } catch (error) {
-                if (isMounted) {
-                    setAuthToken(null,);
-                }
+                console.error("Keycloak initialization failed:", error);
             } finally {
-                if (isMounted) {
-                    setIsLoading(false);
-                }
+                setIsLoading(false);
             }
         };
 
-        refreshToken();
-
-        return () => {
-            isMounted = false;
-        };
+        initKeycloak();
     }, []);
 
-    if (isLoading) {
-        return <BubbleLoading/>;
-    }
-
+    const login = () => keycloak?.login();
+    const logout = () => keycloak?.logout();
 
     return (
-        <AuthContext.Provider value={{authToken, setAuthToken}}>
+        <AuthContext.Provider value={{ isAuthenticated, isLoading, keycloak, login, logout }}>
             {children}
         </AuthContext.Provider>
     );
 };
 
-export const useAuthentication = (): AuthContextType => {
-    const context = useContext(AuthContext);
-    if (!context) {
-        throw new Error('useAuthentication must be used within an AuthProvider');
-    }
-    return context;
-};
+export const useAuthentication = () => useContext(AuthContext);

@@ -1,23 +1,37 @@
 import React from "react";
-import type {AppProps} from "next/app";
+import type { AppProps } from "next/app";
 import "../styles/global.css";
-import {AuthProvider} from "../auth/AuthProvider";
-import {Layout} from "../component/Layout";
+import { KeycloakAuthProvider } from "../auth/AuthProvider";
+import { Layout } from "../component/Layout";
 import Head from "next/head";
+import { useRouter } from "next/router";
+import ProtectedAuthRoute from "../component/common/ProtectedAuthRoute";
+import ProtectedRoute from "../component/common/ProtectedRoute";
 
-function MyApp({Component, pageProps}: AppProps) {
+function MyApp({ Component, pageProps }: AppProps) {
+    const router = useRouter();
+    const isAuthRoute = router.pathname.startsWith("/auth");
+
     return (
         <>
             <Head>
                 <title>SPS Connect Platform</title>
-                <link rel="icon" href="/icons/icon.png"/>
-                <meta name="description" content="SPS Connect Platform facilitates seamless transactions between SIPS SVIP and local banking systems through secure ISO 20022 message translation and integration with local banking JSON APIs." />
+                <link rel="icon" href="/icons/icon.png" />
+                <meta name="description" content="SPS Connect Platform..." />
             </Head>
-            <AuthProvider>
-                <Layout>
-                    <Component {...pageProps} />
-                </Layout>
-            </AuthProvider>
+            <KeycloakAuthProvider>
+                {isAuthRoute ? (
+                    <ProtectedAuthRoute>
+                        <Component {...pageProps} />
+                    </ProtectedAuthRoute>
+                ) : (
+                    <ProtectedRoute>
+                        <Layout>
+                            <Component {...pageProps} />
+                        </Layout>
+                    </ProtectedRoute>
+                )}
+            </KeycloakAuthProvider>
         </>
     );
 }
