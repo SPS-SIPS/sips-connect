@@ -31,7 +31,6 @@ export const Layout = ({children}: LayoutProps) => {
         <div className={styles.layout}>
             <div className={styles.navbarContainer}>
                 <Navbar
-                    firstName="John"
                     onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)}
                     isMobile={isMobile}
                 />

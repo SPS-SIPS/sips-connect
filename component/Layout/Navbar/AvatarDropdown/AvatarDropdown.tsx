@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { FiLogOut, FiSettings, FiChevronDown } from 'react-icons/fi';
 import styles from '../Navbar.module.css';
+import {useAuthentication} from "../../../../auth/AuthProvider";
 
 interface AvatarDropdownProps {
     firstName: string;
@@ -9,6 +10,7 @@ interface AvatarDropdownProps {
 export const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ firstName }) => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const { logout } = useAuthentication();
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -47,7 +49,7 @@ export const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ firstName }) => 
                         <FiSettings className={styles.dropdownIcon} />
                         <span>Settings</span>
                     </button>
-                    <button className={styles.dropdownItem}>
+                    <button className={styles.dropdownItem} onClick={logout}>
                         <FiLogOut className={styles.dropdownIcon} />
                         <span>Logout</span>
                     </button>

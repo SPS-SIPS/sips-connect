@@ -4,14 +4,15 @@ import Image from 'next/image';
 import { AvatarDropdown } from "./AvatarDropdown/AvatarDropdown";
 import Link from "next/link";
 import { FiMenu } from 'react-icons/fi';
+import {useAuthentication} from "../../../auth/AuthProvider";
 
 interface NavbarProps {
-    firstName: string;
     onMenuToggle: () => void;
     isMobile: boolean;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ firstName, onMenuToggle, isMobile }) => {
+export const Navbar: React.FC<NavbarProps> = ({onMenuToggle, isMobile }) => {
+    const { userName } = useAuthentication();
     return (
         <header className={styles.navbar}>
             <div className={styles.leftSection}>
@@ -41,7 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({ firstName, onMenuToggle, isMobil
             </div>
 
             <div className={styles.rightSection}>
-                <AvatarDropdown firstName={firstName} />
+                <AvatarDropdown firstName={userName!} />
             </div>
         </header>
     );

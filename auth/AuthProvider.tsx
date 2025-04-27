@@ -7,6 +7,8 @@ type AuthContextType = {
     keycloak: Keycloak | null;
     login: () => void;
     logout: () => void;
+    userName: string | null;
+    authToken: string | null;
 };
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -15,6 +17,8 @@ export const KeycloakAuthProvider = ({ children }: { children: React.ReactNode }
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [keycloak, setKeycloak] = useState<Keycloak | null>(null);
+    const [userName, setUserName] = useState<string | null>(null);
+    const [authToken, setAuthToken] = useState<string | null>(null);
 
     useEffect(() => {
         const initKeycloak = async () => {
@@ -36,6 +40,14 @@ export const KeycloakAuthProvider = ({ children }: { children: React.ReactNode }
                 if (!authenticated) {
                     keycloakInstance.login();
                 }
+
+                if (authenticated) {
+                    const parsedToken = keycloakInstance.tokenParsed;
+                    setUserName(parsedToken?.preferred_username || null);
+                    setAuthToken(keycloakInstance.token || null);
+                }
+
+
             } catch (error) {
                 console.error("Keycloak initialization failed:", error);
             } finally {
@@ -46,13 +58,16 @@ export const KeycloakAuthProvider = ({ children }: { children: React.ReactNode }
         initKeycloak();
     }, []);
 
+
+
     const login = () => keycloak?.login();
     const logout = () => keycloak?.logout();
 
     return (
-        <AuthContext.Provider value={{ isAuthenticated, isLoading, keycloak, login, logout }}>
+        <AuthContext.Provider value={{ isAuthenticated, isLoading, keycloak, login, logout, userName, authToken }}>
             {children}
         </AuthContext.Provider>
+
     );
 };
 
