@@ -107,6 +107,43 @@ public static class DI
             return new InterfaceHttpClient(logger, client);
         });
 
+        var corsPolicy = new CorsPolicies();
+        configuration.Bind(nameof(CorsPolicies), corsPolicy);
+
+        services.AddCors(options =>
+        {
+            options.AddPolicy("default", builder =>
+            {
+                if (corsPolicy.Origins != null && corsPolicy.Origins.Length != 0)
+                {
+                    if (corsPolicy.Origins.Contains("*"))
+                    {
+                        builder.AllowAnyOrigin();
+                    }
+                    else
+                    {
+                        builder.WithOrigins(corsPolicy.Origins).AllowCredentials();
+                    }
+                }
+                else
+                {
+                    builder.AllowAnyOrigin();
+                }
+
+                builder
+                    .AllowAnyHeader()
+                    .AllowAnyMethod();
+            });
+        });
+
+        services.AddSingleton<IInterfaceHttpClient, InterfaceHttpClient>(sp =>
+{
+    var clientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var logger = sp.GetRequiredService<ILogger<InterfaceHttpClient>>();
+    var client = clientFactory.CreateClient();
+    return new InterfaceHttpClient(logger, client);
+});
+
         services.AddAuthentication(options =>
        {
            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -117,19 +154,25 @@ public static class DI
            var host = configuration["Keycloak:Realm:Host"];
            var protocol = configuration["Keycloak:Realm:Protocol"];
            var realm = configuration["Keycloak:Realm:Name"];
+           var audience = configuration["Keycloak:Realm:Audience"];
+           var validateIssuer = bool.Parse(configuration["Keycloak:Realm:ValidateIssuer"] ?? "true");
 
+           var authority = $"{protocol}://{host}/realms/{realm}";
 
-           options.Authority = $"{protocol}://{host}/realms/{realm}";
-           options.Audience = configuration["Keycloak:Realm:Audience"];
+           options.Authority = authority;
+           options.Audience = audience;
+           options.RequireHttpsMetadata = false;
+           options.MapInboundClaims = false;
+
            options.TokenValidationParameters = new TokenValidationParameters
            {
-               ValidateAudience = false,
-               ValidateIssuer = true,
+               ValidateIssuer = validateIssuer,
+               ValidIssuer = authority,
+               ValidateAudience = true,
+               ValidAudience = audience,
                ValidateLifetime = true,
                RoleClaimType = ClaimTypes.Role,
            };
-           options.RequireHttpsMetadata = false;
-           options.MapInboundClaims = false;
 
            options.Events = new JwtBearerEvents
            {
@@ -165,40 +208,6 @@ public static class DI
                }
            };
        });
-
-        var corsPolicy = new CorsPolicies();
-        configuration.Bind(nameof(CorsPolicies), corsPolicy);
-
-        services.AddCors(options =>
-        {
-            options.AddPolicy("default", builder =>
-            {
-                if (corsPolicy.Origins != null && corsPolicy.Origins.Length != 0)
-                {
-                    builder.WithOrigins(corsPolicy.Origins);
-                    if (!corsPolicy.Origins.Contains("*"))
-                    {
-                        builder.AllowAnyOrigin().AllowCredentials();
-                    }else {
-                        builder.AllowAnyOrigin();
-                    }
-                }
-                else
-                {
-                    builder.AllowAnyOrigin();
-                }
-
-                builder
-                    .AllowAnyHeader()
-                    .AllowAnyMethod();
-            });
-        });
-
         services.AddCore(configuration);
     }
-}
-
-public class CorsPolicies
-{
-    public string[]? Origins { get; set; }
 }
