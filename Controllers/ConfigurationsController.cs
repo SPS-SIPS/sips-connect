@@ -48,7 +48,7 @@ public class ConfigurationsController(IConfiguration configuration, IWebHostEnvi
     [Authorize (Roles = Admin)]
     public IActionResult GetXades()
     {
-        var configs = new EmvOptions();
+        var configs = new XadesOptions();
         _configuration.GetSection("Xades").Bind(configs);
 
         return Ok(configs);
