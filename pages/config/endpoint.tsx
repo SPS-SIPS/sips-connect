@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import useEndpoints from "../api/hooks/useEndpoints";
-import useUpdateEndpoints from "../api/hooks/useUpdateEndpoints";
-import Input from "../component/common/Input/Input";
-import AlertModal from "../component/common/AlertModal/AlertModal";
-import styles from "../styles/EndpointsPage.module.css";
+import useEndpoints from "../../api/hooks/useEndpoints";
+import useUpdateEndpoints from "../../api/hooks/useUpdateEndpoints";
+import Input from "../../component/common/Input/Input";
+import AlertModal from "../../component/common/AlertModal/AlertModal";
+import styles from "../../styles/EndpointsPage.module.css";
 import Head from "next/head";
+import ProtectedRoute from "../../component/common/ProtectedRoute";
 
 type FieldMapping = {
     internalField: string;
@@ -38,7 +39,7 @@ const EndpointsPage = () => {
     const [endpoints, setEndpoints] = useState<EndpointData | null>(null);
     const [editingEndpoint, setEditingEndpoint] = useState<string | null>(null);
     const [localChanges, setLocalChanges] = useState<EndpointData>({});
-    const [showErrorModal, setShowErrorModal] = useState(false); // State for modal visibility
+    const [showErrorModal, setShowErrorModal] = useState(false);
 
     React.useEffect(() => {
         if (initialEndpoints) {
@@ -130,7 +131,7 @@ const EndpointsPage = () => {
     if (!endpoints) return <div className={styles.noEndpoints}>No endpoints found</div>;
 
     return (
-       <>
+       <ProtectedRoute>
            <Head>
                <title>API Request & Response Mapping Editor</title>
                <meta name="description" content="SPS Connect Platform facilitates seamless transactions between SIPS SVIP and local banking systems through secure ISO 20022 message translation and integration with local banking JSON APIs." />
@@ -211,7 +212,7 @@ const EndpointsPage = () => {
                    );
                })}
            </div>
-       </>
+       </ProtectedRoute>
     );
 };
 

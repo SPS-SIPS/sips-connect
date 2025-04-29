@@ -54,6 +54,8 @@ img {
     --color-warning-background: #fff3cd;
     --color-success: #28a745;
     --color-success-background: #d4edda;
+    --color-error-dark: #b02a37;    /* 20% darker than error */
+    --color-white: #ffffff;         /* Pure white */
 
     /* Text Colors */
     --color-text-primary: #2d3748;
@@ -121,4 +123,8 @@ img {
     --breakpoint-mobile: 768px;
     --breakpoint-tablet: 1024px;
     --breakpoint-desktop: 1280px;
+
+    /* Transitions */
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-default: 0.2s var(--ease-in-out);
 }

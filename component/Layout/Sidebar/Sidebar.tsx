@@ -5,11 +5,11 @@ import {
     FiHome,
     FiChevronRight,
     FiChevronDown,
-    FiX, FiCreditCard
+    FiX, FiCreditCard, FiEdit
 } from 'react-icons/fi';
 
 import styles from './Sidebar.module.css'
-import {FaCogs, FaEye, FaFileAlt, FaPlug, FaPlusCircle, FaQrcode, FaRocket} from "react-icons/fa";
+import {FaCogs, FaEye, FaFileAlt, FaPlug, FaPlusCircle, FaQrcode, FaRocket, FaTools} from "react-icons/fa";
 
 interface NavItem {
     title: string;
@@ -45,21 +45,46 @@ const Sidebar: React.FC<SideNavProps> = ({isOpen, onClose, isMobile}) => {
             ],
         },
         {
-            title: 'Endpoint Configurations',
-            path: '/endpoints',
-            icon: <FaPlug className={styles.icon}/>,
+            title: 'Configurations',
+            path: '/config',
+            icon: <FaCogs className={styles.icon}/>,
             items: [
                 {
                     title: 'API Adapters',
-                    path: '/endpoint-configurations',
+                    path: '/config/endpoint',
                     icon: <FiChevronRight className={styles.icon}/>
                 },
+                {
+                    title: 'Core',
+                    path: '/config/core',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
+                {
+                    title: 'EMV',
+                    path: '/config/emv',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
+                {
+                    title: 'Hosts',
+                    path: '/config/hosts',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
+                {
+                    title: 'ISO 20022',
+                    path: '/config/iso20022',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
+                {
+                    title: 'Origins',
+                    path: '/config/origins',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
+                {
+                    title: 'XAdES',
+                    path: '/config/xades',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
             ],
-        },
-        {
-            title: 'Request Builder',
-            path: '/request-builder',
-            icon: <FaCogs className={styles.icon}/>,
         },
         {
             title: 'API Tester',
@@ -119,7 +144,12 @@ const Sidebar: React.FC<SideNavProps> = ({isOpen, onClose, isMobile}) => {
                     ],
                 },
             ],
-        }
+        },
+        {
+            title: 'Request Builder',
+            path: '/request-builder',
+            icon: <FaTools className={styles.icon}/>,
+        },
     ];
 
     const toggleExpand = (title: string) => {

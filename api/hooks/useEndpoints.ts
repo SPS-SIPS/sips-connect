@@ -25,6 +25,8 @@ const useEndpoints = () => {
         const fetchEndpoints = async () => {
             try {
                 const response = await axiosPrivate.get<EndpointsData>('/api/v1/Adapter');
+                // const response = await axiosPrivate.get<EndpointsData>('/api/v1/Configurations/Core');
+                console.log(response);
                 setEndpoints(response.data);
                 setLoading(false);
             } catch (err: unknown) {
