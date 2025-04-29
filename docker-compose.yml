@@ -27,6 +27,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./certs:/certs
+      - ./appsettings.json:/app/appsettings.json:rw
+      - ./jsonAdapter.json:/app/jsonAdapter.json:rw
     networks:
       - sips-network
     depends_on:
