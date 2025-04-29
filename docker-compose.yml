@@ -32,7 +32,7 @@ services:
     depends_on:
       - sips-connect-db
   idp:
-    image: keycloak/keycloak:latest
+    image: keycloak/keycloak:26.2.0
     container_name: keycloak_idp
     env_file:
       - ./.env
