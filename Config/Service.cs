@@ -1,10 +1,12 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SIPS.Adapter.Models;
 using SIPS.Connect.Filters;
+using SIPS.Connect.Services;
 using SIPS.Core;
 using SIPS.Core.Interfaces;
 using SIPS.Core.Options;
@@ -19,10 +21,8 @@ public static class DI
     {
         services.AddSingleton(sp =>
         {
-            // Bind Endpoints configuration
             var options = new JsonAdapterOptions();
             configuration.GetSection("Endpoints").Bind(options.Endpoints);
-            // Bind DateFormats configuration
             var dateFormats = configuration.GetSection("DateFormats").Get<string[]>();
             options.DateFormats = dateFormats ?? ["yyyy-MM-dd"];
             return options;
@@ -32,6 +32,14 @@ public static class DI
         {
             var options = new CoreOptions();
             configuration.GetSection("Core").Bind(options);
+            return options;
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var options = new AuthenticationSchemeOptions() {
+                TimeProvider = TimeProvider.System,
+            };
             return options;
         });
         services.AddSingleton(sp =>
@@ -110,6 +118,9 @@ public static class DI
         var corsPolicy = new CorsPolicies();
         configuration.Bind(nameof(CorsPolicies), corsPolicy);
 
+        var apiKeys = configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? [];
+        services.AddSingleton(new ApiKeys(apiKeys));
+
         services.AddCors(options =>
         {
             options.AddPolicy("default", builder =>
@@ -144,11 +155,26 @@ public static class DI
     return new InterfaceHttpClient(logger, client);
 });
 
-        services.AddAuthentication(options =>
-       {
-           options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-           options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-       })
+    services.AddAuthentication(options =>
+        {
+            options.DefaultScheme         = "MultiAuth";
+            options.DefaultChallengeScheme = "MultiAuth";
+        })
+        .AddPolicyScheme("MultiAuth", "JWT or API Key", options =>
+        {
+            options.ForwardDefaultSelector = context =>
+            {
+                var auth = context.Request.Headers.Authorization.FirstOrDefault();
+                if (!string.IsNullOrEmpty(auth) && auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    return JwtBearerDefaults.AuthenticationScheme;
+
+                if (context.Request.Headers.ContainsKey(ApiKeyDefaults.HeaderNameKey))
+                    return ApiKeyDefaults.AuthenticationScheme;
+
+                // fallback to JWT so Unauthorized is returned if neither header is present
+                return JwtBearerDefaults.AuthenticationScheme;
+            };
+        })
        .AddJwtBearer(options =>
        {
            var host = configuration["Keycloak:Realm:Host"];
@@ -207,7 +233,9 @@ public static class DI
                    return Task.CompletedTask;
                }
            };
-       });
+       })
+       .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+            ApiKeyDefaults.AuthenticationScheme, _ => { });
         services.AddCore(configuration);
     }
 }

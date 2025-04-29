@@ -172,4 +172,62 @@ public class ConfigurationsController(IConfiguration configuration, IWebHostEnvi
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
         return Ok("AllowedHosts options updated successfully.");
     }
+
+    [HttpGet("APIKeys")]
+    [Authorize(Roles = Admin)]
+    public IActionResult APIKeys([FromQuery] string? key)
+    {
+        var keys = _configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? [];
+
+        if (string.IsNullOrEmpty(key))
+        {
+            return Ok(keys);
+        }
+
+        var apiKey = keys.FirstOrDefault(k => k.Key == key);
+        return apiKey is not null ? Ok(apiKey) : NotFound("API Key not found.");
+    }
+
+    [HttpPut("APIKeys")]
+    [Authorize(Roles = Admin)]
+    public IActionResult ChangeAPIKeys([FromBody] ApiKey request)
+    {
+        var fileContent = System.IO.File.ReadAllText(_jsonFilePath);
+        if (System.Text.Json.Nodes.JsonNode.Parse(fileContent) is not System.Text.Json.Nodes.JsonObject jsonNode || jsonNode["ApiKeys"] == null)
+        {
+            return NotFound("No ApiKeys section exist in appsettings.json");
+        }
+
+        var keys = jsonNode["ApiKeys"].Deserialize<List<ApiKey>>() ?? [];
+        keys.Add(request);
+        jsonNode["ApiKeys"] = JsonSerializer.SerializeToNode(keys, options);
+        var updatedJson = jsonNode.ToJsonString(options);
+        System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+        return Ok("API Key added successfully.");
+    }
+
+    [HttpDelete("APIKeys")]
+    [Authorize(Roles = Admin)]
+    public IActionResult DeleteAPIKeys([FromQuery] string key)
+    {
+        var fileContent = System.IO.File.ReadAllText(_jsonFilePath);
+        if (System.Text.Json.Nodes.JsonNode.Parse(fileContent) is not System.Text.Json.Nodes.JsonObject jsonNode || jsonNode["ApiKeys"] == null)
+        {
+            return NotFound("No ApiKeys section exist in appsettings.json");
+        }
+
+        var keys = jsonNode["ApiKeys"].Deserialize<List<ApiKey>>() ?? [];
+        var apiKey = keys.FirstOrDefault(k => k.Key == key);
+        if (apiKey is null)
+        {
+            return NotFound("API Key not found.");
+        }
+
+        keys.Remove(apiKey);
+        jsonNode["ApiKeys"] = JsonSerializer.SerializeToNode(keys, options);
+        var updatedJson = jsonNode.ToJsonString(options);
+        System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+        return Ok("API Key deleted successfully.");
+    }
+
 }
