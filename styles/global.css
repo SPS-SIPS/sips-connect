@@ -127,4 +127,9 @@ img {
     /* Transitions */
     --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
     --transition-default: 0.2s var(--ease-in-out);
+
+    /* Required additional variables */
+
+    --color-pending: #ffc107;
+    --font-mono: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
 }

@@ -87,6 +87,23 @@ const Sidebar: React.FC<SideNavProps> = ({isOpen, onClose, isMobile}) => {
             ],
         },
         {
+            title: 'Transactions',
+            path: '/transactions',
+            icon: <FiCreditCard className={styles.icon} />,
+            items: [
+                {
+                    title: 'Transaction List',
+                    path: '/transactions/list',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
+                {
+                    title: 'ISO Messages',
+                    path: '/transactions/iso-messages',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
+            ],
+        },
+        {
             title: 'API Tester',
             path: '/api-tester',
             icon: <FaRocket className={styles.icon}/>,

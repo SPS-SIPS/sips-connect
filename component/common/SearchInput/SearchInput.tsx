@@ -1,6 +1,6 @@
 import React from 'react';
 import styles from './SearchInput.module.css';
-import Image from 'next/image';
+import {FiSearch} from "react-icons/fi";
 
 interface SearchInputProps {
     value: string;
@@ -27,12 +27,9 @@ const SearchInput: React.FC<SearchInputProps> = ({
                     required={required}
                 />
                 <div className={styles.searchIcon}>
-                    <Image
-                        src="/icons/search.svg"
-                        alt="Search Icon"
-                        width={20}
-                        height={20} 
-                    />
+                    <div className={styles.searchIcon}>
+                        <FiSearch size={16} color="gray" />
+                    </div>
                 </div>
             </div>
         </div>

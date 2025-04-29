@@ -1,0 +1,400 @@
+/* Base Container Styles */
+.container {
+    background: var(--color-background);
+    padding: var(--spacing-lg);
+    margin: var(--spacing-lg) 0;
+}
+
+/* Header Styles */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-lg);
+}
+
+.title {
+    color: var(--color-text-primary);
+    margin: 0;
+    font-size: var(--font-size-lg);
+}
+
+.settingsButton {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-lg);
+    padding: var(--spacing-xs);
+    border-radius: var(--radius-md);
+    transition: var(--transition-default);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.settingsButton:hover {
+    color: var(--color-primary);
+    background-color: var(--color-background-tertiary);
+}
+
+/* Error Message Styles */
+.errorMessage {
+    padding: var(--spacing-md);
+    background-color: var(--color-error-background);
+    color: var(--color-error);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-size-sm);
+}
+
+.searchContainer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+}
+
+.searchInputRow {
+    display: flex;
+    gap: var(--spacing-md);
+    width: 100%;
+}
+
+.searchInputRow > * {
+    flex: 1;
+    min-width: 200px;
+}
+
+.filterControlsRow {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: flex-end;
+    width: 100%;
+}
+
+.selectGroup {
+    display: flex;
+    gap: var(--spacing-md);
+    flex: 2;
+}
+
+.dateGroup {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: center;
+    flex: 1;
+    min-width: 300px;
+}
+
+.dateInput {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.dateInput label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-label);
+    white-space: nowrap;
+}
+
+.dateInput input {
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    font-size: 1rem;
+    background: var(--color-background);
+    color: var(--color-text-primary);
+    min-width: 120px;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+.dateInput input:focus {
+    outline: none;
+    border-color: var(--color-border-focus);
+    box-shadow: var(--shadow-focus);
+}
+
+.dateInput input:hover {
+    border-color: var(--color-primary-hover);
+}
+.refreshButton {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background-color: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: var(--transition-default);
+    height: 40px;
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+@media (max-width: 1200px) {
+    .searchInputRow,
+    .filterControlsRow {
+        flex-wrap: wrap;
+    }
+
+    .searchInputRow > *,
+    .selectGroup,
+    .dateGroup {
+        min-width: calc(50% - var(--spacing-md));
+    }
+
+    .refreshButton {
+        margin-left: 0;
+        width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .searchInputRow > *,
+    .selectGroup,
+    .dateGroup,
+    .refreshButton {
+        min-width: 100%;
+    }
+
+    .selectGroup {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+
+    .dateGroup {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .dateInput {
+        width: 100%;
+    }
+
+    .dateInput input {
+        width: 100%;
+    }
+}
+
+/* Column Settings Panel */
+.columnSettings {
+    background: var(--color-background-secondary);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-lg);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
+}
+
+.columnSettings h3 {
+    margin-top: 0;
+    margin-bottom: var(--spacing-md);
+    color: var(--color-text-label);
+    font-size: var(--font-size-sm);
+    text-transform: uppercase;
+    /*letter-spacing: .5px;*/
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.columnOptions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--spacing-sm);
+}
+
+.columnOption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    border-radius: var(--radius-sm);
+    transition: var(--transition-default);
+    cursor: pointer;
+}
+
+.columnOption:hover {
+    background-color: var(--color-background-tertiary);
+}
+
+.columnOption span {
+    flex-grow: 1;
+}
+
+.toggleButton {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition-default);
+    flex-shrink: 0;
+    color: var(--color-text-secondary);
+}
+
+.toggleButton:hover {
+    border-color: var(--color-primary);
+}
+
+.toggleButton.active {
+    background-color: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border-color: var(--color-primary);
+}
+
+/* Loading States */
+.loadingMessage {
+    padding: var(--spacing-md);
+    text-align: center;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+/* Table Styles */
+.tableWrapper {
+    overflow-x: auto;
+    margin-bottom: var(--spacing-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 800px;
+}
+
+.tableHeader {
+    background-color: var(--color-background-tertiary);
+}
+
+.tableHeader th {
+    padding: var(--spacing-md) var(--spacing-lg);
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-text-label);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+}
+
+.tableRow {
+    border-bottom: 1px solid var(--color-border);
+    transition: var(--transition-default);
+}
+
+.tableRow:nth-child(even) {
+    background-color: var(--color-background-secondary);
+}
+
+.tableRow:hover {
+    background-color: var(--color-primary-light);
+}
+
+.tableRow td {
+    padding: var(--spacing-md) var(--spacing-lg);
+    font-size: var(--font-size-sm);
+    vertical-align: top;
+}
+
+/* Status Badges */
+.statusBadge {
+    display: inline-block;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.success {
+    background-color: var(--color-success-background);
+    color: var(--color-success);
+}
+
+.error {
+    background-color: var(--color-error-background);
+    color: var(--color-error);
+}
+
+.warning {
+    background-color: var(--color-warning-background);
+    color: var(--color-warning);
+}
+
+/* Pagination Styles */
+.paginationContainer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--spacing-lg);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--color-border);
+}
+
+.paginationButton {
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--color-background-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: var(--transition-default);
+    font-size: var(--font-size-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.paginationButton:hover:not(:disabled) {
+    background-color: var(--color-background-tertiary);
+    border-color: var(--color-border-hover);
+}
+
+.paginationButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: var(--color-background-disabled);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .container {
+        padding: var(--spacing-md);
+    }
+
+    .columnOptions {
+        grid-template-columns: 1fr;
+    }
+
+    .searchContainer {
+        flex-direction: column;
+    }
+
+    .refreshButton {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .filterRow,
+    .selectRow,
+    .dateRow {
+        flex-direction: column;
+    }
+
+    .filterRow > *,
+    .selectRow > * {
+        width: 100%;
+    }
+
+    .dateGroup {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
