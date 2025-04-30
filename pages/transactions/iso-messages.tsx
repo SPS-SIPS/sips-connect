@@ -13,6 +13,7 @@ import {
 } from "../../types/types";
 import SelectInput from "../../component/common/SelectInput/SelectInput";
 import SearchInput from "../../component/common/SearchInput/SearchInput";
+import ActionButton from "../../component/common/ActionButton/ActionButton";
 
 const allColumns = [
     { id: 'msgId', label: 'Message ID' },
@@ -144,7 +145,7 @@ const ISOMessagesList = () => {
                 <div className={styles.filterControlsRow}>
                     <div className={styles.selectGroup}>
                         <SelectInput
-                            label="Status"
+                            label=""
                             value={filters.status}
                             onChange={(e) => handleFilterChange('status', e.target.value)}
                             options={[
@@ -156,9 +157,10 @@ const ISOMessagesList = () => {
                                         label: key
                                     }))
                             ]}
+                            placeholder="-- Select a Status --"
                         />
                         <SelectInput
-                            label="Type"
+                            label=""
                             value={filters.type}
                             onChange={(e) => handleFilterChange('type', e.target.value)}
                             options={[
@@ -170,6 +172,7 @@ const ISOMessagesList = () => {
                                         label: key
                                     }))
                             ]}
+                            placeholder="-- Select a Type --"
                         />
                     </div>
 
@@ -192,13 +195,14 @@ const ISOMessagesList = () => {
                         </div>
                     </div>
 
-                    <button
+                    <ActionButton
                         onClick={refetch}
                         disabled={loading}
+                        type={"button"}
                         className={styles.refreshButton}
                     >
                         Refresh
-                    </button>
+                    </ActionButton>
                 </div>
             </div>
 

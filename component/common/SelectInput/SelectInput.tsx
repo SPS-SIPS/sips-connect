@@ -10,6 +10,7 @@ interface SelectInputProps {
     errorMessage?: string;
     name?: string;
     disabled?: boolean;
+    placeholder?: string;
 }
 
 const SelectInput: React.FC<SelectInputProps> = ({
@@ -20,7 +21,8 @@ const SelectInput: React.FC<SelectInputProps> = ({
                                                      required = false,
                                                      errorMessage,
                                                      name,
-                                                     disabled = false
+                                                     disabled = false,
+                                                     placeholder = "-- Select an option --"
                                                  }) => {
     return (
         <div className={styles.inputContainer}>
@@ -38,7 +40,7 @@ const SelectInput: React.FC<SelectInputProps> = ({
                     disabled={disabled}
                 >
                     <option value="" disabled>
-                        -- Select an option --
+                        {placeholder}
                     </option>
                     {options.map(option => (
                         <option key={option.value} value={option.value}>
