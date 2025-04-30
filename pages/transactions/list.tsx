@@ -1,65 +1,66 @@
 import React, { useState } from 'react';
 import { FiSettings, FiX, FiCheck } from 'react-icons/fi';
-
-import {useISOMessages} from "../../api/hooks/useISOMessages";
+import { useTransactions } from '../../api/hooks/useTransactions';
 import {
-    getISOMessageTypeText,
-    getTransactionStatusText,
-    ISOMessage,
-    ISOMessageType,
-    TransactionStatus
-} from "../../types/types";
-import SelectInput from "../../component/common/SelectInput/SelectInput";
+    Transaction,
+    getTransactionStatusType, TransactionType, TransactionStatus
+} from '../../types/types';
+import styles from '../../styles/TransactionsList.module.css';
 import SearchInput from "../../component/common/SearchInput/SearchInput";
+import SelectInput from "../../component/common/SelectInput/SelectInput";
 import ActionButton from "../../component/common/ActionButton/ActionButton";
 
-import styles from '../../styles/ISOMessagesList.module.css';
-
+// Define all possible columns
 const allColumns = [
-    { id: 'msgId', label: 'Message ID' },
-    { id: 'messageType', label: 'Type' },
-    { id: 'status', label: 'Status' },
-    { id: 'date', label: 'Date' },
-    { id: 'fromBIC', label: 'From BIC' },
-    { id: 'toBIC', label: 'To BIC' },
     { id: 'txId', label: 'Transaction ID' },
+    { id: 'type', label: 'Transaction type' },
+    { id: 'isoMessageId', label: 'ISO Message ID' },
+    { id: 'fromBIC', label: 'Debtor Agent BIC' },
+    { id: 'localInstrument', label: 'Local Instrument' },
+    { id: 'categoryPurpose', label: 'Category Purpose' },
     { id: 'endToEndId', label: 'End To End ID' },
-    { id: 'bizMsgIdr', label: 'Business Msg ID' },
-    { id: 'msgDefIdr', label: 'Msg Definition ID' },
-    { id: 'reason', label: 'Reason' },
-    { id: 'additionalInfo', label: 'Additional Info' },
+    { id: 'amount', label: 'Amount' },
+    { id: 'currency', label: 'Currency' },
+    { id: 'debtorName', label: 'Debtor Name' },
+    { id: 'debtorAccount', label: 'Debtor Account' },
+    { id: 'debtorAccountType', label: 'Debtor Account Type' },
+    { id: 'debtorAgentBIC', label: 'Debtor Agent BIC' },
+    { id: 'debtorIssuer', label: 'Debtor Issuer' },
+    { id: 'creditorName', label: 'Creditor Name' },
+    { id: 'creditorAccount', label: 'Creditor Account' },
+    { id: 'creditorAccountType', label: 'Creditor Account Type' },
+    { id: 'creditorAgentBIC', label: 'Creditor Agent BIC' },
+    { id: 'creditorIssuer', label: 'Creditor Issuer' },
+    { id: 'remittanceInformation', label: 'Remittance Information' },
 ];
 
-const ISOMessagesList = () => {
+const TransactionsList = () => {
     const {
-        messages,
+        transactions,
         loading,
         error,
         query,
         setQuery,
         refetch
-    } = useISOMessages();
+    } = useTransactions();
 
+    // const [searchTerm, setSearchTerm] = useState('');
     const [showColumnSettings, setShowColumnSettings] = useState(false);
     const [visibleColumns, setVisibleColumns] = useState<string[]>([
-        'msgId', 'messageType', 'status', 'date', 'fromBIC', 'toBIC', 'txId'
+        'txId', 'type', 'amount', 'currency', 'debtorAccount', 'creditorAccount'
     ]);
 
-    const toggleColumnVisibility = (columnId: string) => {
-        setVisibleColumns(prev =>
-            prev.includes(columnId)
-                ? prev.filter(id => id !== columnId)
-                : [...prev, columnId]
-        );
-    };
     const [filters, setFilters] = useState({
-        msgId: '',
-        bizMsgIdr: '',
-        msgDefIdr: '',
-        status: '',
-        type: '',
-        fromDate: '',
-        toDate: ''
+        ISOMessageId: '',
+        TransactionId: '',
+        EndToEndId: '',
+        LocalInstrument: '',
+        CategoryPurpose: '',
+        DebtorAccount: '',
+        CreditorAccount: '',
+        Status:"",
+        FromDate: '',
+        ToDate: ''
     });
 
     const handleFilterChange = (field: keyof typeof filters, value: string) => {
@@ -72,40 +73,42 @@ const ISOMessagesList = () => {
         });
     };
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleString();
+    const toggleColumnVisibility = (columnId: string) => {
+        setVisibleColumns(prev =>
+            prev.includes(columnId)
+                ? prev.filter(id => id !== columnId)
+                : [...prev, columnId]
+        );
     };
 
-    const getStatusClass = (status: TransactionStatus) => {
+    const getStatusClass = (status: TransactionType) => {
         switch(status) {
-            case TransactionStatus.Success: return styles.success;
-            case TransactionStatus.Failed: return styles.error;
-            case TransactionStatus.Pending: return styles.warning;
+            case TransactionType.Deposit: return styles.transactionDeposit;
+            case TransactionType.Withdrawal: return styles.Withdrawal;
+            case TransactionType.ReturnDeposit: return styles.ReturnDeposit;
+            case TransactionType.ReturnWithdrawal: return styles.transactionReturnWithdrawal;
             default: return '';
         }
     };
 
-    const renderCellContent = (message: ISOMessage, columnId: string) => {
+    const renderCellContent = (transaction: Transaction, columnId: string) => {
         switch(columnId) {
-            case 'messageType':
-                return getISOMessageTypeText(message.messageType);
-            case 'status':
+            case 'amount':
+                return transaction.amount ? `${transaction.amount} ${transaction.currency || ''}` : '-';
+            case 'type':
                 return (
-                    <span className={`${styles.statusBadge} ${getStatusClass(message.status)}`}>
-            {getTransactionStatusText(message.status)}
-          </span>
-                );
-            case 'date':
-                return formatDate(message.date);
+                    <span className={`${styles.statusBadge} ${getStatusClass(transaction.type)}`}>
+            {getTransactionStatusType(transaction.type)}
+          </span>);
             default:
-                return message[columnId as keyof ISOMessage] || '-';
+                return transaction[columnId as keyof Transaction] || '-';
         }
     };
 
     return (
         <div className={styles.container}>
             <div className={styles.header}>
-                <h2 className={styles.title}>ISO Messages</h2>
+                <h2 className={styles.title}>Transactions</h2>
                 <button
                     onClick={() => setShowColumnSettings(!showColumnSettings)}
                     className={styles.settingsButton}
@@ -121,32 +124,51 @@ const ISOMessagesList = () => {
             )}
 
             <div className={styles.searchContainer}>
-                {/* First Line - Search Inputs Only */}
                 <div className={styles.searchInputRow}>
                     <SearchInput
-                        value={filters.msgId}
-                        onChange={(e) => handleFilterChange('msgId', e.target.value)}
-                        placeholder="Message ID"
+                        placeholder="Search by Transaction ID"
+                        value={filters.TransactionId}
+                        onChange={(e) => handleFilterChange('TransactionId', e.target.value)}
                     />
                     <SearchInput
-                        value={filters.bizMsgIdr}
-                        onChange={(e) => handleFilterChange('bizMsgIdr', e.target.value)}
-                        placeholder="Business Msg ID"
+                        placeholder="Search by ISO Message ID"
+                        value={filters.ISOMessageId}
+                        onChange={(e) => handleFilterChange('ISOMessageId', e.target.value)}
                     />
                     <SearchInput
-                        value={filters.msgDefIdr}
-                        onChange={(e) => handleFilterChange('msgDefIdr', e.target.value)}
-                        placeholder="Msg Definition ID"
+                        placeholder="Search by End-to-End ID"
+                        value={filters.EndToEndId}
+                        onChange={(e) => handleFilterChange('EndToEndId', e.target.value)}
+                    />
+                    <SearchInput
+                        placeholder="Search by Local Instrument"
+                        value={filters.LocalInstrument}
+                        onChange={(e) => handleFilterChange('LocalInstrument', e.target.value)}
                     />
                 </div>
-
-                {/* Second Line - Selects, Dates, and Button */}
+                <div className={styles.searchInputRow}>
+                    <SearchInput
+                        placeholder="Search by Category Purpose"
+                        value={filters.CategoryPurpose}
+                        onChange={(e) => handleFilterChange('CategoryPurpose', e.target.value)}
+                    />
+                    <SearchInput
+                        placeholder="Search by Debtor Account"
+                        value={filters.DebtorAccount}
+                        onChange={(e) => handleFilterChange('DebtorAccount', e.target.value)}
+                    />
+                    <SearchInput
+                        placeholder="Search by Creditor Account"
+                        value={filters.CreditorAccount}
+                        onChange={(e) => handleFilterChange('CreditorAccount', e.target.value)}
+                    />
+                </div>
                 <div className={styles.filterControlsRow}>
                     <div className={styles.selectGroup}>
                         <SelectInput
                             label=""
-                            value={filters.status}
-                            onChange={(e) => handleFilterChange('status', e.target.value)}
+                            value={filters.Status}
+                            onChange={(e) => handleFilterChange('Status', e.target.value)}
                             options={[
                                 { value: '', label: 'All Statuses' },
                                 ...Object.entries(TransactionStatus)
@@ -158,21 +180,6 @@ const ISOMessagesList = () => {
                             ]}
                             placeholder="-- Select a Status --"
                         />
-                        <SelectInput
-                            label=""
-                            value={filters.type}
-                            onChange={(e) => handleFilterChange('type', e.target.value)}
-                            options={[
-                                { value: '', label: 'All Types' },
-                                ...Object.entries(ISOMessageType)
-                                    .filter(([key]) => isNaN(Number(key)))
-                                    .map(([key, value]) => ({
-                                        value: String(value),
-                                        label: key
-                                    }))
-                            ]}
-                            placeholder="-- Select a Type --"
-                        />
                     </div>
 
                     <div className={styles.dateGroup}>
@@ -180,16 +187,18 @@ const ISOMessagesList = () => {
                             <label>From:</label>
                             <input
                                 type="date"
-                                value={filters.fromDate}
-                                onChange={(e) => handleFilterChange('fromDate', e.target.value)}
+                                value={query.FromDate || ''}
+                                onChange={(e) => handleFilterChange('FromDate', e.target.value)}
+                                className={styles.datePicker}
                             />
                         </div>
                         <div className={styles.dateInput}>
                             <label>To:</label>
                             <input
                                 type="date"
-                                value={filters.toDate}
-                                onChange={(e) => handleFilterChange('toDate', e.target.value)}
+                                value={query.ToDate || ''}
+                                onChange={(e) => handleFilterChange('ToDate', e.target.value)}
+                                className={styles.datePicker}
                             />
                         </div>
                     </div>
@@ -227,7 +236,7 @@ const ISOMessagesList = () => {
             )}
 
             {loading && query.page === 0 ? (
-                <div className={styles.loadingMessage}>Loading messages...</div>
+                <div className={styles.loadingMessage}>Loading transactions...</div>
             ) : (
                 <>
                     <div className={styles.tableWrapper}>
@@ -241,11 +250,11 @@ const ISOMessagesList = () => {
                             </tr>
                             </thead>
                             <tbody>
-                            {messages.map((message) => (
-                                <tr key={message.id} className={styles.tableRow}>
+                            {transactions.map((transaction) => (
+                                <tr key={transaction.id} className={styles.tableRow}>
                                     {visibleColumns.map(columnId => (
-                                        <td key={`${message.id}-${columnId}`}>
-                                            {renderCellContent(message, columnId)}
+                                        <td key={`${transaction.id}-${columnId}`}>
+                                            {renderCellContent(transaction, columnId)}
                                         </td>
                                     ))}
                                 </tr>
@@ -265,7 +274,7 @@ const ISOMessagesList = () => {
                         <span>Page {query.page + 1}</span>
                         <button
                             onClick={() => setQuery({ page: query.page + 1 })}
-                            disabled={messages.length < query.pageSize || loading}
+                            disabled={transactions.length < query.pageSize || loading}
                             className={styles.paginationButton}
                         >
                             Next
@@ -275,10 +284,10 @@ const ISOMessagesList = () => {
             )}
 
             {loading && query.page > 0 && (
-                <div className={styles.loadingMessage}>Loading more messages...</div>
+                <div className={styles.loadingMessage}>Loading more transactions...</div>
             )}
         </div>
     );
 };
 
-export default ISOMessagesList;
+export default TransactionsList;
