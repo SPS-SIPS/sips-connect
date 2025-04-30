@@ -1,5 +1,3 @@
-export type EndpointType = 'transactions' | 'messages';
-
 export interface BaseQuery {
     page: number;
     pageSize: number;
@@ -7,16 +5,16 @@ export interface BaseQuery {
 
 // Query types
 export interface TransactionQuery extends BaseQuery {
-    isoMessageId?: number;
-    transactionId?: string;
-    endToEndId?: string;
-    localInstrument?: string;
-    categoryPurpose?: string;
-    debtorAccount?: string;
-    creditorAccount?: string;
-    status?: TransactionStatus;
-    fromDate?: string;
-    toDate?: string;
+    ISOMessageId?: number;
+    TransactionId?: string;
+    EndToEndId?: string;
+    LocalInstrument?: string;
+    CategoryPurpose?: string;
+    DebtorAccount?: string;
+    CreditorAccount?: string;
+    Status?: TransactionStatus;
+    FromDate?: string;
+    ToDate?: string;
 }
 
 export interface MessageQuery extends BaseQuery {
@@ -102,6 +100,10 @@ export const getISOMessageTypeText = (type: ISOMessageType): string => {
 
 export const getTransactionStatusText = (status: TransactionStatus): string => {
     return TransactionStatus[status] ?? 'Unknown';
+};
+
+export const getTransactionStatusType = (type: TransactionType): string => {
+    return TransactionType[type] ?? 'Unknown';
 };
 
 export type DataItem = {
