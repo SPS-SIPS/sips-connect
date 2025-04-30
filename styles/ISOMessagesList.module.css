@@ -84,7 +84,7 @@
     gap: var(--spacing-md);
     align-items: center;
     flex: 1;
-    min-width: 300px;
+    /*min-width: 300px;*/
 }
 
 .dateInput {
