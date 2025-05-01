@@ -6,14 +6,15 @@ import Input from '../../component/common/Input/Input';
 import Checkbox from '../../component/common/Checkbox/Checkbox';
 import styles from '../../styles/ConfigurationsForm.module.css';
 import { AxiosError } from 'axios';
-import SelectInput from '../../component/common/SelectInput/SelectInput';
 import RoleGuard from "../../auth/RoleGuard";
+import MultiSelectDropdown, {OptionType} from "../../component/common/MultiSelectDropdown/MultiSelectDropdown";
 
 const XadesConfigForm = () => {
     const { getConfigurations, updateConfigurations } = useConfigurationsXade();
-    const [selectedAlgorithm, setSelectedAlgorithm] = useState<string>('');
     const [config, setConfig] = useState<ConfigurationsXade | null>(null);
     const [loading, setLoading] = useState(true);
+    const [selectedOptions, setSelectedOptions] = useState<OptionType[]>([]);
+    const [availableAlgorithms, setAvailableAlgorithms] = useState<OptionType[]>([]);
     const [showPassphrase, setShowPassphrase] = useState(false);
     const [modal, setModal] = useState({
         show: false,
@@ -35,6 +36,19 @@ const XadesConfigForm = () => {
             try {
                 const data = await getConfigurations();
                 setConfig(data);
+
+                // Transform available algorithms from API to OptionType
+                const algorithmOptions = data.algorithms.map(algo => ({
+                    value: algo,
+                    label: algo
+                }));
+                setAvailableAlgorithms(algorithmOptions);
+
+                // Set initially selected algorithms
+                const initialSelected = algorithmOptions.filter(option =>
+                    data.algorithms.includes(option.value)
+                );
+                setSelectedOptions(initialSelected);
             } catch (error) {
                 setErrorMessage(handleErrorMessage(error, 'Failed to load configurations'));
             } finally {
@@ -74,6 +88,19 @@ const XadesConfigForm = () => {
         }
     };
 
+
+    const handleAlgorithmChange = (selectedOptions: OptionType[] | null) => {
+        if (!config) return;
+
+        const selected = selectedOptions || [];
+        setSelectedOptions(selected);
+
+        setConfig({
+            ...config,
+            algorithms: selected.map(option => option.value)
+        });
+    };
+
     if (errorMessage) return <div className={styles.errorContainer}>{errorMessage}</div>;
 
     return (
@@ -108,12 +135,12 @@ const XadesConfigForm = () => {
                             />
                         </div>
                         <Input label="Chain Path" name="chainPath" type="text" value={cfg.chainPath} onChange={onChange} />
-                        <SelectInput
+
+                        <MultiSelectDropdown
                             label="Algorithm"
-                            name="algorithm"
-                            value={selectedAlgorithm}
-                            onChange={(e) => setSelectedAlgorithm(e.target.value)}
-                            options={cfg.algorithms.map(algo => ({ value: algo, label: algo }))}
+                            value={selectedOptions}
+                            onChange={handleAlgorithmChange}
+                            options={availableAlgorithms}
                             required
                         />
                         <Input label="Verification Window (minutes)" name="verificationWindowMinutes" type="number" value={cfg.verificationWindowMinutes.toString()} onChange={onChange} min={1} />
