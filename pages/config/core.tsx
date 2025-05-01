@@ -8,6 +8,7 @@ import Checkbox from '../../component/common/Checkbox/Checkbox';
 import styles from '../../styles/ConfigurationsForm.module.css';
 import ConfigFormWrapper from "../../component/ConfigFormWrapper/ConfigFormWrapper";
 import {AxiosError} from "axios";
+import RoleGuard from "../../auth/RoleGuard";
 
 const ISO20022ConfigForm = () => {
     const {getConfigurations, updateConfigurations} = useConfigurationsCore();
@@ -83,7 +84,7 @@ const ISO20022ConfigForm = () => {
     );
 
     return (
-        <>
+        <RoleGuard allowedRoles={['configuration']}>
             <Head>
                 <title>System Configuration | SPS</title>
             </Head>
@@ -197,7 +198,7 @@ const ISO20022ConfigForm = () => {
                     onClose: () => setModal({show: false, title: '', message: '', error: false}),
                 }}
             />
-        </>
+        </RoleGuard>
     );
 };
 

@@ -3,6 +3,7 @@ import {QRParser} from "../../../../component/QRParser/QRParser";
 import {useAuthentication} from "../../../../auth/AuthProvider";
 import {makeApiRequest} from "../../../../utils/apiService";
 import { baseURL } from "../../../../constants";
+import RoleGuard from "../../../../auth/RoleGuard";
 
 const MerchantQRParser: React.FC = () => {
     const { authToken } = useAuthentication();
@@ -17,11 +18,13 @@ const MerchantQRParser: React.FC = () => {
     };
 
     return (
-        <QRParser
-            title="Merchant QR Code Parser"
-            subtitle="Parse merchant QR codes to view transaction details"
-            onParse={handleParse}
-        />
+        <RoleGuard allowedRoles={['som_qr']}>
+            <QRParser
+                title="Merchant QR Code Parser"
+                subtitle="Parse merchant QR codes to view transaction details"
+                onParse={handleParse}
+            />
+        </RoleGuard>
     );
 };
 

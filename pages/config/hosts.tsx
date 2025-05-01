@@ -6,6 +6,7 @@ import Input from '../../component/common/Input/Input';
 import styles from '../../styles/ConfigurationsForm.module.css';
 import { AxiosError } from 'axios';
 import ActionButton from '../../component/common/ActionButton/ActionButton';
+import RoleGuard from "../../auth/RoleGuard";
 
 const HostsConfigForm = () => {
     const { getHosts, updateHosts } = useConfigurationsHosts();
@@ -83,7 +84,7 @@ const HostsConfigForm = () => {
     if (errorMessage) return <div className={styles.errorContainer}>{errorMessage}</div>;
 
     return (
-        <>
+        <RoleGuard allowedRoles={['configuration']}>
             <Head>
                 <title>Hosts Configuration | SPS</title>
             </Head>
@@ -129,7 +130,7 @@ const HostsConfigForm = () => {
                     onClose: () => setModal({ show: false, title: '', message: '', error: false }),
                 }}
             />
-        </>
+        </RoleGuard>
     );
 };
 

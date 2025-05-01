@@ -6,6 +6,7 @@ import ConfigFormWrapper from '../../component/ConfigFormWrapper/ConfigFormWrapp
 import { AxiosError } from 'axios';
 import ActionButton from "../../component/common/ActionButton/ActionButton";
 import styles from '../../styles/ConfigurationsForm.module.css';
+import RoleGuard from "../../auth/RoleGuard";
 
 const OriginsConfigForm = () => {
     const { getConfigurations, updateConfigurations } = useConfigurationsOrigins();
@@ -82,7 +83,7 @@ const OriginsConfigForm = () => {
     if (errorMessage) return <div className={styles.errorContainer}>{errorMessage}</div>;
 
     return (
-        <>
+        <RoleGuard allowedRoles={['configuration']}>
             <Head>
                 <title>Origins Configuration | SPS</title>
             </Head>
@@ -124,7 +125,7 @@ const OriginsConfigForm = () => {
                     onClose: () => setModal({ show: false, title: '', message: '', error: false }),
                 }}
             />
-        </>
+        </RoleGuard>
     );
 };
 

@@ -6,6 +6,7 @@ import useEndpoints from "../api/hooks/useEndpoints";
 import SelectInput from "../component/common/SelectInput/SelectInput";
 import RequestForm from "../component/RequestForm/RequestForm";
 import Head from "next/head";
+import RoleGuard from "../auth/RoleGuard";
 
 const RequestBuilder = () => {
     const { endpoints, loading, error } = useEndpoints();
@@ -37,7 +38,7 @@ const RequestBuilder = () => {
         }));
 
     return (
-       <>
+       <RoleGuard allowedRoles={['gateway']}>
            <Head>
                <title>API Request JSON Builder</title>
                <meta name="description" content="Build and preview API request JSON payloads. Customize your API requests with ease and generate properly formatted request data." />
@@ -93,7 +94,7 @@ const RequestBuilder = () => {
                    </>
                )}
            </div>
-       </>
+       </RoleGuard>
     );
 };
 

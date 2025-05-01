@@ -2,11 +2,10 @@ import Head from "next/head";
 import Link from "next/link";
 import styles from "../styles/NotFound.module.css";
 import React from "react";
-import ProtectedRoute from "../component/common/ProtectedRoute";
 
 export default function NotFoundPage() {
     return (
-        <ProtectedRoute>
+        <>
             <Head>
                 <title>404 - Page Not Found</title>
                 <meta name="description" content="The page you're looking for doesn't exist. Return to the homepage." />
@@ -23,6 +22,6 @@ export default function NotFoundPage() {
                     </Link>
                 </div>
             </div>
-        </ProtectedRoute>
+        </>
     );
 }

@@ -7,6 +7,7 @@ import Checkbox from '../../component/common/Checkbox/Checkbox';
 import styles from '../../styles/ConfigurationsForm.module.css';
 import { AxiosError } from 'axios';
 import SelectInput from '../../component/common/SelectInput/SelectInput';
+import RoleGuard from "../../auth/RoleGuard";
 
 const XadesConfigForm = () => {
     const { getConfigurations, updateConfigurations } = useConfigurationsXade();
@@ -76,7 +77,7 @@ const XadesConfigForm = () => {
     if (errorMessage) return <div className={styles.errorContainer}>{errorMessage}</div>;
 
     return (
-        <>
+        <RoleGuard allowedRoles={['configuration']}>
             <Head>
                 <title>Xades Configuration | SPS</title>
             </Head>
@@ -125,7 +126,7 @@ const XadesConfigForm = () => {
                     onClose: () => setModal({ show: false, title: '', message: '', error: false }),
                 }}
             />
-        </>
+        </RoleGuard>
     );
 };
 
