@@ -26,7 +26,9 @@ export const Layout = ({children}: LayoutProps) => {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
-
+    const handleSidebarToggle = () => {
+        setIsSidebarOpen(!isSidebarOpen);
+    };
     return (
         <div className={styles.layout}>
             <div className={styles.navbarContainer}>
@@ -37,15 +39,15 @@ export const Layout = ({children}: LayoutProps) => {
             </div>
 
             <div className={styles.contentContainer}>
-                {isSidebarOpen ? (
-                    <div className={`${styles.sidebarContainer} ${isSidebarOpen ? styles.open : ''}`}>
-                        <Sidebar
-                            isOpen={isSidebarOpen}
-                            onClose={() => setIsSidebarOpen(false)}
-                            isMobile={isMobile}
-                        />
-                    </div>
-                ) : ""}
+
+                <div className={styles.sidebarContainer}>
+                    <Sidebar
+                        isOpen={isSidebarOpen}
+                        onClose={handleSidebarToggle}
+                        isMobile={isMobile}
+                    />
+                </div>
+
                 <main className={styles.mainContent}>
                     {children}
                 </main>

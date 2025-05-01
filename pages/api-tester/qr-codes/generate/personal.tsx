@@ -1,6 +1,8 @@
 import QRForm from "../../../../component/QRForm/QRForm";
 import {currencyOptions} from "../../../../data/currencyOptions";
 import { baseURL } from "../../../../constants";
+import ProtectedRoute from "../../../../component/common/ProtectedRoute";
+import RoleGuard from "../../../../auth/RoleGuard";
 
 const Personal = () => {
     const personalInitialData = {
@@ -51,7 +53,7 @@ const Personal = () => {
     ];
 
     return (
-        <div>
+            <RoleGuard allowedRoles={['som_qr']}>
             <QRForm
                 title="Personal Payment QR Generator"
                 subtitle="Fill in payment details to generate a personal QR code"
@@ -59,7 +61,7 @@ const Personal = () => {
                 initialData={personalInitialData}
                 formFields={personalFormFields}
             />
-        </div>
+            </RoleGuard>
     )
 }
 

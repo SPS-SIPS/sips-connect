@@ -3,6 +3,7 @@ import {useAuthentication} from "../../../../auth/AuthProvider";
 import {QRParser} from "../../../../component/QRParser/QRParser";
 import {makeApiRequest} from "../../../../utils/apiService";
 import { baseURL } from "../../../../constants";
+import RoleGuard from "../../../../auth/RoleGuard";
 
  const PersonalQRParser: React.FC = () => {
     const { authToken } = useAuthentication();
@@ -17,11 +18,13 @@ import { baseURL } from "../../../../constants";
     };
 
     return (
-        <QRParser
-            title="Personal QR Code Parser"
-            subtitle="Parse personal payment QR codes to view transaction details"
-            onParse={handleParse}
-      />
+        <RoleGuard allowedRoles={['som_qr']}>
+            <QRParser
+                title="Personal QR Code Parser"
+                subtitle="Parse personal payment QR codes to view transaction details"
+                onParse={handleParse}
+            />
+        </RoleGuard>
     );
 };
  export default PersonalQRParser;

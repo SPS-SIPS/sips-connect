@@ -1,14 +1,15 @@
 import ApiRequestTester from "../../component/ApiRequestTester/ApiRequestTester";
+import RoleGuard from "../../auth/RoleGuard";
 
 const Verify = () => {
   return (
-      <div>
+      <RoleGuard allowedRoles={['gateway']}>
           <ApiRequestTester
               title={"API Verification Request Tester "}
               placeholder={"https://example.com/api/v1/Gateway/Status"}
               selectedRequest={"VerificationRequest"}  // ReturnRequest
           />
-      </div>
+      </RoleGuard>
   )
 }
 export default Verify;

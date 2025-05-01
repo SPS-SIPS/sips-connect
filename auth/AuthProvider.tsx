@@ -9,6 +9,7 @@ type AuthContextType = {
     logout: () => void;
     userName: string | null;
     authToken: string | null;
+    roles: string[];
 };
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -19,6 +20,7 @@ export const KeycloakAuthProvider = ({ children }: { children: React.ReactNode }
     const [keycloak, setKeycloak] = useState<Keycloak | null>(null);
     const [userName, setUserName] = useState<string | null>(null);
     const [authToken, setAuthToken] = useState<string | null>(null);
+    const [roles, setRoles] = useState<string[]>([]);
 
     useEffect(() => {
         const initKeycloak = async () => {
@@ -37,6 +39,7 @@ export const KeycloakAuthProvider = ({ children }: { children: React.ReactNode }
                 setIsAuthenticated(authenticated);
                 setKeycloak(keycloakInstance);
 
+
                 if (!authenticated) {
                     keycloakInstance.login();
                 }
@@ -45,6 +48,11 @@ export const KeycloakAuthProvider = ({ children }: { children: React.ReactNode }
                     const parsedToken = keycloakInstance.tokenParsed;
                     setUserName(parsedToken?.preferred_username || null);
                     setAuthToken(keycloakInstance.token || null);
+
+                    // const clientId = keycloakInstance.clientId;
+                    const clientRoles = parsedToken?.resource_access?.[process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID!]?.roles || [];
+                    const realmRoles = parsedToken?.realm_access?.roles || [];
+                    setRoles([...clientRoles, ...realmRoles]);
                 }
 
 
@@ -64,7 +72,7 @@ export const KeycloakAuthProvider = ({ children }: { children: React.ReactNode }
     const logout = () => keycloak?.logout();
 
     return (
-        <AuthContext.Provider value={{ isAuthenticated, isLoading, keycloak, login, logout, userName, authToken }}>
+        <AuthContext.Provider value={{ isAuthenticated, isLoading, keycloak, login, logout, userName, authToken,roles }}>
             {children}
         </AuthContext.Provider>
 

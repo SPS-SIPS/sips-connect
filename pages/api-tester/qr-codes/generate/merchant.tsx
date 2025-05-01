@@ -2,6 +2,7 @@ import QRForm from "../../../../component/QRForm/QRForm";
 import {currencyOptions} from "../../../../data/currencyOptions";
 import {mccOptions} from "../../../../data/mccOptions";
 import { baseURL } from "../../../../constants";
+import RoleGuard from "../../../../auth/RoleGuard";
 
 const Merchant = () => {
     const merchantInitialData = {
@@ -61,7 +62,7 @@ const Merchant = () => {
         },
     ];
   return(
-      <div>
+      <RoleGuard allowedRoles={['som_qr']}>
           <QRForm
               title="Merchant QR Code Generator"
               subtitle="Fill in merchant details to generate a payment QR code"
@@ -69,7 +70,7 @@ const Merchant = () => {
               initialData={merchantInitialData}
               formFields={merchantFormFields}
           />
-      </div>
+      </RoleGuard>
   )
 }
 export default Merchant;

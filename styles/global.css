@@ -56,6 +56,7 @@ img {
     --color-success-background: #d4edda;
     --color-error-dark: #b02a37;    /* 20% darker than error */
     --color-white: #ffffff;         /* Pure white */
+    --color-background-accent: #f5f8fa;
 
     /* Text Colors */
     --color-text-primary: #2d3748;
@@ -82,6 +83,7 @@ img {
     --color-border-dark: #cbd5e0;
 
     /* Spacing */
+    --spacing-xxs: 0.125rem;
     --spacing-xs: 0.25rem;
     --spacing-sm: 0.5rem;
     --spacing-md: 0.75rem;
@@ -115,9 +117,20 @@ img {
     --font-size-xxl: 2rem;
 
     /* Z-index */
-    --z-index-modal: 1000;
+    /*--z-index-modal: 1000;*/
     --z-index-loading: 9999;
-    --z-index-dropdown: 500;
+    /*--z-index-dropdown: 500;*/
+
+    --z-index-base: 1;
+    --z-index-dropdown: 100;
+    --z-index-sticky: 200;
+    --z-index-fixed: 300;
+    --z-index-modal: 500;
+    --z-index-popover: 600;
+    --z-index-tooltip: 700;
+    --z-index-toast: 800;
+    --z-index-overlay: 900;
+    --z-index-max: 9999;
 
     /* Breakpoints */
     --breakpoint-mobile: 768px;
@@ -132,4 +145,6 @@ img {
 
     --color-pending: #ffc107;
     --font-mono: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+
+    --letter-spacing-wide: 0.025em;
 }

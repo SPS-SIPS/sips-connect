@@ -6,6 +6,7 @@ import styles from '../../styles/ConfigurationsForm.module.css';
 import ConfigFormWrapper from '../../component/ConfigFormWrapper/ConfigFormWrapper';
 import { AxiosError } from 'axios';
 import useConfigurationsEmv, {ConfigurationsEmv} from "../../api/hooks/useConfigurationsEmv";
+import RoleGuard from "../../auth/RoleGuard";
 
 const EmvConfigForm = () => {
     const { getConfigurations, updateConfigurations } = useConfigurationsEmv();
@@ -82,7 +83,7 @@ const EmvConfigForm = () => {
     if (errorMessage) return <div className={styles.errorContainer}>{errorMessage}</div>;
 
     return (
-        <>
+        <RoleGuard allowedRoles={['configuration']}>
             <Head>
                 <title>EMV Configuration | SPS</title>
             </Head>
@@ -167,7 +168,7 @@ const EmvConfigForm = () => {
                     onClose: () => setModal({ show: false, title: '', message: '', error: false }),
                 }}
             />
-        </>
+        </RoleGuard>
     );
 };
 
