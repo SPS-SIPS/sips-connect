@@ -14,7 +14,6 @@ const Profile: React.FC = () => {
             if (keycloak?.authenticated) {
                 try {
                     const info = await keycloak.loadUserInfo();
-                    console.log(info);
                     setUserInfo(info);
                 } catch (error) {
                     console.error("Failed to load user info", error);
