@@ -20,7 +20,7 @@ const useAxiosPrivate = () => {
                     config.headers.Authorization = `Bearer ${keycloak.token}`;
                 } catch (error) {
                     console.error("Failed to refresh token:", error);
-                    keycloak.logout();
+                    await keycloak.logout();
                     throw error;
                 }
 
@@ -43,7 +43,7 @@ const useAxiosPrivate = () => {
                         return axiosPrivate(prevRequest);
                     } catch (refreshError) {
                         console.error("Token refresh failed:", refreshError);
-                        keycloak.logout();
+                        await keycloak.logout();
                         return Promise.reject(refreshError);
                     }
                 }
