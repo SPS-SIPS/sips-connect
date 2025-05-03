@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
+using System.Text;              // added for Encoding
 using static SIPS.Connect.KnownRoles;
+
 namespace SIPS.Connect.Controllers;
 
 [ApiController]
@@ -167,7 +169,13 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
                 AdditionalInfo = t.AdditionalInfo,
                 Date = t.Date,
                 FromBIC = t.FromBIC,
-                ToBIC = t.ToBIC
+                ToBIC = t.ToBIC,
+                Request = t.Message != null
+                    ? Encoding.UTF8.GetString(t.Message)
+                    : string.Empty,                     // decode byte[] → string
+                Response = t.Response != null
+                    ? Encoding.UTF8.GetString(t.Response)
+                    : string.Empty,                     // decode byte[] → string
             })
             .OrderByDescending(t => t.Id)
             .Skip(request.Page * request.PageSize)
@@ -282,4 +290,8 @@ public sealed class ISOMessageDto
     public string FromBIC { get; set; } = string.Empty;
 
     public string ToBIC { get; set; } = string.Empty;
+
+    public string Request { get; set; } = string.Empty;
+
+    public string Response { get; set; } = string.Empty;
 }
