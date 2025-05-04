@@ -15,6 +15,7 @@ import ActionButton from "../../component/common/ActionButton/ActionButton";
 
 import styles from '../../styles/ISOMessagesList.module.css';
 import RoleGuard from "../../auth/RoleGuard";
+import XmlViewerModal from "../../component/XmlViewerModal/XmlViewerModal";
 
 const allColumns = [
     { id: 'msgId', label: 'Message ID' },
@@ -29,6 +30,8 @@ const allColumns = [
     { id: 'msgDefIdr', label: 'Msg Definition ID' },
     { id: 'reason', label: 'Reason' },
     { id: 'additionalInfo', label: 'Additional Info' },
+    { id: 'request', label: 'Request XML' },
+    { id: 'response', label: 'Response XML' },
 ];
 
 const ISOMessagesList = () => {
@@ -42,6 +45,7 @@ const ISOMessagesList = () => {
     } = useISOMessages();
 
     const [showColumnSettings, setShowColumnSettings] = useState(false);
+    const [selectedXml, setSelectedXml] = useState<{ content: string; title: string } | null>(null);
     const [visibleColumns, setVisibleColumns] = useState<string[]>([
         'msgId', 'messageType', 'status', 'date', 'fromBIC', 'toBIC', 'txId'
     ]);
@@ -98,6 +102,21 @@ const ISOMessagesList = () => {
                 );
             case 'date':
                 return formatDate(message.date);
+            case 'request':
+            case 'response':
+                return (
+                    <button
+                        onClick={() => {
+                            setSelectedXml({
+                                content: message[columnId as keyof ISOMessage] as string,
+                                title: `${columnId} - ${message.msgId}`
+                            });
+                        }}
+                        className={styles.xmlButton}
+                    >
+                        View XML
+                    </button>
+                );
             default:
                 return message[columnId as keyof ISOMessage] || '-';
         }
@@ -278,6 +297,13 @@ const ISOMessagesList = () => {
 
            {loading && query.page > 0 && (
                <div className={styles.loadingMessage}>Loading more messages...</div>
+           )}
+           {selectedXml && (
+               <XmlViewerModal
+                   content={selectedXml.content}
+                   title={selectedXml.title}
+                   onClose={() => setSelectedXml(null)}
+               />
            )}
        </div>
    </RoleGuard>
