@@ -118,7 +118,7 @@ export type DataItem = {
 export interface APIResponse {
     data: unknown;
     status: number;
-    headers: Record<string, string>;
+    success: boolean;
 }
 
 export interface APIError {

@@ -1,18 +1,15 @@
 import React from 'react';
-import {useAuthentication} from "../../../../auth/AuthProvider";
 import {QRParser} from "../../../../component/QRParser/QRParser";
-import {makeApiRequest} from "../../../../utils/apiService";
-import { baseURL } from "../../../../constants";
+import {useApiRequest} from "../../../../utils/apiService";
+import {baseURL} from "../../../../constants/constants";
 import RoleGuard from "../../../../auth/RoleGuard";
 
- const PersonalQRParser: React.FC = () => {
-    const { authToken } = useAuthentication();
-
+const PersonalQRParser: React.FC = () => {
+    const {makeApiRequest} = useApiRequest();
     const handleParse = async (qrCode: string) => {
         const response = await makeApiRequest({
             url: `${baseURL}/api/v1/somqr/ParsePersonQR?code=${encodeURIComponent(qrCode)}`,
-            method: 'GET',
-            token: authToken!,
+            method: 'get',
         });
         return response.data;
     };
@@ -23,8 +20,9 @@ import RoleGuard from "../../../../auth/RoleGuard";
                 title="Personal QR Code Parser"
                 subtitle="Parse personal payment QR codes to view transaction details"
                 onParse={handleParse}
+                qrType={'personal'}
             />
         </RoleGuard>
     );
 };
- export default PersonalQRParser;
+export default PersonalQRParser;

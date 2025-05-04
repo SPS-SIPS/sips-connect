@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import useAxiosPrivate from "./useAxiosPrivate";
 
-type FieldMapping = {
+export type FieldMapping = {
     internalField: string;
     userField: string;
     type: string;
@@ -11,7 +11,7 @@ type Endpoint = {
     fieldMappings: FieldMapping[];
 };
 
-type EndpointsData = {
+export type EndpointsData = {
     [key: string]: Endpoint;
 };
 
@@ -25,8 +25,6 @@ const useEndpoints = () => {
         const fetchEndpoints = async () => {
             try {
                 const response = await axiosPrivate.get<EndpointsData>('/api/v1/Adapter');
-                // const response = await axiosPrivate.get<EndpointsData>('/api/v1/Configurations/Core');
-                console.log(response);
                 setEndpoints(response.data);
                 setLoading(false);
             } catch (err: unknown) {

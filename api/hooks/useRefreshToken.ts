@@ -1,4 +1,4 @@
-import {apiAuth} from "../../constants";
+import {apiAuth} from "../../constants/constants";
 const useRefreshToken = () => {
     // For now, return the hardcoded mock token
     const refresh = async () => {
