@@ -18,6 +18,8 @@
     - [Incoming Messages](#incoming-messages)
       - [POST `/api/v1/incoming`](#post-apiv1incoming)
       - [POST `/api/v1/incoming`](#post-apiv1incoming-1)
+      - [POST `/api/v1/incoming`](#post-apiv1incoming-2)
+      - [POST `/api/v1/incoming`](#post-apiv1incoming-3)
     - [SomQR Merchant](#somqr-merchant)
       - [POST `/api/v1/somqr/GenerateMerchantQR`](#post-apiv1somqrgeneratemerchantqr)
       - [Get `/api/v1/somqr/ParseMerchantQR`](#get-apiv1somqrparsemerchantqr)
@@ -36,7 +38,7 @@
 
 ## Introduction
 
-The **SIPS Connect Platform** is a robust solution designed to facilitate the seamless sending and receiving of money between the SIPS SVIP system and local banking systems. It achieves this by translating ISO 20022 messages to and from Local Bank JSON APIs, ensuring secure and efficient financial transactions.
+The **SIPS Connect Platform** is a robust solution designed to facilitate the seamless sending and receiving of money between the SIPS SVIP system and local banking systems (Core Banking System). It achieves this by translating ISO 20022 messages to and from Local Bank JSON APIs, ensuring secure and efficient financial transactions.
 
 ## Features
 
@@ -347,7 +349,7 @@ Processes incoming verification and payment messages from the SIPS SVIP system a
 #### POST `/api/v1/incoming`
 
 **Description:**  
-processes Received ISO 20022 To `CB_VerificationRequest` JSON objects and forwards them to your API via the designated callback links.
+processes Received ISO 20022 (acmt.023) and parses them into `CB_VerificationRequest` JSON objects and forwards them to your API via the designated callback links.
 **Request:**
 
 - **Headers:**
@@ -386,7 +388,7 @@ processes Received ISO 20022 To `CB_VerificationRequest` JSON objects and forwar
 #### POST `/api/v1/incoming`
 
 **Description:**  
-Processes received ISO 20022 messages into `CB_PaymentRequest` JSON objects and forwards them to your API via the designated callback links.
+Processes received ISO 20022 (pacs.008) and parses them into `CB_PaymentRequest` JSON objects and forwards them to your API via the designated callback links.
 
 **Request:**
 
@@ -422,6 +424,87 @@ Processes received ISO 20022 messages into `CB_PaymentRequest` JSON objects and 
   - `401 Unauthorized` – Missing or invalid authentication credentials.
   - `404 Not Found` – Endpoint or resource not found.
   - `500 Internal Server Error` – Server encountered an unexpected condition.
+
+#### POST `/api/v1/incoming`
+
+**Description:**  
+Processes received ISO 20022 (pacs.028) and parses them into `CB_StatusRequest` JSON objects and forwards them to your API via the designated callback links.
+
+**Request:**
+
+- **Headers:**
+
+  - `Url: {verification_callback_url}` from the Configuration
+  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Content-Type: application/json`
+
+- **Body:**
+  ```json
+  {
+    "CB_StatusRequest": {
+      /* Status details */
+    }
+  }
+  ```
+
+**Response:**
+
+- **200 OK:**
+
+  ```json
+  {
+    "CB_PaymentStatusResponse": {
+      /* Status Response confirmation */
+    }
+  }
+  ```
+
+- **Error Responses:**
+  - `400 Bad Request` – Invalid request format or parameters.
+  - `401 Unauthorized` – Missing or invalid authentication credentials.
+  - `404 Not Found` – Endpoint or resource not found.
+  - `500 Internal Server Error` – Server encountered an unexpected condition.
+
+#### POST `/api/v1/incoming`
+
+**Description:**  
+Processes received ISO 20022 (pacs.004) and parses them into `CB_ReturnRequest` JSON objects and forwards them to your API via the designated callback links.
+
+**Request:**
+
+- **Headers:**
+
+  - `Url: {verification_callback_url}` from the Configuration
+  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Content-Type: application/json`
+
+- **Body:**
+  ```json
+  {
+    "CB_ReturnRequest": {
+      /* Return details */
+    }
+  }
+  ```
+
+**Response:**
+
+- **200 OK:**
+
+  ```json
+  {
+    "CB_ReturnResponse": {
+      /* Return Response confirmation */
+    }
+  }
+  ```
+
+- **Error Responses:**
+  - `400 Bad Request` – Invalid request format or parameters.
+  - `401 Unauthorized` – Missing or invalid authentication credentials.
+  - `404 Not Found` – Endpoint or resource not found.
+  - `500 Internal Server Error` – Server encountered an unexpected condition.
+
 
 ### SomQR Merchant
 
