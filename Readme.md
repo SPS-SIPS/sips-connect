@@ -80,61 +80,34 @@ To run the SIPS Connect Platform, follow these steps:
 ## Sample `.env` File
 
 ```env
-Serilog__WriteTo__File__Args__path=/path/to/logs
+Serilog__WriteTo__File__Args__path=/logs/log.log
 Serilog__MinimumLevel__Override__Microsoft=Information
 Serilog__MinimumLevel__Override__System=Information
 Serilog__MinimumLevel__Default=Information
-Xades__CertificatePath=/path/to/certs/certificate.pem
-Xades__ChainPath=/path/to/certs/chain.pem
-Xades__PrivateKeyPath=/path/to/certs/private.key
-Xades__PrivateKeyPassphrase=your_private_key_passphrase # Optional if the private key is not encrypted
-Xades__Algorithms__0=SHA256withRSA
-Xades__Algorithms__1=SHA1withRSA
-Xades__Algorithms__2=SHA512withRSA
-Xades__VerificationWindowMinutes=1000
-Xades__BIC=YourCompanyBIC
-Xades__WithoutPKI=false
-ConnectionStrings__db="Host=sips-connect-db;Database=SIPS.Connect.DB;Include Error Detail=True;Username=postgres;Password=secure_password;"
-Core__BaseUrl=http://SPS-Repository-Url
-Core__PublicKeysRepUrl=/v1/Certificates/Download
-Core__LoginEndpoint=/v1/auth/login
-Core__RefreshEndpoint=/v1/auth/refresh
-Core__Username=YourSPS-Repository-Username
-Core__Password=YourSPS-Repository-Password
-Core__SAFExpression="*/10 * * * *" # Every 10 minutes
-Core__SAFPage=40
-Core__SAFTimeZoneInfo="Utc"
-Core__SAFMaxRetries=10
 
-ISO20022__SIPS=http://svip.url
-ISO20022__BIC=YourCompanyBIC
-ISO20022__Agent=YourCompanyBIC
-ISO20022__Verification=http://your-corebank-verification-url
-ISO20022__Transfer=http://your-corebank-transfer-url
-ISO20022__Status=http://your-corebank-status-url
-ISO20022__Return=http://your-corebank-return-url
-ISO20022__Key=your-corebank-key
-ISO20022__Secret=your-corebank-secret
-
--- For this check the SOMQR Standard Documentation
-Emv__AcquirerId="010006"
-Emv__FIType="01"
-Emv__FIName="SIT BANK"
-Emv__Version="01"
-Emv__CountryCode="SO"
-Emv__Tags__MerchantIdentifier=26
-Emv__Tags__AcquirerTag=1
-Emv__Tags__MerchantIdTag=44
-
-API__Key=YourAPI__Key
-API__Secret=YourAPI__Secret
-
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=secure_password
-POSTGRES_DB=SIPS.Connect.DB
+PGUSER=postgres
+POSTGRES_PASSWORD=<strongDBPassword>
+POSTGRES_DB=postgres
 
 ASPNETCORE_ENVIRONMENT=Development
 
+ConnectionStrings__db="Host=sips-connect-db;Database=SIPS.Connect.DB;Include Error Detail=True;Username=postgres;Password=<strongDBPassword>;"
+KC_DB=postgres
+KC_DB_USERNAME=postgres
+KC_DB_PASSWORD=<strongDBPassword>
+KC_DB_URL="jdbc:postgresql://sips-connect-db:5432/postgres"
+
+Keycloak__Realm__Host="idp:8080"
+Keycloak__Realm__Protocol="http"
+Keycloak__Realm__ValidateIssuer=false
+Keycloak__Realm__Name="mgt"
+Keycloak__Realm__Audience="sc‑api"
+
+# all other environment variables can be set using the SIPS Connect Platform UI http://sips-connect-ui:port/config/endpoint
+
+# Certificate and Private Key locations Must be mounted in the container this has to be done in the docker-compose file 
+# Currently the docker-compose file mounts the certificates and private key from the host machine to the container
+# Review the docker-compose file for the correct path
 
 ```
 
