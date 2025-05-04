@@ -2,17 +2,27 @@ import React, { useState, useRef } from 'react';
 import styles from './QRParser.module.css';
 import ActionButton from '../common/ActionButton/ActionButton';
 import jsQR from 'jsqr';
+import AlertModal from "../common/AlertModal/AlertModal";
+
+type QRType = 'merchant' | 'personal' | null;
 
 interface QRParserProps {
     title: string;
     subtitle: string;
     onParse: (qrCode: string) => Promise<unknown>;
+    qrType: 'merchant' | 'personal';
+}
+
+interface QRValidationResult {
+    isValid: boolean;
+    type: QRType;
 }
 
 export const QRParser: React.FC<QRParserProps> = ({
                                                       title,
                                                       subtitle,
-                                                      onParse
+                                                      onParse,
+                                                      qrType
                                                   }) => {
     const [qrCode, setQrCode] = useState<string>('');
     const [parseResult, setParseResult] = useState<string | object | null>(null);
@@ -59,13 +69,39 @@ export const QRParser: React.FC<QRParserProps> = ({
         });
     };
 
+    const validateQRCode = (qr: string): QRValidationResult => {
+        const trimmed = qr.trim();
+
+        if (trimmed.startsWith('000201') && trimmed.length > 30) {
+            return { isValid: true, type: 'merchant' };
+        }
+
+        if (trimmed.startsWith('000202') && trimmed.length > 30) {
+            return { isValid: true, type: 'personal' };
+        }
+
+        return { isValid: false, type: null };
+    };
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         try {
             const qrData = await scanQRCodeFromImage(file);
+            const validation = validateQRCode(qrData);
+
+            if (!validation.isValid) {
+                throw new Error('Invalid QR code format');
+            }
+
+            if (validation.type !== qrType) {
+                console.log('Invalid QR Code format ' + validation.type);
+                throw new Error(`Please upload a ${qrType} QR code`);
+            }
+
             setQrCode(qrData);
+            setError('');
 
             // Show preview of the uploaded image
             const reader = new FileReader();
@@ -74,8 +110,9 @@ export const QRParser: React.FC<QRParserProps> = ({
             };
             reader.readAsDataURL(file);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to read QR code from image');
+            setError(err instanceof Error ? err.message : 'Failed to read QR code');
             setQrImage(null);
+            setQrCode('');
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
@@ -83,6 +120,17 @@ export const QRParser: React.FC<QRParserProps> = ({
     const handleParse = async () => {
         if (!qrCode.trim()) {
             setError('Please enter a QR code or upload an image');
+            return;
+        }
+
+        const validation = validateQRCode(qrCode);
+        if (!validation.isValid) {
+            setError('Invalid QR code format');
+            return;
+        }
+
+        if (validation.type !== qrType) {
+            setError(`Please provide a ${qrType} QR code`);
             return;
         }
 
@@ -112,7 +160,10 @@ export const QRParser: React.FC<QRParserProps> = ({
                     <textarea
                         className={styles.textarea}
                         value={qrCode}
-                        onChange={(e) => setQrCode(e.target.value)}
+                        onChange={(e) => {
+                            setQrCode(e.target.value);
+                            setError('');
+                        }}
                         placeholder="Paste QR code data here or upload an image"
                         rows={4}
                     />
@@ -134,6 +185,7 @@ export const QRParser: React.FC<QRParserProps> = ({
                     </ActionButton>
                     {qrImage && (
                         <div className={styles.qrPreview}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={qrImage} alt="Uploaded QR" className={styles.qrImage} />
                             <button
                                 className={styles.removeButton}
@@ -158,8 +210,6 @@ export const QRParser: React.FC<QRParserProps> = ({
                 {isLoading ? 'Parsing...' : 'Parse QR Code'}
             </ActionButton>
 
-            {error && <div className={styles.error}>{error}</div>}
-
             {parseResult && (
                 <div className={styles.resultSection}>
                     <h3 className={styles.resultTitle}>Parsed QR Data</h3>
@@ -167,6 +217,16 @@ export const QRParser: React.FC<QRParserProps> = ({
                         <pre>{JSON.stringify(parseResult, null, 2)}</pre>
                     </div>
                 </div>
+            )}
+
+            {error && (
+                <AlertModal
+                    title="Error"
+                    message={error}
+                    onConfirm={() => setError('')}
+                    onClose={() => setError('')}
+                    error
+                />
             )}
         </div>
     );
