@@ -1,33 +1,33 @@
 import React, {useState, useCallback} from "react";
-
 import styles from './ApiRequestTester.module.css';
 import {APIError, APIResponse} from "../../types/types";
 import {validateUrl} from "../../utils/validation";
-import {makeApiRequest} from "../../utils/apiService";
 import Input from "../../component/common/Input/Input";
 import RequestFormWrapper from "../../component/RequestFormWrapper/RequestFormWrapper";
-import {useAuthentication} from "../../auth/AuthProvider";
-import { baseURL } from "../../constants";
-type ApiConfigState = {
-    apiUrl: string;
-    urlError: string;
-};
+import {useApiRequest} from "../../utils/apiService";
+import SpinLoading from "../Loading/SpinLoading/SpinLoading";
 
-const initialApiState: ApiConfigState = {
-    apiUrl: `${baseURL}/api/v1/Gateway/Verify`,
-    urlError: "",
-};
 interface StatusProps {
     title: string;
     placeholder: string;
     selectedRequest: string;
+    initialUrl: string;
 }
 
-const ApiRequestTester: React.FC<StatusProps> = ({ title, placeholder, selectedRequest }) => {
-    const [apiConfig, setApiConfig] = useState<ApiConfigState>(initialApiState);
+interface ApiConfig {
+    apiUrl: string;
+    urlError: string;
+}
+
+const ApiRequestTester: React.FC<StatusProps> = ({ title, placeholder, selectedRequest, initialUrl }) => {
+    const [apiConfig, setApiConfig] = useState<ApiConfig>({
+        apiUrl: initialUrl,
+        urlError: ''
+    });
     const [response, setResponse] = useState<APIResponse | null>(null);
     const [error, setError] = useState<APIError | null>(null);
-    const { authToken } = useAuthentication();
+    const { makeApiRequest, loading } = useApiRequest();
+
     const handleApiUrlChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const {value} = e.target;
         setApiConfig(prev => ({
@@ -36,18 +36,9 @@ const ApiRequestTester: React.FC<StatusProps> = ({ title, placeholder, selectedR
             urlError: value ? "" : prev.urlError
         }));
     }, []);
-    const handleApiResponse = useCallback((result: APIResponse) => {
-        setResponse(result);
-        setError(null);
-    }, []);
-
-    const handleApiError = useCallback((err: APIError) => {
-        setError(err);
-        setResponse(null);
-    }, []);
 
     const handleSubmit = useCallback(async (formData: Record<string, string>) => {
-        if (!validateUrl(apiConfig.apiUrl, {allowLocalhost: true})) {
+        if (!validateUrl(apiConfig.apiUrl, { allowLocalhost: true })) {
             setApiConfig(prev => ({
                 ...prev,
                 urlError: "Please enter a valid API URL."
@@ -58,18 +49,34 @@ const ApiRequestTester: React.FC<StatusProps> = ({ title, placeholder, selectedR
         try {
             const result = await makeApiRequest({
                 url: apiConfig.apiUrl,
-                method: 'POST',
-                data: formData,
-                token: authToken!,
+                method: "post",
+                data: formData
             });
-            handleApiResponse(result);
+
+            if (result.success) {
+                setResponse({
+                    data: result.data,
+                    status: result.status,
+                    success: true
+                });
+                setError(null);
+            } else {
+                setError({
+                    message: 'Request failed',
+                    details: result.error || 'Unknown error occurred',
+                    statusCode: result.status
+                });
+                setResponse(null);
+            }
         } catch (err) {
-            handleApiError({
-                message: err instanceof Error ? err.message : 'Unknown error occurred',
-                details: JSON.stringify(err, null, 2)
+            setError({
+                message: 'Unexpected error',
+                details: (err as Error).message,
+                statusCode: 500
             });
+            setResponse(null);
         }
-    }, [apiConfig.apiUrl, handleApiResponse, handleApiError]);
+    }, [apiConfig.apiUrl, makeApiRequest]);
 
     return (
         <div className={styles.container}>
@@ -80,26 +87,37 @@ const ApiRequestTester: React.FC<StatusProps> = ({ title, placeholder, selectedR
                 </p>
             </div>
 
-            <Input
-                label="Enter API Endpoint URL"
-                value={apiConfig.apiUrl}
-                onChange={handleApiUrlChange}
-                type="url"
-                placeholder={placeholder}
-                errorMessage={apiConfig.urlError}
-                required
-            />
+            {loading ? (
+                <div className={styles.loadingContainer}>
+                    <SpinLoading />
+                    <p className={styles.loadingText}>Processing request...</p>
+                </div>
+            ) : (
+                <>
+                    <Input
+                        label="Enter API Endpoint URL"
+                        value={apiConfig.apiUrl}
+                        onChange={handleApiUrlChange}
+                        type="url"
+                        placeholder={placeholder}
+                        errorMessage={apiConfig.urlError}
+                        required
+                    />
 
-            <RequestFormWrapper
-                selectedRequest={selectedRequest}
-                onSubmit={handleSubmit}
-            />
+                    <RequestFormWrapper
+                        selectedRequest={selectedRequest}
+                        onSubmit={handleSubmit}
+                    />
+                </>
+            )}
 
             {response && (
                 <section className={styles.responseSection}>
                     <div className={styles.responseMessage}>
                         <h3 className={styles.responseTitle}>API Response</h3>
-                        <pre className={styles.responseText}>{JSON.stringify(response, null, 2)}</pre>
+                        <pre className={styles.responseText}>
+                            {JSON.stringify(response, null, 2)}
+                        </pre>
                     </div>
                 </section>
             )}
@@ -108,7 +126,9 @@ const ApiRequestTester: React.FC<StatusProps> = ({ title, placeholder, selectedR
                 <section className={styles.errorSection}>
                     <div className={styles.errorMessage}>
                         <h3 className={styles.errorTitle}>Request Failed</h3>
-                        <pre className={styles.errorText}>{error.details || error.message}</pre>
+                        <pre className={styles.errorText}>
+                            {JSON.stringify(error, null, 2)}
+                        </pre>
                     </div>
                 </section>
             )}

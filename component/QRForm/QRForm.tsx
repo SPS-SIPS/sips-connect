@@ -3,10 +3,9 @@ import React, { useState } from "react";
 import Input from "../common/Input/Input";
 import ActionButton from "../common/ActionButton/ActionButton";
 import QRCodeGenerator from "../QRCodeGenerator/QRCodeGenerator";
-import { APIResponse } from "../../types/types";
-import { useAuthentication } from "../../auth/AuthProvider";
 import SelectInput from "../common/SelectInput/SelectInput";
-import {makeApiRequest} from "../../utils/apiService";
+import { useApiRequest } from "../../utils/apiService";
+import SpinLoading from "../Loading/SpinLoading/SpinLoading";
 
 interface FormField {
     label: string;
@@ -33,44 +32,42 @@ const QRForm: React.FC<QRFormProps> = ({
                                            formFields,
                                        }) => {
     const [responseData, setResponseData] = useState<string>("");
-    const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string>("");
     const [apiEndpoint, setApiEndpoint] = useState<string>(defaultApiEndpoint);
     const [formData, setFormData] = useState<Record<string, unknown>>(initialData);
-    const { authToken } = useAuthentication();
+    const { makeApiRequest, loading } = useApiRequest();
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsLoading(true);
         setError("");
         setResponseData("");
 
-        try {
-            const response: APIResponse = await makeApiRequest({
-                url: apiEndpoint,
-                method: "POST",
-                data: formData,
-                token: authToken!,
-            });
+        const result = await makeApiRequest({
+            url: apiEndpoint,
+            method: "post",
+            data: formData
+        });
 
-            if (response.data && typeof response.data === "object") {
+
+        if (result.success) {
+            try {
                 // @ts-ignore
-                const qrData = (response.data as unknown).data;
+                const qrData = result.data?.data;
                 if (typeof qrData === "string") {
                     setResponseData(qrData);
                 } else {
                     throw new Error("Invalid QR data format in response");
                 }
+            } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to generate QR code");
             }
-        } catch (err) {
-            console.log(err)
-            setError(err instanceof Error ? err.message : "Failed to generate QR code");
-        } finally {
-            setIsLoading(false);
+        } else {
+            setError(result.error || "Failed to generate QR code");
         }
     };
 
@@ -120,13 +117,21 @@ const QRForm: React.FC<QRFormProps> = ({
                 <ActionButton
                     type="submit"
                     className={styles.submitButton}
-                    disabled={isLoading}
+                    disabled={loading}
                 >
-                    {isLoading ? "Generating..." : "Generate QR Code"}
+                    {loading ? "Generating..." : "Generate QR Code"}
                 </ActionButton>
             </form>
 
+
             <div className={styles.responseContainer}>
+                {loading && (
+                    <div className={styles.loadingContainer}>
+                        <SpinLoading />
+                        <p className={styles.loadingText}>Processing request...</p>
+                    </div>
+                )}
+
                 {error && <div className={styles.errorMessage}>Error: {error}</div>}
 
                 {responseData && (

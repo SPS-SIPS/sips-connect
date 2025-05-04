@@ -5,6 +5,13 @@
     margin-bottom: var(--spacing-xl);
     box-shadow: var(--shadow-sm);
 }
+.loading{
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    align-items: center;
+    margin: 2rem 0;
+}
 
 .header {
     display: flex;

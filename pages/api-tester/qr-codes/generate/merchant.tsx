@@ -1,7 +1,7 @@
 import QRForm from "../../../../component/QRForm/QRForm";
 import {currencyOptions} from "../../../../data/currencyOptions";
 import {mccOptions} from "../../../../data/mccOptions";
-import { baseURL } from "../../../../constants";
+import { baseURL } from "../../../../constants/constants";
 import RoleGuard from "../../../../auth/RoleGuard";
 
 const Merchant = () => {

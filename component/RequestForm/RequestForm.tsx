@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
-import styles from './RequestForm.module.css';
 import Input from "../common/Input/Input";
+import styles from './RequestForm.module.css';
 
 interface FieldMapping {
     internalField: string;

@@ -9,6 +9,7 @@ const Status= () => {
                 title={"API Status Request Tester "}
                 placeholder={"https://example.com/api/v1/Gateway/Status"}
                 selectedRequest={"StatusRequest"}
+                initialUrl={"http://localhost:8081/api/v1/Gateway/Status"}
             />
         </RoleGuard>
     );

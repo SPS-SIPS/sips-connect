@@ -5,7 +5,6 @@ import Input from "../../component/common/Input/Input";
 import AlertModal from "../../component/common/AlertModal/AlertModal";
 import styles from "../../styles/EndpointsPage.module.css";
 import Head from "next/head";
-import ProtectedRoute from "../../component/common/ProtectedRoute";
 import RoleGuard from "../../auth/RoleGuard";
 
 type FieldMapping = {

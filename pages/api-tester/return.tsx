@@ -8,6 +8,7 @@ const Return = () => {
               title={"API Return Request Tester "}
               placeholder={"https://example.com/api/v1/Gateway/Status"}
               selectedRequest={"ReturnRequest"}
+              initialUrl={'http://localhost:8081/api/v1/Gateway/Return'}
           />
       </RoleGuard>
   )
