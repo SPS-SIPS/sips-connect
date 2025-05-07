@@ -86,22 +86,23 @@ Serilog__MinimumLevel__Override__System=Information
 Serilog__MinimumLevel__Default=Information
 
 PGUSER=postgres
-POSTGRES_PASSWORD=<strongDBPassword>
+POSTGRES_PASSWORD=<DB_PASSWORD>
 POSTGRES_DB=postgres
 
 ASPNETCORE_ENVIRONMENT=Development
 
-ConnectionStrings__db="Host=sips-connect-db;Database=SIPS.Connect.DB;Include Error Detail=True;Username=postgres;Password=<strongDBPassword>;"
+ConnectionStrings__db="Host=sips-connect-db;Database=SIPS.Connect.DB;Include Error Detail=True;Username=postgres;Password=<DB_PASSWORD>;"
 KC_DB=postgres
 KC_DB_USERNAME=postgres
-KC_DB_PASSWORD=<strongDBPassword>
+KC_DB_PASSWORD=<DB_PASSWORD>
 KC_DB_URL="jdbc:postgresql://sips-connect-db:5432/postgres"
 
 Keycloak__Realm__Host="idp:8080"
 Keycloak__Realm__Protocol="http"
 Keycloak__Realm__ValidateIssuer=false
 Keycloak__Realm__Name="mgt"
-Keycloak__Realm__Audience="sc‑api"
+Keycloak__Realm__Audience="sc-api"
+Keycloak__Realm__ValidIssuers__0="http://idp:8080"
 
 # all other environment variables can be set using the SIPS Connect Platform UI http://sips-connect-ui:port/config/endpoint
 
