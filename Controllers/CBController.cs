@@ -28,11 +28,11 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
             {
                 query = query.Where(a => a.IBAN == request.AccountNo);
             }
-            else if (request.AccountType == "Phone")
+            else if (request.AccountType == "MSIS")
             {
                 query = query.Where(a => a.Phone!.Contains(request.AccountNo));
             }
-            else if (request.AccountType == "Wallet")
+            else if (request.AccountType == "EWLT")
             {
                 query = query.Where(a => a.WalletId == request.AccountNo);
             }
