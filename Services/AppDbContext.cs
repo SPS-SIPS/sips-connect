@@ -1,12 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using SIPS.Example.Consumer.Enums;
+using SIPS.Example.Consumer.Models;
 using SIPS.Example.Consumer.Models.DB;
 
 namespace SIPS.Example.Consumer.Services;
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public class AppDbContext(DbContextOptions<AppDbContext> options, IConfiguration configuration) : DbContext(options)
 {
     public DbSet<Account> Accounts { get; set; } = null!;
     public DbSet<InterBankTransaction> InterBankTransactions { get; set; } = null!;
+    private readonly IConfiguration _configuration = configuration;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -18,12 +20,25 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<InterBankTransaction>().Property(e => e.ChargeBearer).HasConversion(x => x.Id, x => Enumeration<string>.FromId<ChargeBearerType>(x));
         modelBuilder.Entity<InterBankTransaction>().Property(e => e.Status).HasConversion(x => x.Id, x => Enumeration<string>.FromId<TransactionStatus>(x));
 
-        modelBuilder.Entity<Account>().HasData(
-            new Account { Id = 234567891220, IBAN = "SO440005501234567891220", CustomerName = "Chief Abdullahi Bihi", Address = "Mogadishu", Phone = "0293939393", Currency = "USD", Balance = 1000, Active = true, WalletId = "2345" },
-            new Account { Id = 234567891210, IBAN = "SO440005501234567891210", CustomerName = "Eng. Abdullahi Ahmed", Address = "Mogadishu", Phone = "0293939432", Currency = "USD", Balance = 1000, Active = true, WalletId = "4536" },
-            new Account { Id = 123456789120, IBAN = "SO440005501123456789120", CustomerName = "ENG. ABDIKARIM OSMAN", Address = "Hargeisa", Phone = "0293939444", Currency = "USD", Balance = 1000, Active = true, WalletId = "4531" },
-            new Account { Id = 123456789320, IBAN = "SO440005501123456789320", CustomerName = "Sahra Ali Mohamed", Address = "Hargeisa", Phone = "0293939827", Currency = "USD", Balance = 1000, Active = true, WalletId = "3456" }
-        );
+        var testAccounts = _configuration.GetSection("TestAccounts").Get<List<AccountDto>>();
+        if (testAccounts != null)
+        {
+            foreach (var account in testAccounts)
+            {
+                modelBuilder.Entity<Account>().HasData(new Account
+                {
+                    Id = account.Id,
+                    IBAN = account.IBAN,
+                    CustomerName = account.CustomerName,
+                    Address = account.Address,
+                    Phone = account.Phone,
+                    Currency = account.Currency,
+                    Balance = account.Balance,
+                    Active = account.Active,
+                    WalletId = account.WalletId
+                });
+            }
+        }
     }
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

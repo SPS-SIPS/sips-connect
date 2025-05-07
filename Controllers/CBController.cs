@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SIPS.Example.Consumer.Enums;
+using SIPS.Example.Consumer.Models;
 using SIPS.Example.Consumer.Models.CB;
 using SIPS.Example.Consumer.Models.DB;
 using SIPS.Example.Consumer.Services;
@@ -13,6 +14,27 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
 {
     private readonly ILogger<CBController> _logger = logger;
     private readonly AppDbContext _broker = broker;
+
+    [HttpGet]
+    public IActionResult Get()
+    {
+        var accounts = _broker.Accounts
+        .Select(a => new AccountDto
+        {
+            Id = a.Id,
+            IBAN = a.IBAN,
+            CustomerName = a.CustomerName,
+            Address = a.Address,
+            Phone = a.Phone,
+            Currency = a.Currency,
+            Balance = a.Balance,
+            Active = a.Active,
+            WalletId = a.WalletId
+        })
+        .AsNoTracking().ToList();
+
+        return Ok(accounts);
+    }
     [HttpPost("Verify")]
     public async Task<IActionResult> Verify([FromBody] VerifyRequest request, CancellationToken ct)
     {
