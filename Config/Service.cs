@@ -180,8 +180,9 @@ public static class DI
            var host = configuration["Keycloak:Realm:Host"];
            var protocol = configuration["Keycloak:Realm:Protocol"];
            var realm = configuration["Keycloak:Realm:Name"];
-           var audience = configuration["Keycloak:Realm:Audience"];
+           var audience = configuration["Keycloak:Realm:Audience"] ?? throw new ArgumentNullException("Keycloak:Realm:Audience is required in appSettings.json");
            var validateIssuer = bool.Parse(configuration["Keycloak:Realm:ValidateIssuer"] ?? "true");
+           string[] validIssuers = configuration.GetSection("Keycloak:Realm:ValidIssuers").Get<string[]>() ?? [];
 
            var authority = $"{protocol}://{host}/realms/{realm}";
 
@@ -189,16 +190,15 @@ public static class DI
            options.Audience = audience;
            options.RequireHttpsMetadata = false;
            options.MapInboundClaims = false;
-
-           options.TokenValidationParameters = new TokenValidationParameters
-           {
-               ValidateIssuer = validateIssuer,
-               ValidIssuer = authority,
-               ValidateAudience = true,
-               ValidAudience = audience,
-               ValidateLifetime = true,
-               RoleClaimType = ClaimTypes.Role,
-           };
+           options.RefreshOnIssuerKeyNotFound = true;
+           
+            options.TokenValidationParameters.ValidateIssuer           = validateIssuer;
+            options.TokenValidationParameters.ValidIssuer              = authority;
+            options.TokenValidationParameters.ValidateAudience         = true;
+            options.TokenValidationParameters.ValidAudience            = audience;
+            options.TokenValidationParameters.ValidateLifetime         = true;
+            options.TokenValidationParameters.RoleClaimType            = ClaimTypes.Role;
+            options.TokenValidationParameters.ValidIssuers             = validIssuers;
 
            options.Events = new JwtBearerEvents
            {
