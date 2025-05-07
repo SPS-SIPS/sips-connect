@@ -16,10 +16,11 @@ import sharedStyles  from "../../component/ApiRequestTester/ApiRequestTester.mod
 import styles from "../../styles/VerificationRequestPage.module.css"
 import RoleGuard from "../../auth/RoleGuard";
 import {useRouter} from "next/router";
+import { baseURL } from "../../constants/constants";
 
 const VerificationRequestPage: React.FC = () => {
     const [submittedData, setSubmittedData] = useState<Record<string, string> | null>(null);
-    const [apiUrl, setApiUrl] = useState<string>("http://localhost:8081/api/v1/Gateway/Verify");
+    const [apiUrl, setApiUrl] = useState<string>(`${baseURL}/api/v1/Gateway/Verify`);
     const [urlError, setUrlError] = useState<string>("");
     const [response, setResponse] = useState<any>(null);
     const [loading, setLoading] = useState<boolean>(false);

@@ -10,13 +10,14 @@ import sharedStyles from "../../component/ApiRequestTester/ApiRequestTester.modu
 import styles from "../../styles/VerificationRequestPage.module.css";
 import {validateUrl} from "../../utils/validation";
 import {useApiRequest} from "../../utils/apiService";
+import { baseURL } from "../../constants/constants";
 
 const PaymentPage = () => {
     const router = useRouter();
     const [internalData, setInternalData] = useState(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [submittedData, setSubmittedData] = useState<Record<string, string> | null>(null);
-    const [apiUrl, setApiUrl] = useState<string>("http://localhost:8081/api/v1/Gateway/Payment");
+    const [apiUrl, setApiUrl] = useState<string>(`${baseURL}/api/v1/Gateway/Payment`);
     const [response, setResponse] = useState<any>(null);
     const [urlError, setUrlError] = useState<string>("");
     const {makeApiRequest} = useApiRequest();
@@ -24,7 +25,10 @@ const PaymentPage = () => {
         if (router.query.data) {
             try {
                 const parsed = JSON.parse(router.query.data as string);
-                setInternalData(parsed);
+                let currency = parsed?.Currency;
+                if (!currency || currency.trim() === "") currency = "USD";
+
+                setInternalData({...parsed, Currency: currency});
                 console.log(parsed);
             } catch (e) {
                 console.error("Failed to parse internalData:", e);

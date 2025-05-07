@@ -1,5 +1,6 @@
 import ApiRequestTester from "../../component/ApiRequestTester/ApiRequestTester";
 import RoleGuard from "../../auth/RoleGuard";
+import { baseURL } from "../../constants/constants";
 
 const Return = () => {
   return (
@@ -8,7 +9,7 @@ const Return = () => {
               title={"API Return Request Tester "}
               placeholder={"https://example.com/api/v1/Gateway/Status"}
               selectedRequest={"ReturnRequest"}
-              initialUrl={'http://localhost:8081/api/v1/Gateway/Return'}
+              initialUrl={`${baseURL}/api/v1/Gateway/Return`}
           />
       </RoleGuard>
   )

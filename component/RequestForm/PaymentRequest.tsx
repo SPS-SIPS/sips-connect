@@ -44,7 +44,7 @@ const PaymentRequest: React.FC<PaymentRequestProps> = ({onSubmit, prefilledValue
                 setDisabledFields(disabledSet);
             }
         }
-    }, [endpoints]);
+    }, [endpoints, prefilledValues]);
 
     const handleInputChange = (userField: string, value: string) => {
         setFormValues(prev => ({
