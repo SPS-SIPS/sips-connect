@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, {useState} from "react";
 import {useApiRequest} from "../../utils/apiService";
 import SpinLoading from "../../component/Loading/SpinLoading/SpinLoading";

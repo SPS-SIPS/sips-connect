@@ -67,10 +67,11 @@ const TransactionsList = () => {
     const handleFilterChange = (field: keyof typeof filters, value: string) => {
         const newFilters = { ...filters, [field]: value };
         setFilters(newFilters);
-        // @ts-ignore
         setQuery({
             ...newFilters,
-            page: 0
+            page: 0,
+            ISOMessageId: newFilters.ISOMessageId ? Number(newFilters.ISOMessageId) : undefined,
+            Status: newFilters.Status ? (newFilters.Status as unknown as TransactionStatus) : undefined
         });
     };
 

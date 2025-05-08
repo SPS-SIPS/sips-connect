@@ -4,6 +4,7 @@ import {useAuthentication} from "../auth/AuthProvider";
 
 const Profile: React.FC = () => {
     const {userName, roles, keycloak, authToken} = useAuthentication();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [userInfo, setUserInfo] = useState<Record<string, any>>({});
     const [showToken, setShowToken] = useState(false);
     const [copied, setCopied] = useState(false);

@@ -18,7 +18,7 @@ const PaymentPage = () => {
     const [loading, setLoading] = useState<boolean>(false);
     const [submittedData, setSubmittedData] = useState<Record<string, string> | null>(null);
     const [apiUrl, setApiUrl] = useState<string>(`${baseURL}/api/v1/Gateway/Payment`);
-    const [response, setResponse] = useState<any>(null);
+    const [response, setResponse] = useState<unknown>(null);
     const [urlError, setUrlError] = useState<string>("");
     const {makeApiRequest} = useApiRequest();
     useEffect(() => {

@@ -57,7 +57,7 @@ const XadesConfigForm = () => {
         };
 
         fetchData();
-    }, []);
+    }, [getConfigurations]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!config) return;

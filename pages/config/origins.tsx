@@ -41,7 +41,7 @@ const OriginsConfigForm = () => {
         };
 
         fetchData();
-    }, []);
+    }, [getConfigurations]);
 
     const handleOriginChange = (index: number, value: string) => {
         if (!config) return;

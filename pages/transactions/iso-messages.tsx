@@ -70,9 +70,10 @@ const ISOMessagesList = () => {
     const handleFilterChange = (field: keyof typeof filters, value: string) => {
         const newFilters = { ...filters, [field]: value };
         setFilters(newFilters);
-        // @ts-ignore
         setQuery({
             ...newFilters,
+            status: newFilters.status ? newFilters.status as unknown as TransactionStatus : undefined,
+            type: newFilters.type ? newFilters.type as unknown as ISOMessageType : undefined,
             page: 0
         });
     };

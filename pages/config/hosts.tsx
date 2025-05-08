@@ -51,7 +51,7 @@ const HostsConfigForm = () => {
         };
 
         fetchData();
-    }, []);
+    }, [getHosts]);
 
     const handleChange = (index: number, value: string) => {
         const updated = [...hosts];

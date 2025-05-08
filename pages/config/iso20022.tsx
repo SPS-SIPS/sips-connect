@@ -46,7 +46,7 @@ const ISO20022ConfigForm = () => {
         };
 
         fetchData();
-    }, []);
+    }, [getConfigurations]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!config) return;

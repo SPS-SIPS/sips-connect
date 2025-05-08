@@ -1,7 +1,6 @@
 import QRForm from "../../../../component/QRForm/QRForm";
 import {currencyOptions} from "../../../../data/currencyOptions";
 import { baseURL } from "../../../../constants/constants";
-import ProtectedRoute from "../../../../component/common/ProtectedRoute";
 import RoleGuard from "../../../../auth/RoleGuard";
 
 const Personal = () => {
