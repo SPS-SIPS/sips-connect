@@ -3,10 +3,10 @@ import Head from 'next/head';
 import useConfigurationsHosts from '../../api/hooks/useConfigurationsHosts';
 import ConfigFormWrapper from '../../component/ConfigFormWrapper/ConfigFormWrapper';
 import Input from '../../component/common/Input/Input';
-import styles from '../../styles/ConfigurationsForm.module.css';
 import { AxiosError } from 'axios';
 import ActionButton from '../../component/common/ActionButton/ActionButton';
 import RoleGuard from "../../auth/RoleGuard";
+import styles from '../../styles/ConfigurationsForm.module.css';
 
 const HostsConfigForm = () => {
     const { getHosts, updateHosts } = useConfigurationsHosts();
