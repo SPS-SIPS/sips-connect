@@ -4,7 +4,7 @@ import SpinLoading from "../Loading/SpinLoading/SpinLoading";
 import Input from "../common/Input/Input";
 import ActionButton from "../common/ActionButton/ActionButton";
 import SelectInput from "../common/SelectInput/SelectInput";
-import {verificationMethods} from "../../constants/gatewayFormOptions";
+import {bicOptions, verificationMethods} from "../../constants/gatewayFormOptions";
 import styles from "./RequestForm.module.css";
 
 export interface FieldMapping {
@@ -82,7 +82,7 @@ const VerificationRequest: React.FC<VerificationRequestProps> = ({onSubmit}) => 
                     <form onSubmit={handleSubmit} className={styles.requestForm}>
                         {fieldMappings.map((mapping, index) => (
                             <div key={index}>
-                                {mapping.internalField === "Type" ? (
+                                {["Type", "ToBIC"].includes(mapping.internalField) ? (
                                     <div key={mapping.userField} className={styles.mappingItem}>
                                         <SelectInput
                                             label={`${formatUserField(mapping.userField, mapping.internalField)} (${mapping.type})`}
@@ -90,7 +90,11 @@ const VerificationRequest: React.FC<VerificationRequestProps> = ({onSubmit}) => 
                                             onChange={(e) =>
                                                 handleInputChange(mapping.userField, e.target.value)
                                             }
-                                            options={verificationMethods}
+                                            options={
+                                                mapping.internalField === "Type"
+                                                    ? verificationMethods
+                                                    : bicOptions
+                                            }
                                             required={true}
                                             name={mapping.userField}
                                             disabled={false}

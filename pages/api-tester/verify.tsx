@@ -13,11 +13,11 @@ import {
     getUserFieldsFromEndpoint,
     remapToInternalFields
 } from "../../utils/endpointHelpers";
-import sharedStyles  from "../../component/ApiRequestTester/ApiRequestTester.module.css";
+import sharedStyles from "../../component/ApiRequestTester/ApiRequestTester.module.css";
 import styles from "../../styles/VerificationRequestPage.module.css"
 import RoleGuard from "../../auth/RoleGuard";
 import {useRouter} from "next/router";
-import { baseURL } from "../../constants/constants";
+import {baseURL} from "../../constants/constants";
 
 const VerificationRequestPage: React.FC = () => {
     const [submittedData, setSubmittedData] = useState<Record<string, string> | null>(null);
@@ -102,26 +102,25 @@ const VerificationRequestPage: React.FC = () => {
                         Validate and test your API endpoints by sending properly formatted status requests
                     </p>
                 </div>
-                {loading ? (
+                <>
+                    <Input
+                        label="Enter API Endpoint URL"
+                        value={apiUrl}
+                        onChange={handleApiUrlChange}
+                        type="url"
+                        placeholder={"https://example.com/api/v1/Gateway/Verify"}
+                        errorMessage={urlError}
+                        required
+                    />
+                    <VerificationRequest onSubmit={handleSubmit}/>
+                </>
+
+
+                {loading && (
                     <div className={styles.loadingContainer}>
                         <SpinLoading/>
                         <p className={styles.loadingText}>Submitting your verification request...</p>
                     </div>
-                ) : (
-                    !submittedData && (
-                        <>
-                            <Input
-                                label="Enter API Endpoint URL"
-                                value={apiUrl}
-                                onChange={handleApiUrlChange}
-                                type="url"
-                                placeholder={"https://example.com/api/v1/Gateway/Verify"}
-                                errorMessage={urlError}
-                                required
-                            />
-                            <VerificationRequest onSubmit={handleSubmit}/>
-                        </>
-                    )
                 )}
 
                 {submittedData && !loading && (
