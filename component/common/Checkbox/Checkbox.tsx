@@ -7,6 +7,7 @@ interface CheckboxProps {
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
     required?: boolean;
     name?: string;
+    id?: string;
 }
 
 const Checkbox: React.FC<CheckboxProps> = ({
@@ -14,7 +15,8 @@ const Checkbox: React.FC<CheckboxProps> = ({
                                                checked,
                                                onChange,
                                                required = false,
-                                               name
+                                               name,
+                                               id
                                            }) => {
     return (
         <div className={styles.checkboxContainer}>
@@ -26,6 +28,7 @@ const Checkbox: React.FC<CheckboxProps> = ({
                     onChange={onChange}
                     required={required}
                     name={name}
+                    id={id}
                 />
                 {label}
             </label>
