@@ -51,7 +51,8 @@ const HostsConfigForm = () => {
         };
 
         fetchData();
-    }, [getHosts]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleChange = (index: number, value: string) => {
         const updated = [...hosts];

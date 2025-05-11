@@ -41,7 +41,8 @@ const OriginsConfigForm = () => {
         };
 
         fetchData();
-    }, [getConfigurations]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleOriginChange = (index: number, value: string) => {
         if (!config) return;
