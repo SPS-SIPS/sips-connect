@@ -71,6 +71,11 @@ const Sidebar: React.FC<SideNavProps> = ({isOpen, onClose, isMobile}) => {
                     icon: <FiChevronRight className={styles.icon}/>
                 },
                 {
+                    title: 'API Keys',
+                    path: '/config/apiKeys',
+                    icon: <FiChevronRight className={styles.icon} />,
+                },
+                {
                     title: 'Core',
                     path: '/config/core',
                     icon: <FiChevronRight className={styles.icon} />,
