@@ -1,0 +1,127 @@
+.loadingContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    gap: var(--spacing-md);
+}
+
+.loadingMessage {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-md);
+    margin-top: var(--spacing-md);
+}
+
+.noKeysMessage {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    background-color: var(--color-background-secondary);
+    border-radius: var(--radius-lg);
+    border: 1px dashed var(--color-border);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-lg);
+    margin: var(--spacing-xl) 0;
+}
+
+.section {
+    position: relative;
+    margin-bottom: var(--spacing-xl);
+
+}
+
+.actions {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+    flex-wrap: wrap;
+}
+
+.addNewButton {
+    background-color: var(--color-primary);
+    color: var(--color-text-on-primary);
+    padding: var(--spacing-md) var(--spacing-xl);
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    transition: all var(--transition-default);
+    border: none;
+    font-size: var(--font-size-base);
+}
+
+.addNewButton:hover {
+    background-color: var(--color-primary-dark);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.addNewButton:disabled {
+    background-color: var(--color-background-disabled);
+    color: var(--color-text-secondary);
+    cursor: not-allowed;
+}
+
+.saveButton {
+    background-color: var(--color-primary);
+    color: var(--color-text-on-primary);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    transition: all var(--transition-default);
+}
+
+.saveButton:hover:not(:disabled) {
+    background-color: var(--color-primary-dark);
+    transform: translateY(-1px);
+}
+
+.cancelButton {
+    background-color: var(--color-background-tertiary);
+    color: var(--color-text-secondary);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    transition: all var(--transition-default);
+    border: 1px solid var(--color-border);
+}
+
+.cancelButton:hover {
+    background-color: var(--color-background-secondary);
+    border-color: var(--color-border-hover);
+}
+
+.deleteButton {
+    background-color: var(--color-error);
+    color: var(--color-text-on-primary);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    transition: all var(--transition-default);
+    position: absolute;
+    top: var(--spacing-md);
+    right: var(--spacing-md);
+}
+
+.deleteButton:hover {
+    background-color: var(--color-error-hover);
+}
+
+@media (max-width: 768px) {
+
+    .actions {
+        flex-direction: column;
+    }
+
+    .addNewButton,
+    .saveButton,
+    .cancelButton,
+    .deleteButton {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .deleteButton {
+        position: static;
+        margin-top: var(--spacing-md);
+        order: -1;
+    }
+}
