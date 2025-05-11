@@ -14,7 +14,6 @@ const useConfigurationsAPIKeys = () => {
     const getApiKeys = async (): Promise<ApiKeyConfiguration[]> => {
         try {
             const response = await axiosPrivate.get<ApiKeyConfiguration[]>(BASE_URL);
-            console.log(response.data);
             return response.data;
         } catch (error) {
             throw error;
@@ -22,11 +21,10 @@ const useConfigurationsAPIKeys = () => {
     };
 
     const updateApiKey = async (
-        key: string,
-        data: Partial<ApiKeyConfiguration>
+        data: ApiKeyConfiguration
     ): Promise<string> => {
         try {
-            const response = await axiosPrivate.put<string>(`${BASE_URL}/${key}`, data);
+            const response = await axiosPrivate.put<string>(BASE_URL, data);
             return response.data;
         } catch (error) {
             throw error;
@@ -35,12 +33,15 @@ const useConfigurationsAPIKeys = () => {
 
     const deleteApiKey = async (key: string): Promise<string> => {
         try {
-            const response = await axiosPrivate.delete<string>(`${BASE_URL}/${key}`);
+            const response = await axiosPrivate.delete<string>(BASE_URL, {
+                params: { key },
+            });
             return response.data;
         } catch (error) {
             throw error;
         }
     };
+
 
     return {
         getApiKeys,
