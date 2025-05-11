@@ -48,10 +48,30 @@ services:
       - sips-network
     depends_on:
       - sips-connect-db
+  loki:
+    image: grafana/loki:2.9.7
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - sips-network
+  promtail:
+    image: grafana/promtail:2.9.7
+    volumes:
+      - ./logs:/var/log/app
+      - ./promtail-config.yaml:/etc/promtail/config.yaml
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - sips-network
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports:
+      - "3001:3000"
+    networks:
+      - sips-network
 
 volumes:
   pg_data:
-
 
 networks:
   sips-network:
