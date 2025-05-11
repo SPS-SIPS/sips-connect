@@ -58,10 +58,13 @@ To run the SIPS Connect Platform, follow these steps:
    git clone https://github.com/SPS-SIPS/SIPS.Connect.git
    ```
 2. Navigate to the project directory:
-3. Fill in the required environment variables in the `.env` file:
-4. Build the Docker image:
    ```bash
-   docker-compose build
+   cd SIPS.Connect
+   ```
+3. Fill in the required environment variables in the `.env` file:
+4. Create Docker Network:
+   ```bash
+   docker network create --driver bridge sips-network
    ```
 5. Run the Docker container:
    ```bash

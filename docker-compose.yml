@@ -1,3 +1,4 @@
+name: sips-connect
 services:
   sips-connect-db:
     image: postgres:16
@@ -55,3 +56,4 @@ volumes:
 networks:
   sips-network:
     driver: bridge
+    external: true
