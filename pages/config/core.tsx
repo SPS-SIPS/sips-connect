@@ -46,7 +46,8 @@ const ISO20022ConfigForm = () => {
         };
 
         fetchData();
-    }, [getConfigurations]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!config) return;
