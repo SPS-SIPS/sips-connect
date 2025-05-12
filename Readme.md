@@ -134,7 +134,7 @@ Verifies transaction requests by processing `VerificationRequest` JSON objects f
 
 - **Headers:**
 
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -173,7 +173,7 @@ Processes payment requests by handling `PaymentRequest` JSON objects from the pr
 
 - **Headers:**
 
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -212,7 +212,7 @@ Processes payment status requests by handling `StatusRequest` JSON objects from 
 
 - **Headers:**
 
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -250,7 +250,7 @@ Processes payment status requests by handling `StatusRequest` JSON objects from 
 
 - **Headers:**
 
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -289,7 +289,7 @@ Processes payment return requests by handling `ReturnRequest` JSON objects from 
 
 - **Headers:**
 
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -496,7 +496,7 @@ Generates a merchant QR code based on the provided `SomQRMerchantRequest` JSON o
 
 - **Headers:**
 
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
   - `Content-Type: application/json`
   - `Accept: application/json`
 
@@ -543,7 +543,7 @@ Parses a merchant QR code and returns the corresponding `MerchantPayload` JSON o
 - `?code: 00020101021126400014so.somqr.sSIPS01060100064408123456785204581453037065802SO5916HAYATRESTAURANTS6009MOGADISHU610500000622103080011678907051100263049CAE`
 
 - **Headers:**
-- `Authorization: Bearer {api_key}:{api_secret}`
+- `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
 
 **Response:**
 
@@ -608,7 +608,7 @@ Generates a person QR code based on the provided `SomQRPersonRequest` JSON objec
 
 - **Headers:**
 
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
   - `Content-Type: application/json`
   - `Accept: application/json`
 
@@ -649,7 +649,7 @@ Parses a person QR code and returns the corresponding `P2PPayload` JSON object.
 - `?code: 000202010211022702010308SIT BANK0423SO9800002201201293837440523Abdulshakur Ahmed Aided0716Payment for Test10041234`
 
 - **Headers:**
-- `Authorization: Bearer {api_key}:{api_secret}`
+- `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
 - **Response:**
 - **200 OK:**
 
