@@ -69,9 +69,13 @@ services:
       - "3001:3000"
     networks:
       - sips-network
+    volumes:
+      - grafana_data:/var/lib/grafana
+
 
 volumes:
   pg_data:
+  grafana_data:
 
 networks:
   sips-network:
