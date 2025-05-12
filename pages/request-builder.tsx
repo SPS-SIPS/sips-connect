@@ -67,6 +67,7 @@ const RequestBuilder = () => {
                {selectedRequest && (
                    <>
                        <RequestForm
+                           key={selectedRequest}
                            requestType={selectedRequest}
                            fieldMappings={endpoints[selectedRequest].fieldMappings}
                            onSubmit={handleSubmit}
