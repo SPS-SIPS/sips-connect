@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import Input from "../common/Input/Input";
-import styles from './RequestForm.module.css';
 import SelectInput from "../common/SelectInput/SelectInput";
+import styles from './RequestForm.module.css';
 import {bicOptions, verificationMethods} from "../../constants/gatewayFormOptions";
 
 interface FieldMapping {
@@ -75,7 +75,7 @@ const RequestForm: React.FC<RequestFormProps> = ({
                                 onChange={(e) => handleInputChange(mapping.userField, e.target.value)}
                                 type={getInputType(mapping.type)}
                                 placeholder={`Enter ${mapping.userField}`}
-                                required
+                                required={mapping.internalField !== 'Code'}
                             />
                         )}
 
@@ -101,11 +101,12 @@ const RequestForm: React.FC<RequestFormProps> = ({
             </form>
         </div>
     );
-//Generate Request
+
     function isFormValid() {
-        return fieldMappings.every(mapping =>
-            formValues[mapping.userField]?.trim()
-        );
+        return fieldMappings.every(mapping => {
+            if (mapping.internalField === 'Code') return true;
+            return formValues[mapping.userField]?.trim();
+        });
     }
 
     function getInputType(fieldType: string): string {
