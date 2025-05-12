@@ -1,6 +1,8 @@
 import React, {useState} from 'react';
 import Input from "../common/Input/Input";
 import styles from './RequestForm.module.css';
+import SelectInput from "../common/SelectInput/SelectInput";
+import {bicOptions, verificationMethods} from "../../constants/gatewayFormOptions";
 
 interface FieldMapping {
     internalField: string;
@@ -48,15 +50,35 @@ const RequestForm: React.FC<RequestFormProps> = ({
             <form onSubmit={handleSubmit} className={styles.requestForm}>
                 {fieldMappings.map((mapping) => (
                     <div key={mapping.userField} className={styles.mappingItem}>
-                        <Input
-                            key={mapping.userField}
-                            label={`${mapping.userField} (${mapping.type})`}
-                            value={formValues[mapping.userField] || ''}
-                            onChange={(e) => handleInputChange(mapping.userField, e.target.value)}
-                            type={getInputType(mapping.type)}
-                            placeholder={`Enter ${mapping.userField}`}
-                            required
-                        />
+                        {mapping.internalField === 'Type' ? (
+                            <SelectInput
+                                label={`${mapping.userField} (${mapping.type})`}
+                                value={formValues[mapping.userField] || ''}
+                                onChange={(e) => handleInputChange(mapping.userField, e.target.value)}
+                                options={verificationMethods}
+                                placeholder="-- Select a type --"
+                                required
+                            />
+                        ) : mapping.internalField === 'ToBIC' ? (
+                            <SelectInput
+                                label={`${mapping.userField} (${mapping.type})`}
+                                value={formValues[mapping.userField] || ''}
+                                onChange={(e) => handleInputChange(mapping.userField, e.target.value)}
+                                options={bicOptions}
+                                placeholder="-- Select a BIC --"
+                                required
+                            />
+                        ) : (
+                            <Input
+                                label={`${mapping.userField} (${mapping.type})`}
+                                value={formValues[mapping.userField] || ''}
+                                onChange={(e) => handleInputChange(mapping.userField, e.target.value)}
+                                type={getInputType(mapping.type)}
+                                placeholder={`Enter ${mapping.userField}`}
+                                required
+                            />
+                        )}
+
                     </div>
                 ))}
 
