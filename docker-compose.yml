@@ -13,15 +13,6 @@ services:
     networks:
       - sips-network
 
-  builder:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: builder
-    volumes:
-      - ./.next:/app/.next
-      - ./node_modules:/app/node_modules
-
 networks:
   sips-network:
     driver: bridge
