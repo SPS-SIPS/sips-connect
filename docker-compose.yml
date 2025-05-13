@@ -1,7 +1,7 @@
 name: ${INSTITUTION_NAME:-agro}-sips-connect
 services:
   sips-connect:
-    image: hanad/sips-connect:1.0.1
+    image: hanad/sips-connect:1.0.2
     environment:
       - DB_HOST=${DB_HOST:-sips-connect-db}
       - DB_PORT=${DB_PORT:-5432}
@@ -10,8 +10,8 @@ services:
     env_file:
       - ./.env
     volumes:
-      - ./logs:/logs
-      - ./certs:/certs
+      - ./logs:/logs:rw
+      - ./certs:/certs:ro
       - ./appsettings.json:/app/appsettings.json:rw
       - ./jsonAdapter.json:/app/jsonAdapter.json:rw
     networks:
