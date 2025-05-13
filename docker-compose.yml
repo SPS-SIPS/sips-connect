@@ -1,0 +1,60 @@
+name: ${INSTITUTION_NAME:-agro}-sips-connect
+services:
+  sips-connect:
+    image: hanad/sips.connect:1.0.1
+    environment:
+      - DB_HOST=${DB_HOST:-sips-connect-db}
+      - DB_PORT=${DB_PORT:-5432}
+    ports:
+      - "${SIPS_CONNECT_PORT:-9030}:8080"
+    env_file:
+      - ./.env
+    volumes:
+      - ./logs:/logs
+      - ./certs:/certs
+      - ./appsettings.json:/app/appsettings.json:rw
+      - ./jsonAdapter.json:/app/jsonAdapter.json:rw
+    networks:
+      - sips-network
+  idp:
+    image: keycloak/keycloak:26.2.0
+    env_file:
+      - ./.env
+    command: "start-dev --import-realm --verbose"
+    volumes:
+      - ./realm-config:/opt/keycloak/data/import
+    ports:
+      - "${IDP_PORT:-9031}:8080"
+    networks:
+      - sips-network
+  loki:
+    image: grafana/loki:2.9.7
+    ports:
+      - "${LOKI_PORT:-3200}:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - sips-network
+  promtail:
+    image: grafana/promtail:2.9.7
+    volumes:
+      - ./logs:/var/log/app
+      - ./promtail-config.yaml:/etc/promtail/config.yaml
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - sips-network
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports:
+      - "${GRAFANA_PORT:-9033}:3000"
+    networks:
+      - sips-network
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  grafana_data:
+
+networks:
+  sips-network:
+    driver: bridge
+    external: true
