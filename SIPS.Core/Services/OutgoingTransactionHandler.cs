@@ -234,7 +234,8 @@ public sealed class OutgoingTransactionHandler(
 
         if (!result)
         {
-            _logger.LogError("Failed to verify the signature: verbose {verbose}", verbose);
+            var verboseJson = System.Text.Json.JsonSerializer.Serialize(verbose);
+            _logger.LogError("Failed to verify the signature: verbose {verbose}", verboseJson);
         }
 
         return result;

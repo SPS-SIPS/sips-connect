@@ -22,10 +22,8 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
             _logger.LogError("Invalid configuration for certificates.");
             return (null, "Invalid configuration for certificates.");
         }
-        url = url.Replace("{sn}", sn);
-
         // Check if the certificates are already cached
-        var certificates = await GetCertificatesFromCacheAsync(url, cancellationToken);
+        var certificates = await GetCertificatesFromCacheAsync(sn, cancellationToken);
 
         if (certificates != null)
         {
@@ -41,7 +39,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
 
         CertificateRequest request = new(sn, "");
 
-        var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(url!, request, cancellationToken);
+        var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(_options.PublicKeysRepUrl!, request, cancellationToken);
 
         if (!response.IsSuccess)
         {
@@ -50,7 +48,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
         }
 
         // Cache the certificates for future use
-        await _cacheService.SetAsync($"certificates:{url}", response.Data, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
+        await _cacheService.SetAsync($"certificates:{sn}", response.Data, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(response.CacheInMins)
         }, cancellationToken);
@@ -58,15 +56,16 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
         return (response.Data, null);
     }
 
-    private async Task<CertificateDownloadResponse?> GetCertificatesFromCacheAsync(string url, CancellationToken cancellationToken = default)
+    private async Task<CertificateDownloadResponse?> GetCertificatesFromCacheAsync(string sn, CancellationToken cancellationToken = default)
     {
-        var response = await _cacheService.GetAsync<CertificateDownloadResponse>($"certificates:{url}", cancellationToken);
+        var response = await _cacheService.GetAsync<CertificateDownloadResponse>($"certificates:{sn}", cancellationToken);
         if (response == null)
         {
-            _logger.LogWarning("Certificates not found in cache SN: {SN}.", url);
+            _logger.LogWarning("Certificates not found in cache SN: {SN}.", sn);
             return null;
         }
 
+        _logger.LogInformation("Certificates found in cache SN: {SN}.", sn);
         return response;
     }
 }
