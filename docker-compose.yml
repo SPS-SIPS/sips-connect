@@ -50,9 +50,26 @@ services:
       - sips-network
     volumes:
       - grafana_data:/var/lib/grafana
+  sips-connect-db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    env_file:
+      - ./.env
+    networks:
+      - sips-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "postgres", "-U", "postgres"]
+      interval: '10s'
+      timeout: '30s'
+      retries: 5
+      start_period: '20s'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
 
 volumes:
   grafana_data:
+  pg_data:
 
 networks:
   sips-network:
