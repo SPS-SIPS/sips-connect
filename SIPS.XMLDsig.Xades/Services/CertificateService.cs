@@ -58,31 +58,42 @@ public sealed class CertificateService : ICertificateService
         using StringReader reader = new(certificatePem);
         PemReader pemReader = new(reader);
 
-        List<X509Certificate> chain = [];
+        List<X509Certificate> certs = [];
         while (pemReader.ReadObject() is X509Certificate cert)
         {
-            chain.Add(cert);
+            certs.Add(cert);
         }
 
-        if (chain.Count == 0)
+        if (certs.Count == 0)
         {
             throw new Exception("No certificates found in the PEM file.");
         }
 
         try
         {
-            // verify the chain
-            for (int i = 0; i < chain.Count - 1; i++)
+            foreach (var cert in certs)
             {
-                chain[i].Verify(chain[i + 1].GetPublicKey());
+                // If self-signed, skip (root)
+                if (cert.IssuerDN.Equivalent(cert.SubjectDN))
+                {
+                    cert.Verify(cert.GetPublicKey());
+                    continue;
+                }
+
+                // Find issuer in the list
+                var issuer = certs.FirstOrDefault(c => c.SubjectDN.Equivalent(cert.IssuerDN));
+                if (issuer == null)
+                    throw new Exception($"Issuer not found for certificate: {cert.SubjectDN}");
+
+                cert.Verify(issuer.GetPublicKey());
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            throw new Exception("The certificate chain is invalid.");
+            throw new Exception("The certificate chain is invalid.", ex);
         }
 
-        return [.. chain];
+        return [.. certs];
     }
 
     public X509Certificate CertificateFromPem(string certPem)
