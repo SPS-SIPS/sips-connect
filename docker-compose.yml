@@ -66,7 +66,14 @@ services:
       start_period: '20s'
     volumes:
       - pg_data:/var/lib/postgresql/data
-
+  sips-corebank:
+    image: hanad/sips-consumer:1.0.0
+    ports:
+      - "${CB_PORT:-9032}:8080"
+    env_file:
+      - ./.env
+    networks:
+      - sips-network
 volumes:
   grafana_data:
   pg_data:
