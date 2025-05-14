@@ -223,6 +223,11 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
             response.EndToEndId = request.EndToEndId;
 
             // create the transaction
+            var settlementMethod = request.SettlementMethod!.ToUpper();
+            var localInstrument = request.LocalInstrument!.ToUpper();
+            var categoryPurpose = request.CategoryPurpose!.ToUpper();
+            var chargeBearer = request.ChargeBearer!.ToUpper();
+
             var txn = new InterBankTransaction
             {
                 VerificationMessageId = request.TxId,
@@ -231,10 +236,10 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 CreDt = request.Date.ToUniversalTime(),
                 CreDtTm = request.Date.ToUniversalTime(),
                 NbOfTxs = 1,
-                SettlementMethod = Enumeration<string>.FromId<SettlementMethods>(request.SettlementMethod!),
-                ClearingSystem = request.SettlementMethod!,
-                PaymentTypeInformation = Enumeration<string>.FromId<LclInstrm>(request.LocalInstrument),
-                PaymentTypeInformationCategoryPurpose = Enumeration<string>.FromId<CategoryPurpose>(request.CategoryPurpose),
+                SettlementMethod = Enumeration<string>.FromId<SettlementMethods>(settlementMethod),
+                ClearingSystem = settlementMethod,
+                PaymentTypeInformation = Enumeration<string>.FromId<LclInstrm>(localInstrument),
+                PaymentTypeInformationCategoryPurpose = Enumeration<string>.FromId<CategoryPurpose>(categoryPurpose),
                 InstructingAgent = request.FromBIC,
                 InstructedAgent = request.ToBIC,
                 EndToEndIdentification = request.EndToEndId,
@@ -244,7 +249,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 AcceptanceDateTime = response.AcceptanceDate,
                 InstructedAmount = request.Amount,
                 InstructedCurrency = request.Currency,
-                ChargeBearer = Enumeration<string>.FromId<ChargeBearerType>(request.ChargeBearer!),
+                ChargeBearer = Enumeration<string>.FromId<ChargeBearerType>(chargeBearer),
                 Debtor = request.DebtorName!,
                 DebtorPostalAddress = request.DebtorAddress,
                 DebtorAccount = request.DebtorAccount,
