@@ -85,7 +85,7 @@ public sealed class OutgoingVerificationHandler(
 
             // Parse the SIPS response.
             var parsedResponse = PayeeVerificationResponseBuilder.Parse(responseMessage.Data);
-            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason, string.Empty, responseMessage.Data, parsedResponse.Id, ct);
+            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason, string.Empty, responseMessage.Data, parsedResponse.VerificationId, ct);
 
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto
             {

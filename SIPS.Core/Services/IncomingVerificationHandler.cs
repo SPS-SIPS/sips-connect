@@ -135,7 +135,8 @@ public sealed class IncomingVerificationHandler(
                        Status = PostgreSQL.Enums.TransactionStatus.Pending,
                        BizMsgIdr = request.BizMsgIdr,
                        MsgDefIdr = request.MsgDefIdr,
-                       MsgId = request.MsgId
+                       MsgId = request.MsgId,
+                       TxId = request.SIPSRequestId,
                    }
                , ct);
     }
