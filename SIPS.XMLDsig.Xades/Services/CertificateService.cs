@@ -169,13 +169,22 @@ public sealed class CertificateService : ICertificateService
     {
         try
         {
-            foreach (var trustedCert in Chain)
+            // If self-signed, verify with its own public key
+            if (certificate.IssuerDN.Equivalent(certificate.SubjectDN))
             {
-                certificate.Verify(trustedCert.GetPublicKey());
+                certificate.Verify(certificate.GetPublicKey());
                 certificate.CheckValidity();
                 return (true, "");
             }
-            return (false, "The certificate is not trusted.");
+
+            // Find the issuer in the chain
+            var issuer = Chain.FirstOrDefault(c => c.SubjectDN.Equivalent(certificate.IssuerDN));
+            if (issuer == null)
+                return (false, "Issuer not found in the chain.");
+
+            certificate.Verify(issuer.GetPublicKey());
+            certificate.CheckValidity();
+            return (true, "");
         }
         catch (InvalidKeyException ex) { return (false, ex.Message); }
         catch (SignatureException ex) { return (false, ex.Message); }
