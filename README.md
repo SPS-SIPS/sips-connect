@@ -63,7 +63,7 @@ CB_PORT=9082
 3. **Create the `.env` File**: Create a `.env` file in the root directory of the project and populate it with your environment variables as shown above.
 4. **Start the Services**: Use Docker Compose to start the services defined in the `docker-compose.yml` file:
    ```bash
-   docker-compose up -d
+   docker-compose up -d or docker compose up -d 
    ```
 5. **Access the Application**: Once the services are up and running, you can access the SIPS Connect Platform at `http://localhost:9080/swagger/index.html` in your web browser.
 6. **Access Keycloak**: You can access Keycloak at `http://localhost:9081/auth` to manage your authentication settings.
