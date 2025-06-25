@@ -45,6 +45,16 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         var response = new VerifyResponse();
         try
         {
+            if (request.AccountNo.StartsWith("USD:"))
+            {
+                request.AccountNo = request.AccountNo.Substring(4);
+            }
+
+            if (request.AccountNo.StartsWith("SO"))
+            {
+                request.AccountType = "IBAN";
+            }
+
             var query = _broker.Accounts.AsNoTracking().AsQueryable();
             if (request.AccountType == "IBAN")
             {
