@@ -12,13 +12,13 @@ public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, IC
     private readonly ILogger<NativeSigner> _logger = logger;
     private readonly ICertificateService _cs = cs;
     private readonly XadesOptions _configuration = options;
-    public string SignEnvelope(string message, string algorithm = "SHA1withRSA")
+    public string SignEnvelope(string message, string algorithmX = "SHA256withRSA")
     {
         if (_configuration.WithoutPKI)
         {
             return message;
         }
-        if (!VerifyIfAlgorithmIsSupported(algorithm))
+        if (!VerifyIfAlgorithmIsSupported(_configuration.DefaultSignatureMethod))
         {
             _logger.LogError("The provided algorithm is not supported.");
             throw new InvalidOperationException("The provided algorithm is not supported.");
@@ -27,7 +27,7 @@ public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, IC
              Guid.NewGuid().ToString(),
              Guid.NewGuid().ToString(),
             DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-            algorithm: algorithm
+            algorithm: _configuration.DefaultSignatureMethod
             );
 
         XmlElement? signatureElement = signatureTemplate.GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl)[0] as XmlElement
@@ -56,7 +56,7 @@ public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, IC
         UpdateReferences(signatureElement!, envelope);
 
         // Compute the new signature
-        RecomputeSignatureWithBouncyCastle(signatureElement!, algorithm);
+        RecomputeSignatureWithBouncyCastle(signatureElement!, _configuration.DefaultSignatureMethod);
 
         // Append the signature to the XML document
         documentSgntr.AppendChild(envelope.ImportNode(signatureElement!, true));
