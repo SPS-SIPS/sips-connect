@@ -177,14 +177,24 @@ public sealed class CertificateService : ICertificateService
                 return (true, "");
             }
 
-            // Find the issuer in the chain
-            var issuer = Chain.FirstOrDefault(c => c.SubjectDN.Equivalent(certificate.IssuerDN));
-            if (issuer == null)
-                return (false, "Issuer not found in the chain.");
+            var possibleIssuers = Chain.Where(c => c.SubjectDN.Equivalent(certificate.IssuerDN)).ToList();
+            if (!possibleIssuers.Any())
+                return (false, $"Issuer not found in the chain for IssuerDN: {certificate.IssuerDN}");
 
-            certificate.Verify(issuer.GetPublicKey());
-            certificate.CheckValidity();
-            return (true, "");
+            foreach (var issuer in possibleIssuers)
+            {
+                try
+                {
+                    certificate.Verify(issuer.GetPublicKey());
+                    certificate.CheckValidity();
+                    return (true, "");
+                }
+                catch
+                {
+                    continue;
+                }
+            }
+            return (false, "No matching issuer's public key could verify the certificate signature.");
         }
         catch (InvalidKeyException ex) { return (false, ex.Message); }
         catch (SignatureException ex) { return (false, ex.Message); }
