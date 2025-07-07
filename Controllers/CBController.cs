@@ -16,8 +16,10 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
     private readonly AppDbContext _broker = broker;
 
     [HttpGet]
-    public async Task<IActionResult> Get() =>
-        Ok(await _broker.Accounts
+    public async Task<IActionResult> Get()
+    {
+        _logger.LogInformation("GET /api/CB called");
+        return Ok(await _broker.Accounts
             .Select(a => new AccountDto
             {
                 Id = a.Id,
@@ -32,10 +34,13 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
             })
             .AsNoTracking()
             .ToListAsync());
+    }
 
     [HttpGet("Transactions")]
-    public async Task<IActionResult> GetTransactions() =>
-        Ok(await _broker.InterBankTransactions
+    public async Task<IActionResult> GetTransactions()
+    {
+        _logger.LogInformation("GET /api/CB/Transactions called");
+        return Ok(await _broker.InterBankTransactions
             .Select(t => new
             {
                 t.Id,
@@ -73,17 +78,19 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
             })
             .AsNoTracking()
             .ToListAsync());
+    }
 
     [HttpPost("Verify")]
     public async Task<IActionResult> Verify([FromBody] VerifyRequest request, CancellationToken ct)
     {
+        _logger.LogInformation("POST /api/CB/Verify called with body: {Request}", System.Text.Json.JsonSerializer.Serialize(request));
         if (!ModelState.IsValid)
             return BadRequest("Invalid request");
 
         try
         {
-            var accountNo = request.AccountNo.StartsWith("USD:") ? request.AccountNo[4..] : request.AccountNo;
-            var accountType = accountNo.StartsWith("SO") ? "IBAN" : request.AccountType;
+            var accountNo = request.AccountNo.StartsWith("USD:", StringComparison.OrdinalIgnoreCase) ? request.AccountNo[4..] : request.AccountNo;
+            var accountType = accountNo.StartsWith("SO", StringComparison.OrdinalIgnoreCase) ? "IBAN" : request.AccountType;
 
             var query = _broker.Accounts.AsNoTracking().AsQueryable();
             query = accountType switch
@@ -120,6 +127,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
     [HttpPost("Status")]
     public async Task<IActionResult> Status([FromBody] StatusRequest request, CancellationToken ct)
     {
+        _logger.LogInformation("POST /api/CB/Status called with body: {Request}", System.Text.Json.JsonSerializer.Serialize(request));
         try
         {
             var txn = await _broker.InterBankTransactions.AsNoTracking()
@@ -177,6 +185,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
     [HttpPost("Transfer")]
     public async Task<IActionResult> Transfer([FromBody] TransferRequest request, CancellationToken ct)
     {
+        _logger.LogInformation("POST /api/CB/Transfer called with body: {Request}", System.Text.Json.JsonSerializer.Serialize(request));
         var response = new TransferResponse
         {
             TxId = request.TxId,
@@ -186,8 +195,8 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         try
         {
             var query = _broker.Accounts.AsQueryable();
-            var creditorAccount = request.CreditorAccount.StartsWith("USD:") ? request.CreditorAccount[4..] : request.CreditorAccount;
-            var creditorAccountType = creditorAccount.StartsWith("SO") ? "IBAN" : request.CreditorAccountType;
+            var creditorAccount = request.CreditorAccount.StartsWith("USD:", StringComparison.OrdinalIgnoreCase) ? request.CreditorAccount[4..] : request.CreditorAccount;
+            var creditorAccountType = creditorAccount.StartsWith("SO", StringComparison.OrdinalIgnoreCase) ? "IBAN" : request.CreditorAccountType;
 
             query = creditorAccountType switch
             {
@@ -267,6 +276,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
     [HttpPost("Return")]
     public async Task<IActionResult> Return([FromBody] ReturnRequest request, CancellationToken ct)
     {
+        _logger.LogInformation("POST /api/CB/Return called with body: {Request}", System.Text.Json.JsonSerializer.Serialize(request));
         try
         {
             var txn = await _broker.InterBankTransactions.AsNoTracking()
