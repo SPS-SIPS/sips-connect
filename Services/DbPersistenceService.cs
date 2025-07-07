@@ -51,6 +51,18 @@ public class DbPersistenceService(string filePath)
                 RemittanceInformationStructuredNumber = tx.RemittanceInformationStructuredNumber,
                 RemittanceInformationUnstructured = tx.RemittanceInformationUnstructured,
                 Status = tx.Status.Id
+            }).ToList(),
+            Accounts = db.Accounts.Select(acc => new AccountDto
+            {
+                Id = acc.Id,
+                IBAN = acc.IBAN,
+                CustomerName = acc.CustomerName,
+                Address = acc.Address,
+                Phone = acc.Phone,
+                Currency = acc.Currency,
+                Balance = acc.Balance,
+                Active = acc.Active,
+                WalletId = acc.WalletId
             }).ToList()
         };
         var options = new JsonSerializerOptions { WriteIndented = true };
@@ -107,6 +119,22 @@ public class DbPersistenceService(string filePath)
                     Status = Enumeration<string>.FromId<TransactionStatus>(dto.Status)
                 })
                 .ToList();
+
+            // Map AccountDto to Account
+            data.AccountsMapped = data.Accounts
+                .Select(dto => new Account
+                {
+                    Id = dto.Id,
+                    IBAN = dto.IBAN,
+                    CustomerName = dto.CustomerName,
+                    Address = dto.Address,
+                    Phone = dto.Phone,
+                    Currency = dto.Currency,
+                    Balance = dto.Balance,
+                    Active = dto.Active,
+                    WalletId = dto.WalletId
+                })
+                .ToList();
         }
         return data;
     }
@@ -114,8 +142,12 @@ public class DbPersistenceService(string filePath)
     public class PersistedData
     {
         public List<InterBankTransactionDto> InterBankTransactions { get; set; } = new();
+        public List<AccountDto> Accounts { get; set; } = new();
         // This property is not serialized, only used at runtime after mapping
         [System.Text.Json.Serialization.JsonIgnore]
         public List<InterBankTransaction> InterBankTransactionsMapped { get; set; } = new();
+        // This property is not serialized, only used at runtime after mapping
+        [System.Text.Json.Serialization.JsonIgnore]
+        public List<Account> AccountsMapped { get; set; } = new();
     }
 }
