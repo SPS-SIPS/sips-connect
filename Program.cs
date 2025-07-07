@@ -25,6 +25,26 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
 
+    // Seed accounts from configuration (supports env var overrides)
+    var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    var testAccounts = config.GetSection("TestAccounts").Get<List<SIPS.Example.Consumer.Models.AccountDto>>();
+    if (testAccounts != null && !db.Accounts.Any())
+    {
+        db.Accounts.AddRange(testAccounts.Select(account => new SIPS.Example.Consumer.Models.DB.Account
+        {
+            Id = account.Id,
+            IBAN = account.IBAN,
+            CustomerName = account.CustomerName,
+            Address = account.Address,
+            Phone = account.Phone,
+            Currency = account.Currency,
+            Balance = account.Balance,
+            Active = account.Active,
+            WalletId = account.WalletId
+        }));
+        db.SaveChanges();
+    }
+
     // Load from JSON file if exists
     var data = dbPersistence.LoadAsync().GetAwaiter().GetResult();
     if (data != null)

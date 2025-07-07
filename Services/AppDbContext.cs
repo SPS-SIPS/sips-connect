@@ -20,25 +20,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IConfiguration
         modelBuilder.Entity<InterBankTransaction>().Property(e => e.ChargeBearer).HasConversion(x => x.Id, x => Enumeration<string>.FromId<ChargeBearerType>(x));
         modelBuilder.Entity<InterBankTransaction>().Property(e => e.Status).HasConversion(x => x.Id, x => Enumeration<string>.FromId<TransactionStatus>(x));
 
-        var testAccounts = _configuration.GetSection("TestAccounts").Get<List<AccountDto>>();
-        if (testAccounts != null)
-        {
-            foreach (var account in testAccounts)
-            {
-                modelBuilder.Entity<Account>().HasData(new Account
-                {
-                    Id = account.Id,
-                    IBAN = account.IBAN,
-                    CustomerName = account.CustomerName,
-                    Address = account.Address,
-                    Phone = account.Phone,
-                    Currency = account.Currency,
-                    Balance = account.Balance,
-                    Active = account.Active,
-                    WalletId = account.WalletId
-                });
-            }
-        }
+        // Removed HasData seeding for dynamic accounts. Use runtime seeding in Program.cs instead.
     }
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
