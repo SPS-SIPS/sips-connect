@@ -29,11 +29,9 @@ using (var scope = app.Services.CreateScope())
     var data = dbPersistence.LoadAsync().GetAwaiter().GetResult();
     if (data != null)
     {
-        if (db.Accounts.Any()) db.Accounts.RemoveRange(db.Accounts);
         if (db.InterBankTransactions.Any()) db.InterBankTransactions.RemoveRange(db.InterBankTransactions);
         db.SaveChanges();
 
-        db.Accounts.AddRange(data.Accounts);
         // Use mapped InterBankTransactions, not DTOs
         var validInterBankTransactions = data.InterBankTransactionsMapped.Where(tx =>
             tx.ChargeBearer != null &&

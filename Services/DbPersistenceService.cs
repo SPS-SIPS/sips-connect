@@ -13,7 +13,6 @@ public class DbPersistenceService(string filePath)
     {
         var data = new PersistedData
         {
-            Accounts = db.Accounts.ToList(),
             InterBankTransactions = db.InterBankTransactions.Select(tx => new InterBankTransactionDto
             {
                 Id = tx.Id,
@@ -114,7 +113,6 @@ public class DbPersistenceService(string filePath)
 
     public class PersistedData
     {
-        public List<Account> Accounts { get; set; } = new();
         public List<InterBankTransactionDto> InterBankTransactions { get; set; } = new();
         // This property is not serialized, only used at runtime after mapping
         [System.Text.Json.Serialization.JsonIgnore]
