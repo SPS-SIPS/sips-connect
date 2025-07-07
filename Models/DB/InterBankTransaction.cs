@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using SIPS.Example.Consumer.Enums;
 
 namespace SIPS.Example.Consumer.Models.DB;
+
 public sealed class InterBankTransaction
 {
     [Key]

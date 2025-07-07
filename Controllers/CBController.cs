@@ -16,152 +16,161 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
     private readonly AppDbContext _broker = broker;
 
     [HttpGet]
-    public IActionResult Get()
-    {
-        var accounts = _broker.Accounts
-        .Select(a => new AccountDto
-        {
-            Id = a.Id,
-            IBAN = a.IBAN,
-            CustomerName = a.CustomerName,
-            Address = a.Address,
-            Phone = a.Phone,
-            Currency = a.Currency,
-            Balance = a.Balance,
-            Active = a.Active,
-            WalletId = a.WalletId
-        })
-        .AsNoTracking().ToList();
+    public async Task<IActionResult> Get() =>
+        Ok(await _broker.Accounts
+            .Select(a => new AccountDto
+            {
+                Id = a.Id,
+                IBAN = a.IBAN,
+                CustomerName = a.CustomerName,
+                Address = a.Address,
+                Phone = a.Phone,
+                Currency = a.Currency,
+                Balance = a.Balance,
+                Active = a.Active,
+                WalletId = a.WalletId
+            })
+            .AsNoTracking()
+            .ToListAsync());
 
-        return Ok(accounts);
-    }
+    [HttpGet("Transactions")]
+    public async Task<IActionResult> GetTransactions() =>
+        Ok(await _broker.InterBankTransactions
+            .Select(t => new
+            {
+                t.Id,
+                t.TransactionIdentification,
+                t.EndToEndIdentification,
+                t.InstructedAgent,
+                t.InstructingAgent,
+                t.InstructedAmount,
+                t.InstructedCurrency,
+                t.InterbankSettlementAmount,
+                t.InterbankSettlementCurrency,
+                t.AcceptanceDateTime,
+                t.CreDt,
+                t.CreDtTm,
+                t.Debtor,
+                t.DebtorPostalAddress,
+                t.DebtorAccount,
+                t.DebtorAccountType,
+                t.Creditor,
+                t.CreditorAccount,
+                t.CreditorAccountType,
+                t.Purpose,
+                Status = t.Status.Id,
+                PaymentTypeInformation = t.PaymentTypeInformation.Id,
+                PaymentTypeInformationCategoryPurpose = t.PaymentTypeInformationCategoryPurpose.Id,
+                SettlementMethod = t.SettlementMethod.Id,
+                ChargeBearer = t.ChargeBearer.Id,
+                t.BizMsgIdr,
+                t.MsgDefIdr,
+                t.ClearingSystem,
+                FromBIC = t.InstructingAgent,
+                ToBIC = t.InstructedAgent,
+                LocalInstrument = t.PaymentTypeInformation.Id,
+                CategoryPurpose = t.PaymentTypeInformationCategoryPurpose.Id,
+            })
+            .AsNoTracking()
+            .ToListAsync());
+
     [HttpPost("Verify")]
     public async Task<IActionResult> Verify([FromBody] VerifyRequest request, CancellationToken ct)
     {
-        if (ModelState.IsValid == false)
-        {
+        if (!ModelState.IsValid)
             return BadRequest("Invalid request");
-        }
-        var response = new VerifyResponse();
+
         try
         {
-            if (request.AccountNo.StartsWith("USD:"))
-            {
-                request.AccountNo = request.AccountNo.Substring(4);
-            }
-
-            if (request.AccountNo.StartsWith("SO"))
-            {
-                request.AccountType = "IBAN";
-            }
+            var accountNo = request.AccountNo.StartsWith("USD:") ? request.AccountNo[4..] : request.AccountNo;
+            var accountType = accountNo.StartsWith("SO") ? "IBAN" : request.AccountType;
 
             var query = _broker.Accounts.AsNoTracking().AsQueryable();
-            if (request.AccountType == "IBAN")
+            query = accountType switch
             {
-                query = query.Where(a => a.IBAN == request.AccountNo);
-            }
-            else if (request.AccountType == "MSIS")
-            {
-                query = query.Where(a => a.Phone!.Contains(request.AccountNo));
-            }
-            else if (request.AccountType == "EWLT")
-            {
-                query = query.Where(a => a.WalletId == request.AccountNo);
-            }
-            else if (request.AccountType == "ACCT")
-            {
-                query = query.Where(a => a.Id == long.Parse(request.AccountNo));
-            }
-            else
-            {
-                return BadRequest("Invalid account type");
-            }
-
+                "IBAN" => query.Where(a => a.IBAN == accountNo),
+                "MSIS" => query.Where(a => a.Phone!.Contains(accountNo)),
+                "EWLT" => query.Where(a => a.WalletId == accountNo),
+                "ACCT" => query.Where(a => a.Id == long.Parse(accountNo)),
+                _ => query
+            };
 
             var account = await query.FirstOrDefaultAsync(ct);
+            if (account is null)
+                return NotFound(new VerifyResponse { Reason = "MISS", Message = "Account not found", IsVerified = false });
 
-            if (account == null)
+            return Ok(new VerifyResponse
             {
-                response.Reason = "MISS";
-                response.Message = "Account not found";
-                response.IsVerified = false;
-                return NotFound(response);
-            }
-            response.AccountNo = account.IBAN!;
-            response.AccountType = "IBAN";
-            response.Currency = account.Currency!;
-            response.Name = account.CustomerName!;
-            response.Address = account.Address!;
-            response.IsVerified = true;
-            response.Message = account.Id.ToString();
-            return Ok(response);
+                AccountNo = account.IBAN!,
+                AccountType = "IBAN",
+                Currency = account.Currency!,
+                Name = account.CustomerName!,
+                Address = account.Address!,
+                IsVerified = true,
+                Message = account.Id.ToString()
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error verifying account");
-            response.Message = "Error verifying account";
-            return Ok(response);
+            return Ok(new VerifyResponse { Message = "Error verifying account" });
         }
     }
 
     [HttpPost("Status")]
     public async Task<IActionResult> Status([FromBody] StatusRequest request, CancellationToken ct)
     {
-        var response = new StatusResponse();
         try
         {
-            var query = _broker.InterBankTransactions.AsNoTracking()
-                .Where(t => t.TransactionIdentification == request.TxId);
+            var txn = await _broker.InterBankTransactions.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.TransactionIdentification == request.TxId, ct);
 
-
-            var txn = await query.FirstOrDefaultAsync(ct);
-
-            if (txn == null)
+            if (txn is null)
             {
-                response.Status = "RJCT";
-                response.Reason = "MISS";
-                response.AdditionalInfo = "Creditor account not found";
-                return NotFound(response);
+                return NotFound(new StatusResponse
+                {
+                    Status = "RJCT",
+                    Reason = "MISS",
+                    AdditionalInfo = "Creditor account not found"
+                });
             }
-            // return the response
-            response.Status = txn.Status.Id;
-            response.AcceptanceDate = txn.AcceptanceDateTime.Date;
-            response.TxId = request.TxId;
-            response.EndToEndId = request.EndToEndId;
-            response.Amount = txn.InterbankSettlementAmount;
-            response.Currency = txn.InstructedCurrency;
-            response.DebtorName = txn.Debtor;
-            response.DebtorPostalAddress = txn.DebtorPostalAddress;
-            response.DebtorAccount = txn.DebtorAccount;
-            response.DebtorAccountType = txn.DebtorAccountType;
-            response.DebtorAgentBIC = txn.InstructedAgent;
 
-            response.CreditorName = txn.Creditor;
-            response.CreditorPostalAddress = "";
-            response.CreditorAccount = txn.CreditorAccount;
-            response.CreditorAccountType = txn.CreditorAccountType;
-            response.CreditorAgentBIC = txn.InstructingAgent;
-
-            response.RemittanceInformation = txn.Purpose;
-            response.Status = txn.Status.Id;
-            response.FromBIC = txn.InstructingAgent;
-            response.ToBIC = txn.InstructedAgent;
-            response.LocalInstrument = txn.PaymentTypeInformation.Id;
-            response.CategoryPurpose = txn.PaymentTypeInformationCategoryPurpose.Id;
-            response.SettlementMethod = txn.SettlementMethod.Id;
-            response.ChargeBearer = txn.ChargeBearer.Id;
-            response.Date = txn.CreDt.Date;
-            response.BizMsgIdr = txn.BizMsgIdr;
-            response.MsgDefIdr = txn.MsgDefIdr;
-            response.ClearingSystem = txn.ClearingSystem;
-            response.MsgId = txn.TransactionIdentification;
-
-            return Ok(response);
+            return Ok(new StatusResponse
+            {
+                Status = txn.Status.Id,
+                AcceptanceDate = txn.AcceptanceDateTime.Date,
+                TxId = request.TxId,
+                EndToEndId = request.EndToEndId,
+                Amount = txn.InterbankSettlementAmount,
+                Currency = txn.InstructedCurrency,
+                DebtorName = txn.Debtor,
+                DebtorPostalAddress = txn.DebtorPostalAddress,
+                DebtorAccount = txn.DebtorAccount,
+                DebtorAccountType = txn.DebtorAccountType,
+                DebtorAgentBIC = txn.InstructedAgent,
+                CreditorName = txn.Creditor,
+                CreditorPostalAddress = string.Empty,
+                CreditorAccount = txn.CreditorAccount,
+                CreditorAccountType = txn.CreditorAccountType,
+                CreditorAgentBIC = txn.InstructingAgent,
+                RemittanceInformation = txn.Purpose,
+                FromBIC = txn.InstructingAgent,
+                ToBIC = txn.InstructedAgent,
+                LocalInstrument = txn.PaymentTypeInformation.Id,
+                CategoryPurpose = txn.PaymentTypeInformationCategoryPurpose.Id,
+                SettlementMethod = txn.SettlementMethod.Id,
+                ChargeBearer = txn.ChargeBearer.Id,
+                Date = txn.CreDt.Date,
+                BizMsgIdr = txn.BizMsgIdr,
+                MsgDefIdr = txn.MsgDefIdr,
+                ClearingSystem = txn.ClearingSystem,
+                MsgId = txn.TransactionIdentification
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error verifying account");
-            return Ok(response);
+            return Ok(new StatusResponse { Status = "RJCT", Reason = "ERRR", AdditionalInfo = "Error verifying account" });
         }
     }
 
@@ -177,62 +186,31 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         try
         {
             var query = _broker.Accounts.AsQueryable();
+            var creditorAccount = request.CreditorAccount.StartsWith("USD:") ? request.CreditorAccount[4..] : request.CreditorAccount;
+            var creditorAccountType = creditorAccount.StartsWith("SO") ? "IBAN" : request.CreditorAccountType;
 
-            if (request.CreditorAccountType == "IBAN")
+            query = creditorAccountType switch
             {
-                query = query.Where(a => a.IBAN == request.CreditorAccount);
-            }
-            else if (request.CreditorAccountType.Equals("phone", StringComparison.CurrentCultureIgnoreCase))
-            {
-                query = query.Where(a => a.Phone!.Contains(request.CreditorAccount));
-            }
-            else if (request.CreditorAccountType.Equals("wallet", StringComparison.CurrentCultureIgnoreCase))
-            {
-                query = query.Where(a => a.WalletId!.Contains(request.CreditorAccount));
-            }
-            else
-            {
-                var id = long.TryParse(request.CreditorAccount, out long accountId) ? accountId : 0;
-                query = query.Where(a => a.Id == id);
-            }
+                "IBAN" => query.Where(a => a.IBAN == creditorAccount),
+                var t when t.Equals("phone", StringComparison.CurrentCultureIgnoreCase) => query.Where(a => a.Phone!.Contains(creditorAccount)),
+                var t when t.Equals("wallet", StringComparison.CurrentCultureIgnoreCase) => query.Where(a => a.WalletId!.Contains(creditorAccount)),
+                _ => long.TryParse(creditorAccount, out var id) ? query.Where(a => a.Id == id) : query.Where(a => false)
+            };
 
             var toAccount = await query.FirstOrDefaultAsync(ct);
+            if (toAccount is null)
+                return NotFound(new TransferResponse { Status = "RJCT", Reason = "MISS", AdditionalInfo = "Creditor account not found" });
 
-            if (toAccount == null)
-            {
-                response.Status = "RJCT";
-                response.Reason = "MISS";
-                response.AdditionalInfo = "Creditor account not found";
-                return NotFound(response);
-            }
-
-            // check if the creditor account is active and has enough balance
             if (!toAccount.Active)
-            {
-                response.Status = "RJCT";
-                response.Reason = "AC01";
-                response.AdditionalInfo = "Creditor account is not active";
-                return Ok(response);
-            }
+                return Ok(new TransferResponse { Status = "RJCT", Reason = "AC01", AdditionalInfo = "Creditor account is not active" });
 
             if (toAccount.Balance < request.Amount)
-            {
-                response.Status = "RJCT";
-                response.Reason = "AC02";
-                response.AdditionalInfo = "Insufficient funds";
-                return Ok(response);
-            }
+                return Ok(new TransferResponse { Status = "RJCT", Reason = "AC02", AdditionalInfo = "Insufficient funds" });
 
-            // update the creditor account balance
             toAccount.Balance -= request.Amount;
-
-            // return the response
             response.Status = "ACSC";
             response.AcceptanceDate = DateTime.UtcNow;
-            response.TxId = request.TxId;
-            response.EndToEndId = request.EndToEndId;
 
-            // create the transaction
             var settlementMethod = request.SettlementMethod!.ToUpper();
             var localInstrument = request.LocalInstrument!.ToUpper();
             var categoryPurpose = request.CategoryPurpose!.ToUpper();
@@ -267,15 +245,14 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 Creditor = request.CreditorName,
                 CreditorAccount = request.CreditorAccount,
                 CreditorAccountType = request.CreditorAccountType,
-                InstructionForNextAgent = "",
+                InstructionForNextAgent = string.Empty,
                 Purpose = request.RemittanceInformation,
-                RemittanceInformationStructuredType = "",
-                RemittanceInformationStructuredNumber = "",
+                RemittanceInformationStructuredType = string.Empty,
+                RemittanceInformationStructuredNumber = string.Empty,
                 RemittanceInformationUnstructured = request.RemittanceInformation,
                 Status = TransactionStatus.AcceptedSettlementCompleted
             };
 
-            // save the transaction
             await _broker.InterBankTransactions.AddAsync(txn, ct);
             await _broker.SaveChangesAsync(ct);
             return Ok(response);
@@ -283,66 +260,37 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error transferring funds");
-            response.Status = "RJCT";
-            response.Reason = "ERRR";
-            response.AdditionalInfo = "Error receiving funds";
-            return BadRequest(response);
+            return BadRequest(new TransferResponse { Status = "RJCT", Reason = "ERRR", AdditionalInfo = "Error receiving funds" });
         }
     }
 
     [HttpPost("Return")]
     public async Task<IActionResult> Return([FromBody] ReturnRequest request, CancellationToken ct)
     {
-        Console.WriteLine("Return called");
-        var response = new ReturnResponse
-        {
-            TxId = request.TxId,
-            EndToEndId = request.EndToEndId,
-            ReturnId = request.ReturnId,
-            Agent = request.Agent,
-        };
-
         try
         {
-            var query = _broker.InterBankTransactions.AsNoTracking()
-                .Where(t => t.TransactionIdentification == request.TxId && t.EndToEndIdentification == request.EndToEndId);
+            var txn = await _broker.InterBankTransactions.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.TransactionIdentification == request.TxId && t.EndToEndIdentification == request.EndToEndId, ct);
 
-            var txn = await query.FirstOrDefaultAsync(ct);
-
-            if (txn == null)
+            if (txn is null)
             {
-                response.Status = "RJCT";
-                response.Reason = "MISS";
-                response.AdditionalInfo = "Creditor account not found";
-                return NotFound(response);
-            }
-
-            var fromAccount = await query.FirstOrDefaultAsync(ct);
-
-            if (fromAccount == null)
-            {
-                response.Status = "RJCT";
-                response.Reason = "MISS";
-                response.AdditionalInfo = "Debtor account not found";
-                return NotFound(response);
+                return NotFound(new ReturnResponse { Status = "RJCT", Reason = "MISS", AdditionalInfo = "Creditor account not found" });
             }
 
             // return the response
-            response.Status = "ACSC";
-            response.TxId = request.TxId;
-
-            // save the transaction
-            await _broker.SaveChangesAsync(ct);
-            return Ok(response);
+            return Ok(new ReturnResponse
+            {
+                TxId = request.TxId,
+                EndToEndId = request.EndToEndId,
+                ReturnId = request.ReturnId,
+                Agent = request.Agent,
+                Status = "ACSC"
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error transferring funds");
-            response.Status = "RJCT";
-            response.Reason = "ERRR";
-            response.AdditionalInfo = "Error receiving funds";
-            return BadRequest(response);
+            return BadRequest(new ReturnResponse { Status = "RJCT", Reason = "ERRR", AdditionalInfo = "Error receiving funds" });
         }
     }
-
 }
