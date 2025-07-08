@@ -34,45 +34,42 @@ public sealed class OutgoingTransactionStatusHandler(
 
         try
         {
+            // Step 1: Retrieve ISO message by TxId
             var isoMessage = await _record.GetISOMessageByTxIdAsync(message.TxId, ct);
             if (isoMessage == null)
-            {
                 return Response<PaymentResponseDto>.Fail("Transaction not found", System.Net.HttpStatusCode.NotFound);
-            }
 
+            // Step 2: Build and sign request
             if (!BuildRequest(fromBIC, isoMessage, message, out var request))
-            {
                 return Response<PaymentResponseDto>.Fail("Failed to build the request.", System.Net.HttpStatusCode.BadRequest);
-            }
             var signed = _signer.SignEnvelope(request);
             isoMessage.Round++;
             var record = await CreateISOMessageAsync(signed, isoMessage, ct);
-            // Call the API to get the account details
+
+            // Step 3: Call SIPS and handle response
             var responseMessage = await SendRequestAsync(url, signed, ct);
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
-
             if (!responseMessageStatus.IsSuccess)
-            {
                 return responseMessageStatus;
-            }
-            if (!TryParse(responseMessage?.Data!, out var rs))
+
+            // Step 4: Parse and persist SIPS response
+            if (!TryParse(responseMessage?.Data!, out var rs) || rs == null)
             {
                 _logger.LogError("Failed to parse the message: {message}", responseMessage?.Data ?? "");
                 await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage?.Data!, ct);
                 return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
+            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage!.Data!, ct);
 
-
-            await PersistISOMessageAsync(record, rs!.Status!, rs.Reason!, rs.AdditionalInfo, responseMessage!.Data!, ct);
-
+            // Step 5: Return success response
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
             {
-                Status = rs!.Status!,
+                Status = rs.Status ?? RJCT,
                 AcceptanceDate = rs.AcceptanceDate,
-                TxId = rs.TxId,
-                EndToEndId = rs?.Original?.EndToEndId ?? "",
-                Reason = rs!.Reason,
-                AdditionalInfo = rs.AdditionalInfo
+                TxId = rs.TxId ?? string.Empty,
+                EndToEndId = rs.Original?.EndToEndId ?? string.Empty,
+                Reason = rs.Reason ?? string.Empty,
+                AdditionalInfo = rs.AdditionalInfo ?? string.Empty
             });
         }
         catch (Exception ex)
@@ -114,6 +111,9 @@ public sealed class OutgoingTransactionStatusHandler(
     private async Task<Response<string>?> SendRequestAsync(string url, string signed, CancellationToken ct)
     {
         var content = new StringContent(signed, Encoding.UTF8, "application/xml");
+        // Log the callback URL and payload
+        _logger.LogInformation("Callback URL: {Url}", url);
+        _logger.LogInformation("Callback Payload: {Payload}", signed);
         return await _httpClient.Send4XML(url, content, ct);
     }
 

@@ -29,7 +29,7 @@ public sealed class OutgoingVerificationHandler(
 
     public async Task<Response<VerificationResponseDto>> HandleAsync(VerificationRequestDto message, CancellationToken ct)
     {
-        // Validate configuration and request values.
+        // Step 1: Validate configuration and request values
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
 
@@ -42,13 +42,13 @@ public sealed class OutgoingVerificationHandler(
 
         try
         {
-            // Build and sign the verification request.
+            // Step 2: Build and sign the verification request
             if (!BuildRequest(message, fromBIC, out var signedRequest, out var bizMsgIdr, out var type))
             {
                 return Response<VerificationResponseDto>.Fail("Failed to build acmt.023 message from your request", System.Net.HttpStatusCode.BadRequest);
             }
 
-            // Create and persist the initial ISO message record.
+            // Step 3: Create and persist the initial ISO message record
             var isoMessage = new ISOMessage
             {
                 MessageType = PostgreSQL.Enums.ISOMessageType.VerificationRequest,
@@ -60,38 +60,38 @@ public sealed class OutgoingVerificationHandler(
                 BizMsgIdr = bizMsgIdr,
                 MsgDefIdr = type,
             };
-
             var record = await _record.ISOMessageAsync(isoMessage, ct);
 
-            // Send the verification request to SIPS.
+            // Step 4: Send the verification request to SIPS
             var responseMessage = await SendRequestToSIPSAsync(signedRequest, url, ct);
             record.Response = Encoding.UTF8.GetBytes(responseMessage.Data ?? "");
 
-            // Validate the SIPS response.
+            // Step 5: Validate the SIPS response
             if (!responseMessage.IsSuccess || string.IsNullOrEmpty(responseMessage.Data))
             {
-                await PersistISOMessageAsync(record, false, "Failed to receive valid response from SIPS", responseMessage.Message, responseMessage.Data ?? "", "", ct);
+                await PersistISOMessageAsync(record, false, "Failed to receive valid response from SIPS", responseMessage.Message, responseMessage.Data ?? string.Empty, string.Empty, ct);
                 return Response<VerificationResponseDto>.Fail(Transformers.TransformSIPSHttpError(responseMessage.StatusCode), responseMessage.StatusCode);
             }
 
-            // Verify the signature on the SIPS response.
+            // Step 6: Verify the signature on the SIPS response
             var (isSignatureValid, verbose) = await _verifier.VerifySignature(responseMessage.Data, false, ct);
             if (!isSignatureValid)
             {
-                await PersistISOMessageAsync(record, false, "Failed to verify the signature from SIPS", "Signature verification failed", responseMessage.Data, "", ct);
+                await PersistISOMessageAsync(record, false, "Failed to verify the signature from SIPS", "Signature verification failed", responseMessage.Data, string.Empty, ct);
                 _logger.LogError("Failed to verify the signature: verbose {Verbose}", verbose);
                 return Response<VerificationResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
             }
 
-            // Parse the SIPS response.
+            // Step 7: Parse and persist the SIPS response
             var parsedResponse = PayeeVerificationResponseBuilder.Parse(responseMessage.Data);
-            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason, string.Empty, responseMessage.Data, parsedResponse.VerificationId, ct);
+            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason ?? string.Empty, string.Empty, responseMessage.Data, parsedResponse.VerificationId ?? string.Empty, ct);
 
+            // Step 8: Return success response
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto
             {
                 IsVerified = parsedResponse.Verified,
-                SIPSRequestId = parsedResponse.VerificationId,
-                Reason = parsedResponse.Reason,
+                SIPSRequestId = parsedResponse.VerificationId ?? string.Empty,
+                Reason = parsedResponse.Reason ?? string.Empty,
                 Id = parsedResponse.Verified ? parsedResponse.Id : null,
                 Type = parsedResponse.Verified ? parsedResponse.Type : null,
                 Name = parsedResponse.Verified ? parsedResponse.Name : null,
@@ -129,7 +129,9 @@ public sealed class OutgoingVerificationHandler(
 
     private async Task<Response<string>> SendRequestToSIPSAsync(string message, string url, CancellationToken ct)
     {
-        _logger.LogDebug("Sending verification request to SIPS: {SignedMessage}", message);
+        // Log the callback URL and payload
+        _logger.LogInformation("Callback URL: {Url}", url);
+        _logger.LogInformation("Callback Payload: {Payload}", message);
         var content = new StringContent(message, Encoding.UTF8, "application/xml");
         return await _httpClient.Send4XML(url, content, ct);
     }

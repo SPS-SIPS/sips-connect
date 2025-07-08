@@ -3,22 +3,33 @@ using SIPS.ISO20022.Interfaces;
 using SIPS.XMLDsig.Xades.Services;
 
 namespace SIPS.Core.Services;
-public class Incoming(IIncomingVerificationHandler vr, IIncomingTransactionHandler ith, IIncomingTransactionStatusHandler psh, IIncomingReturnTransactionHandler rh) : IIncoming
+
+public class Incoming : IIncoming
 {
-    private readonly IIncomingVerificationHandler _vr = vr;
-    private readonly IIncomingTransactionHandler _ith = ith;
-    private readonly IIncomingTransactionStatusHandler _psh = psh;
-    private readonly IIncomingReturnTransactionHandler _rh = rh;
+    private readonly Dictionary<string, Func<string, CancellationToken, Task<string>>> _handlers;
+
+    public Incoming(
+        IIncomingVerificationHandler vr,
+        IIncomingTransactionHandler ith,
+        IIncomingTransactionStatusHandler psh,
+        IIncomingReturnTransactionHandler rh)
+    {
+        _handlers = new()
+        {
+            ["acmt.023.001.03"] = vr.HandleAsync,
+            ["pacs.008.001.10"] = ith.HandleAsync,
+            ["pacs.028.001.05"] = psh.HandleAsync,
+            ["pacs.004.001.11"] = rh.HandleAsync
+        };
+    }
+
     public async ValueTask<string> Handle(string isoMessage, CancellationToken ct)
     {
         var messageType = Transformers.GetMessageType(isoMessage);
-        return messageType switch
+        if (_handlers.TryGetValue(messageType, out var handler))
         {
-            "acmt.023.001.03" => await _vr.HandleAsync(isoMessage, CancellationToken.None),
-            "pacs.008.001.10" => await _ith.HandleAsync(isoMessage, CancellationToken.None),
-            "pacs.028.001.05" => await _psh.HandleAsync(isoMessage, CancellationToken.None),
-            "pacs.004.001.11" => await _rh.HandleAsync(isoMessage, CancellationToken.None),
-            _ => AdminMessage.Generate("Unsupported message type."),
-        };
+            return await handler(isoMessage, ct);
+        }
+        return AdminMessage.Generate("Unsupported message type.");
     }
 }

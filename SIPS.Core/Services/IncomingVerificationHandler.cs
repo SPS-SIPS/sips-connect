@@ -40,21 +40,48 @@ public sealed class IncomingVerificationHandler(
     };
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
-        // Verify the signature
-        if (!await VerifySignatureAsync(message, ct))
-        {
-            return AdminMessage.Generate("Failed to verify the signature.");
-        }
+        // Step 1: Verify signature and parse message
+        var (isValid, request) = await VerifyAndParseAsync(message, ct);
+        if (!isValid || request == null)
+            return ErrorResponse("Failed to verify the signature or parse the message.");
 
-        // Parse the message
-        if (!TryParse(message, out var request))
-        {
-            return AdminMessage.Generate("Failed to parse the message.");
-        }
-
+        // Step 2: Record the incoming ISO message
         var isoMessage = await CreateISOMessage(request, message, ct);
 
-        var response = new PayeeVerificationResponseBuilder.Request
+        // Step 3: Prepare response object
+        var response = BuildInitialResponse(request);
+
+        try
+        {
+            // Step 4: Send callback and parse result
+            var callbackResult = await SendAndParseCallbackAsync(request, response, ct);
+
+            // Step 5: Build, persist, and sign response
+            var rsp = PayeeVerificationResponseBuilder.Build(response);
+            await PersistISOMessageAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
+            return _signer.SignEnvelope(rsp);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to verify payee");
+            var rsp = PayeeVerificationResponseBuilder.Build(response);
+            await PersistISOMessageAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
+            return _signer.SignEnvelope(rsp);
+        }
+    }
+
+    private async Task<(bool, PayeeVerificationBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct)
+    {
+        if (!await VerifySignatureAsync(message, ct))
+            return (false, null);
+        if (!TryParse(message, out var request))
+            return (false, null);
+        return (true, request);
+    }
+
+    private PayeeVerificationResponseBuilder.Request BuildInitialResponse(PayeeVerificationBuilder.Request request)
+    {
+        return new PayeeVerificationResponseBuilder.Request
         {
             From = request.To,
             To = request.From,
@@ -66,35 +93,25 @@ public sealed class IncomingVerificationHandler(
             Reason = MISS,
             Verified = false
         };
+    }
 
-        try
+    private async Task<Response<JsonObject?>> SendAndParseCallbackAsync(PayeeVerificationBuilder.Request request, PayeeVerificationResponseBuilder.Request response, CancellationToken ct)
+    {
+        var responseMessage = await SendCallbackAsync(request, ct);
+        if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
         {
-            // Send the callback
-            var responseMessage = await SendCallbackAsync(request, ct);
-            if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
-            {
-                // convert the responseContent to a JsonObject
-                ParseCallbackResult(responseMessage.Data, response);
-            }
-            else
-            {
-                response.AdditionalInfo = responseMessage.Message;
-            }
+            ParseCallbackResult(responseMessage.Data, response);
+        }
+        else
+        {
+            response.AdditionalInfo = responseMessage.Message;
+        }
+        return responseMessage;
+    }
 
-            // Build the response
-            var rsp = PayeeVerificationResponseBuilder.Build(response);
-            // record the response
-            await PersistISOMessageAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
-            // Sign and return the response
-            return _signer.SignEnvelope(rsp);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Failed to verify payee: {Message}", ex.Message);
-            var rsp = PayeeVerificationResponseBuilder.Build(response);
-            await PersistISOMessageAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
-            return _signer.SignEnvelope(rsp);
-        }
+    private string ErrorResponse(string message)
+    {
+        return AdminMessage.Generate(message);
     }
 
     private async Task<bool> VerifySignatureAsync(string message, CancellationToken ct)
@@ -152,7 +169,10 @@ public sealed class IncomingVerificationHandler(
         }, CB_VerificationRequest);
 
         var requestToCB = JsonSerializer.Serialize(md, _jsonSerializerOptions);
-        // Call the API to get the account details
+        // Log the callback URL and payload
+        _logger.LogInformation("Callback URL: {Url}", _callbackLinks.Verification);
+        _logger.LogInformation("Callback Payload: {Payload}", requestToCB);
+
         var content = new StringContent(requestToCB, Encoding.UTF8, "application/json");
         var responseMessage = await _httpClient.Send(_callbackLinks.Verification!,
             new Dictionary<string, string>() {
@@ -171,11 +191,11 @@ public sealed class IncomingVerificationHandler(
 
         response.Verified = deserializedContent?.IsVerified ?? false;
         response.Reason = response.Verified ? SUCC : MISS;
-        response.Id = deserializedContent?.Id ?? "";
+        response.Id = deserializedContent?.Id ?? string.Empty;
         response.Type = IBAN;
-        response.Name = deserializedContent?.Name ?? "";
-        response.Address = deserializedContent?.Address ?? "";
-        response.Currency = deserializedContent?.Currency ?? "";
+        response.Name = deserializedContent?.Name ?? string.Empty;
+        response.Address = deserializedContent?.Address ?? string.Empty;
+        response.Currency = deserializedContent?.Currency ?? string.Empty;
     }
     private async Task PersistISOMessageAsync(ISOMessage isoMessage, string status, string reason, string? additionalInfo, string rsp, CancellationToken ct)
     {

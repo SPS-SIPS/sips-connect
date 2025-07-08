@@ -40,30 +40,57 @@ public sealed class IncomingTransactionStatusHandler(
     };
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
-        // Verify the signature
-        if (!await VerifySignatureAsync(message, ct))
-        {
-            return AdminMessage.Generate("Failed to verify the signature.");
-        }
+        // Step 1: Verify signature and parse message
+        var (isValid, request) = await VerifyAndParseAsync(message, ct);
+        if (!isValid || request == null)
+            return ErrorResponse("Failed to verify the signature or parse the message.");
 
-        // Parse the message
-        if (!TryParse(message, out var request))
-        {
-            return AdminMessage.Generate("Failed to parse the message.");
-        }
-
+        // Step 2: Retrieve ISO message by TxId
         var isoMessage = await _record.GetISOMessageByTxIdAsync(request.OrgnlTxId, ct);
-
         if (isoMessage == null)
         {
-            // Persist the incoming message - for reference
             await CreateISOMessage(request, message, ct);
-            return AdminMessage.Generate("Failed to get the Message.");
+            return ErrorResponse("Failed to get the Message.");
         }
 
+        // Step 3: Record the incoming status message
         var record = await CreateISOMessageAsync(message, isoMessage, ct);
 
-        var response = new PaymentStatusRequestResponseBuilder.Response
+        // Step 4: Prepare response object
+        var response = BuildInitialResponse(request);
+
+        try
+        {
+            // Step 5: Send callback and parse result
+            var callbackResult = await SendAndParseCallbackAsync(record, request, response, ct);
+
+            // Step 6: Build, persist, and sign response
+            var rsp = PaymentStatusRequestResponseBuilder.Build(response);
+            await PersistISOMessageAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
+            return _signer.SignEnvelope(rsp);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "INCOMING PS Handler Exception for TxId {TxId}", request.OrgnlTxId);
+            response.AdditionalInfo = "Failed to transfer: " + ex.Message;
+            var rsp = PaymentStatusRequestResponseBuilder.Build(response);
+            await PersistISOMessageAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
+            return _signer.SignEnvelope(rsp);
+        }
+    }
+
+    private async Task<(bool, PaymentStatusRequestBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct)
+    {
+        if (!await VerifySignatureAsync(message, ct))
+            return (false, null);
+        if (!TryParse(message, out var request))
+            return (false, null);
+        return (true, request);
+    }
+
+    private PaymentStatusRequestResponseBuilder.Response BuildInitialResponse(PaymentStatusRequestBuilder.Request request)
+    {
+        return new PaymentStatusRequestResponseBuilder.Response
         {
             From = request.To,
             To = request.From,
@@ -85,35 +112,26 @@ public sealed class IncomingTransactionStatusHandler(
                 EndToEndId = request.OriginalEndToEnd,
             }
         };
+    }
 
-        try
+    private async Task<ISO20022.Models.DTOs.Response<JsonObject?>> SendAndParseCallbackAsync(ISOMessageStatus? record, PaymentStatusRequestBuilder.Request request, PaymentStatusRequestResponseBuilder.Response response, CancellationToken ct)
+    {
+        var responseMessage = await SendCallbackAsync(request, ct);
+        if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
         {
-            var responseMessage = await SendCallbackAsync(request, ct);
-
-            if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
-            {
-                ParseCallbackResult(responseMessage.Data, response);
-            }
-            else
-            {
-                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", "", ct);
-                response.AdditionalInfo = "Failed to get response from CB.";
-            }
-
-            // Build the response
-            var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            // Persist the message
-            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, rsp, ct);
-            return _signer.SignEnvelope(rsp);
+            ParseCallbackResult(responseMessage.Data, response);
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogError(ex, "INCOMING PS Handler Exception for TxId {TxId}", request.OrgnlTxId);
-            response.AdditionalInfo = "Failed to transfer: " + ex.Message;
-            var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, rsp, ct);
-            return _signer.SignEnvelope(rsp);
+            await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", string.Empty, ct);
+            response.AdditionalInfo = "Failed to get response from CB.";
         }
+        return responseMessage;
+    }
+
+    private string ErrorResponse(string message)
+    {
+        return AdminMessage.Generate(message);
     }
     private async Task<bool> VerifySignatureAsync(string message, CancellationToken ct)
     {
@@ -147,7 +165,10 @@ public sealed class IncomingTransactionStatusHandler(
         }, CB_StatusRequest);
 
         var requestToCB = JsonSerializer.Serialize(md, _jsonSerializerOptions);
-        // Call the API to get the account details
+        // Log the callback URL and payload
+        _logger.LogInformation("Callback URL: {Url}", _callbackLinks.Status);
+        _logger.LogInformation("Callback Payload: {Payload}", requestToCB);
+
         var content = new StringContent(requestToCB, Encoding.UTF8, "application/json");
 
         var responseMessage = await _httpClient.Send(_callbackLinks.Status!,
@@ -171,38 +192,39 @@ public sealed class IncomingTransactionStatusHandler(
         {
             response.Status = RJCT;
             response.Reason = MISS;
+            response.AdditionalInfo = string.Empty;
             return;
         }
 
-        response.Status = deserializedContent.Status;
-        response.Reason = deserializedContent.Reason;
-        response.AdditionalInfo = deserializedContent.AdditionalInfo;
+        response.Status = deserializedContent.Status ?? RJCT;
+        response.Reason = deserializedContent.Reason ?? string.Empty;
+        response.AdditionalInfo = deserializedContent.AdditionalInfo ?? string.Empty;
         response.AcceptanceDate = deserializedContent.AcceptanceDate;
-        response.TxId = deserializedContent.TxId;
-        response.Original.From = deserializedContent.FromBIC;
-        response.Original.To = deserializedContent.ToBIC;
-        response.Original.BizMsgIdr = deserializedContent.BizMsgIdr;
-        response.Original.MsgId = deserializedContent.MsgId;
-        response.Original.ClearingSystem = deserializedContent.ClearingSystem;
-        response.Original.MsgDefIdr = deserializedContent.MsgDefIdr;
+        response.TxId = deserializedContent.TxId ?? string.Empty;
+        response.Original.From = deserializedContent.FromBIC ?? string.Empty;
+        response.Original.To = deserializedContent.ToBIC ?? string.Empty;
+        response.Original.BizMsgIdr = deserializedContent.BizMsgIdr ?? string.Empty;
+        response.Original.MsgId = deserializedContent.MsgId ?? string.Empty;
+        response.Original.ClearingSystem = deserializedContent.ClearingSystem ?? string.Empty;
+        response.Original.MsgDefIdr = deserializedContent.MsgDefIdr ?? string.Empty;
         response.Original.CreDt = deserializedContent.Date;
-        response.Original.LocalInstrument = deserializedContent.LocalInstrument;
-        response.Original.CategoryPurpose = deserializedContent.CategoryPurpose;
-        response.Original.EndToEndId = deserializedContent.EndToEndId;
-        response.Original.TxId = deserializedContent.TxId;
+        response.Original.LocalInstrument = deserializedContent.LocalInstrument ?? string.Empty;
+        response.Original.CategoryPurpose = deserializedContent.CategoryPurpose ?? string.Empty;
+        response.Original.EndToEndId = deserializedContent.EndToEndId ?? string.Empty;
+        response.Original.TxId = deserializedContent.TxId ?? string.Empty;
         response.Original.Amount = deserializedContent.Amount;
-        response.Original.Currency = deserializedContent.Currency;
-        response.Original.Debtor.Name = deserializedContent.DebtorName;
-        response.Original.Debtor.Account = deserializedContent.DebtorAccount;
-        response.Original.Debtor.AccountType = deserializedContent.DebtorAccountType;
-        response.Original.Debtor.AgentBIC = deserializedContent.DebtorAgentBIC;
-        response.Original.Debtor.Issuer = deserializedContent.DebtorIssuer;
-        response.Original.Creditor.Name = deserializedContent.CreditorName;
-        response.Original.Creditor.Account = deserializedContent.CreditorAccount;
-        response.Original.Creditor.AccountType = deserializedContent.CreditorAccountType;
-        response.Original.Creditor.AgentBIC = deserializedContent.CreditorAgentBIC;
-        response.Original.Creditor.Issuer = deserializedContent.CreditorIssuer;
-        response.Original.Ustrd = deserializedContent?.RemittanceInformation;
+        response.Original.Currency = deserializedContent.Currency ?? string.Empty;
+        response.Original.Debtor.Name = deserializedContent.DebtorName ?? string.Empty;
+        response.Original.Debtor.Account = deserializedContent.DebtorAccount ?? string.Empty;
+        response.Original.Debtor.AccountType = deserializedContent.DebtorAccountType ?? string.Empty;
+        response.Original.Debtor.AgentBIC = deserializedContent.DebtorAgentBIC ?? string.Empty;
+        response.Original.Debtor.Issuer = deserializedContent.DebtorIssuer ?? string.Empty;
+        response.Original.Creditor.Name = deserializedContent.CreditorName ?? string.Empty;
+        response.Original.Creditor.Account = deserializedContent.CreditorAccount ?? string.Empty;
+        response.Original.Creditor.AccountType = deserializedContent.CreditorAccountType ?? string.Empty;
+        response.Original.Creditor.AgentBIC = deserializedContent.CreditorAgentBIC ?? string.Empty;
+        response.Original.Creditor.Issuer = deserializedContent.CreditorIssuer ?? string.Empty;
+        response.Original.Ustrd = deserializedContent.RemittanceInformation ?? string.Empty;
     }
     private async Task PersistISOMessageAsync(ISOMessageStatus isoMessage, string status, string reason, string? additionalInfo, string rsp, CancellationToken ct)
     {

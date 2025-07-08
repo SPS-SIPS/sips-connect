@@ -16,30 +16,27 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
 
     public async Task<(CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string sn, CancellationToken cancellationToken = default)
     {
+        // Step 1: Validate configuration
         var url = _options.PublicKeysRepUrl;
         if (string.IsNullOrEmpty(url))
         {
             _logger.LogError("Invalid configuration for certificates.");
             return (null, "Invalid configuration for certificates.");
         }
-        // Check if the certificates are already cached
+
+        // Step 2: Check if the certificates are already cached
         var certificates = await GetCertificatesFromCacheAsync(sn, cancellationToken);
-
         if (certificates != null)
-        {
             return (certificates, null);
-        }
 
-        // Login to the API
-        var (_, Error) = _ = await _authService.LoginAsync(cancellationToken);
-        if (Error != null)
-        {
-            return (null, Error);
-        }
+        // Step 3: Login to the API
+        var loginResult = await _authService.LoginAsync(cancellationToken);
+        if (loginResult.Error != null)
+            return (null, loginResult.Error);
 
-        CertificateRequest request = new(sn, "");
-
-        var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(_options.PublicKeysRepUrl!, request, cancellationToken);
+        // Step 4: Build request and call API
+        var request = new CertificateRequest(sn, "");
+        var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(url, request, cancellationToken);
 
         if (!response.IsSuccess)
         {
@@ -47,12 +44,13 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
             return (null, response.Message);
         }
 
-        // Cache the certificates for future use
+        // Step 5: Cache the certificates for future use
         await _cacheService.SetAsync($"certificates:{sn}", response.Data, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(response.CacheInMins)
         }, cancellationToken);
 
+        // Step 6: Return the certificates
         return (response.Data, null);
     }
 

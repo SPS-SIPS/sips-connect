@@ -40,21 +40,50 @@ public sealed class IncomingTransactionHandler(
     };
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
-        // Verify the signature
-        if (!await VerifySignatureAsync(message, ct))
-        {
-            return AdminMessage.Generate("Failed to verify the signature.");
-        }
+        // Step 1: Verify signature and parse message
+        var (isValid, request) = await VerifyAndParseAsync(message, ct);
+        if (!isValid || request == null)
+            return ErrorResponse("Failed to verify the signature or parse the message.");
 
-        // Parse the message
-        if (!TryParse(message, out var request))
-        {
-            return AdminMessage.Generate("Failed to parse the message.");
-        }
-
+        // Step 2: Record the incoming ISO message
         var entity = CreateISOMessage(request, message);
         var record = await _record.ISOMessageAsync(entity, ct);
-        var response = new PaymentRequestResponseBuilder.Response
+
+        // Step 3: Prepare response object
+        var response = BuildInitialResponse(request);
+
+        try
+        {
+            // Step 4: Send callback and parse result
+            var callbackResult = await SendAndParseCallbackAsync(request, response, ct);
+
+            // Step 5: Build, persist, and sign response
+            var rsp = PaymentRequestResponseBuilder.Build(response);
+            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, response.TxId, request.EndToEndId, rsp, ct);
+            return _signer.SignEnvelope(rsp);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "INCOMING PS Handler Exception for TxId {TxId}", request?.TxId);
+            response.AdditionalInfo = "Failed to process Transaction";
+            var rsp = PaymentRequestResponseBuilder.Build(response);
+            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, response.TxId, request?.EndToEndId, rsp, ct);
+            return _signer.SignEnvelope(rsp);
+        }
+    }
+
+    private async Task<(bool, PaymentRequestBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct)
+    {
+        if (!await VerifySignatureAsync(message, ct))
+            return (false, null);
+        if (!TryParse(message, out var request))
+            return (false, null);
+        return (true, request);
+    }
+
+    private PaymentRequestResponseBuilder.Response BuildInitialResponse(PaymentRequestBuilder.Request request)
+    {
+        return new PaymentRequestResponseBuilder.Response
         {
             From = request.To,
             To = request.From,
@@ -66,34 +95,25 @@ public sealed class IncomingTransactionHandler(
             Status = RJCT,
             Reason = MISS,
         };
+    }
 
-        try
+    private async Task<Response<JsonObject?>> SendAndParseCallbackAsync(PaymentRequestBuilder.Request request, PaymentRequestResponseBuilder.Response response, CancellationToken ct)
+    {
+        var responseMessage = await SendCallbackAsync(request, ct);
+        if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
         {
-            // Send the request to the CB
-            var responseMessage = await SendCallbackAsync(request, ct);
+            ParseCallbackResult(responseMessage.Data, response);
+        }
+        else
+        {
+            response.AdditionalInfo = "Failed to get response from CB.";
+        }
+        return responseMessage;
+    }
 
-            if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
-            {
-                ParseCallbackResult(responseMessage.Data, response);
-            }
-            else
-            {
-                response.AdditionalInfo = "Failed to get response from CB.";
-            }
-            // Build the response
-            var rsp = PaymentRequestResponseBuilder.Build(response);
-            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, response.TxId, request.EndToEndId, rsp, ct);
-            // Sign and return the response
-            return _signer.SignEnvelope(rsp);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "INCOMING PS Handler Exception for TxId {TxId}", request.TxId);
-            response.AdditionalInfo = "Failed to process Transaction";
-            var rsp = PaymentRequestResponseBuilder.Build(response);
-            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, response.TxId, request.EndToEndId, rsp, ct);
-            return _signer.SignEnvelope(rsp);
-        }
+    private string ErrorResponse(string message)
+    {
+        return AdminMessage.Generate(message);
     }
 
     private async Task<bool> VerifySignatureAsync(string message, CancellationToken ct)
@@ -187,11 +207,17 @@ public sealed class IncomingTransactionHandler(
             ToBIC = request.To,
             SettlementMethod = request.SettlementMethod.ToString(),
             ChargeBearer = request.ChargeBearer.ToString(),
+            BizMsgIdr = request.BizMsgIdr,
+            MsgDefIdr = request.MsgDefIdr,
+            ClearingSystem = request.ClearingSystem,
+            MsgId = request.MsgId
         }, CB_PaymentRequest);
 
         var requestToCB = JsonSerializer.Serialize(md, _jsonSerializerOptions);
-        _logger.LogDebug("Request to CB: {Request}", requestToCB);
-        // Call the API to get the account details
+        // Log the callback URL and payload
+        _logger.LogInformation("Callback URL: {Url}", _callbackLinks.Transfer);
+        _logger.LogInformation("Callback Payload: {Payload}", requestToCB);
+
         var content = new StringContent(requestToCB, Encoding.UTF8, "application/json");
 
         var responseMessage = await _httpClient.Send(_callbackLinks.Transfer!,
@@ -212,11 +238,11 @@ public sealed class IncomingTransactionHandler(
         var md = _jsonAdapter.Transform(js!, "CB_PaymentResponse");
         var deserializedContent = _jsonAdapter.ToObject<PaymentResponseDto>(md);
 
-        response.Status = deserializedContent?.Status;
-        response.Reason = deserializedContent?.Reason;
-        response.AdditionalInfo = deserializedContent?.AdditionalInfo ?? "";
+        response.Status = deserializedContent?.Status ?? RJCT;
+        response.Reason = deserializedContent?.Reason ?? string.Empty;
+        response.AdditionalInfo = deserializedContent?.AdditionalInfo ?? string.Empty;
         response.AcceptanceDate = deserializedContent?.AcceptanceDate ?? DateTime.UtcNow;
-        response.TxId = deserializedContent?.TxId ?? "";
+        response.TxId = deserializedContent?.TxId ?? string.Empty;
     }
 
     private async Task PersistISOMessageAsync(PostgreSQL.Models.ISOMessage isoMessage, string status, string reason, string? additionalInfo, string txId, string end2endId, string rsp, CancellationToken ct)

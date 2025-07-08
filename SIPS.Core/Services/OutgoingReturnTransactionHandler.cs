@@ -31,43 +31,41 @@ public sealed class OutgoingReturnTransactionHandler(
 
         try
         {
-            var originalMessage = await _record.GetISOMessageWithTransactionsByTxIdAsync(message.OriginalTxId, ct);
-            if (originalMessage == null || originalMessage.Transactions.Count == 0)
-            {
-                return Response<ReturnPaymentResponseDto>.Fail("Transaction not found" + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
-            }
-            var transaction = originalMessage.Transactions.FirstOrDefault();
-            if (transaction == null)
-            {
-                return Response<ReturnPaymentResponseDto>.Fail("Transaction not found" + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
-            }
+            // Step 1: Retrieve original message and transaction
+            var (isValid, originalMessage, transaction) = await GetOriginalTransactionAsync(message.OriginalTxId, ct);
+            if (!isValid || originalMessage == null || transaction == null)
+                return Response<ReturnPaymentResponseDto>.Fail("Transaction not found: " + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
+
+            // Step 2: Build, sign, and persist outgoing return request
             originalMessage.ReturnId = message.ReturnId;
-            var (document, bizMsgIdr, type, msgId) = BuildRequest(transaction!, fromBIC, message.ReturnId, reason: message.Reason, additionalInfo: message.AdditionalInfo);
+            var (document, bizMsgIdr, type, msgId) = BuildRequest(transaction, fromBIC, message.ReturnId, reason: message.Reason, additionalInfo: message.AdditionalInfo);
             var signed = _signer.SignEnvelope(document);
-            var entity = CreateISOMessage(message, transaction!, fromBIC, txId, signed, msgId, type, bizMsgIdr);
+            var entity = CreateISOMessage(message, transaction, fromBIC, txId, signed, msgId, type, bizMsgIdr);
             var record = await _record.ISOMessageAsync(entity, ct);
-            // Call the API to get the account details
+
+            // Step 3: Call SIPS and handle response
             var responseMessage = await CallSIPSAsync(url, signed, ct);
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
             if (!responseMessageStatus.IsSuccess)
-            {
                 return responseMessageStatus;
-            }
-            if (!TryParse(responseMessage.Data!, out var rs))
+
+            // Step 4: Parse and persist SIPS response
+            if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
                 _logger.LogError("Failed to parse the message: {message}", responseMessage.Data);
                 await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, ct);
                 return Response<ReturnPaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
-            await PersistISOMessageAsync(record, rs!.Status!, rs.Reason!, rs.AdditionalInfo, responseMessage.Data!, ct, rs.TxId, rs.Original?.OriginalEndToEnd ?? "");
+            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, ct, rs.TxId ?? string.Empty, rs.Original?.OriginalEndToEnd ?? string.Empty);
 
+            // Step 5: Return success response
             return Response<ReturnPaymentResponseDto>.Success(new ReturnPaymentResponseDto
             {
-                Status = rs!.Status!,
-                TxId = rs.TxId,
-                EndToEndId = rs?.Original?.OriginalEndToEnd ?? "",
-                Reason = rs!.Reason,
-                AdditionalInfo = rs.AdditionalInfo,
+                Status = rs.Status ?? RJCT,
+                TxId = rs.TxId ?? string.Empty,
+                EndToEndId = rs.Original?.OriginalEndToEnd ?? string.Empty,
+                Reason = rs.Reason ?? string.Empty,
+                AdditionalInfo = rs.AdditionalInfo ?? string.Empty,
             });
         }
         catch (Exception ex)
@@ -75,6 +73,17 @@ public sealed class OutgoingReturnTransactionHandler(
             _logger.LogError("Failed to Send Request To SIPS Error: {Error}", ex);
             return Response<ReturnPaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
         }
+    }
+
+    private async Task<(bool isValid, ISOMessage? originalMessage, Transaction? transaction)> GetOriginalTransactionAsync(string originalTxId, CancellationToken ct)
+    {
+        var originalMessage = await _record.GetISOMessageWithTransactionsByTxIdAsync(originalTxId, ct);
+        if (originalMessage == null || originalMessage.Transactions.Count == 0)
+            return (false, null, null);
+        var transaction = originalMessage.Transactions.FirstOrDefault();
+        if (transaction == null)
+            return (false, originalMessage, null);
+        return (true, originalMessage, transaction);
     }
     private static (string document, string bizMsgIdr, string type, string msgId) BuildRequest(Transaction transaction, string fromBIC, string returnId, string reason, string additionalInfo)
     {
@@ -137,6 +146,9 @@ public sealed class OutgoingReturnTransactionHandler(
     private async Task<Response<string>> CallSIPSAsync(string url, string signed, CancellationToken ct)
     {
         var content = new StringContent(signed, Encoding.UTF8, "application/xml");
+        // Log the callback URL and payload
+        _logger.LogInformation("Callback URL: {Url}", url);
+        _logger.LogInformation("Callback Payload: {Payload}", signed);
         return await _httpClient.Send4XML(url, content, ct);
     }
     private async Task<Response<ReturnPaymentResponseDto>> HandleSIPSCallExceptionAsync(
