@@ -100,6 +100,23 @@ public static class PaymentStatusRequestResponseBuilder
         var appHdr = AppHeader(request, messageType);
         var isReject = request.Status == "RJCT";
 
+        // Build StsRsnInf only if Reason or AdditionalInfo is not null, not empty, and not whitespace
+        StatusReasonInformation12? statusReasonInfo = null;
+        bool hasReason = !string.IsNullOrEmpty(request.Reason) && request.Reason.Trim().Length > 0;
+        bool hasAddtlInf = !string.IsNullOrEmpty(request.AdditionalInfo) && request.AdditionalInfo.Trim().Length > 0;
+        if (hasReason || hasAddtlInf)
+        {
+            statusReasonInfo = new StatusReasonInformation12();
+            if (hasReason)
+            {
+                statusReasonInfo.Rsn = new StatusReason6Choice { Prtry = request.Reason!.Trim() };
+            }
+            if (hasAddtlInf)
+            {
+                statusReasonInfo.AddtlInf = [request.AdditionalInfo!.Trim()];
+            }
+        }
+
         var document = new Document
         {
             FIToFIPmtStsRpt = new FIToFIPaymentStatusReportV12
@@ -139,14 +156,7 @@ public static class PaymentStatusRequestResponseBuilder
                         OrgnlEndToEndId = request.Original.EndToEndId,
                         OrgnlTxId = request.Original.TxId,
                         TxSts = request.Status,
-                        StsRsnInf = [
-                            new StatusReasonInformation12 {
-                                Rsn = new StatusReason6Choice {
-                                    Prtry = request.Reason ?? request.Status
-                                },
-                                AddtlInf = [request.AdditionalInfo ?? request.Status]
-                            }
-                        ],
+                        StsRsnInf = statusReasonInfo != null ? [statusReasonInfo] : null,
                         AccptncDtTm = !isReject ? request.AcceptanceDate : null,
                         OrgnlTxRef =!isReject ? new OriginalTransactionReference35 {
                             IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {

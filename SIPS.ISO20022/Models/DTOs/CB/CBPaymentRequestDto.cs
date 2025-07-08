@@ -32,4 +32,9 @@ public sealed class CBPaymentRequestDto
     public string ToBIC { get; set; } = default!;
     public string? SettlementMethod { get; set; }
     public string? ChargeBearer { get; set; }
+
+    public string BizMsgIdr { get; set; } = default!;
+    public string MsgDefIdr { get; set; } = default!;
+    public string ClearingSystem { get; set; } = default!;
+    public string MsgId { get; set; } = default!;
 }
