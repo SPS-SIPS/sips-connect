@@ -65,9 +65,7 @@ public static class XmlSignatureGenerator
         return algorithm switch
         {
             "SHA1withRSA" => "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
-            "SHA256withRSA" => "http://www.w3.org/2001/04/xmldsig#rsa-sha256",
-            // "SHA384withRSA" => "http://www.w3.org/2000/09/xmldsig#rsa-sha384",
-            // "SHA512withRSA" => "http://www.w3.org/2000/09/xmldsig#rsa-sha512",
+            "SHA256withRSA" => "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
             _ => throw new CryptographicException($"Unsupported signature algorithm: {algorithm}"),
         };
     }

@@ -197,7 +197,6 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         {
             "http://www.w3.org/2000/09/xmldsig#rsa-sha1" => "SHA1withRSA",
             "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" => "SHA256withRSA",
-            "http://www.w3.org/2001/04/xmldsig#rsa-sha256" => "SHA256withRSA",
             _ => throw new CryptographicException($"Unsupported signature algorithm: {algorithm}"),
         };
     }
