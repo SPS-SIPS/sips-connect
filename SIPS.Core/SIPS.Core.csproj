@@ -23,9 +23,6 @@
     <PackageReference Include="sips.xmldsig.xades" Version="1.0.6" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../SIPS.ISO20022/SIPS.ISO20022.csproj" />
-  </ItemGroup>
-  <ItemGroup>
     <None Update="README.md">
       <Pack>true</Pack>
       <PackagePath>README.md</PackagePath>
