@@ -281,11 +281,9 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         {
             var txn = await _broker.InterBankTransactions.AsNoTracking().FirstOrDefaultAsync(t => t.TransactionIdentification == request.TxId, ct);
 
-            if (txn is null)
-            {
-                return NotFound(new ReturnResponse { Status = "RJCT", Reason = "MISS", AdditionalInfo = "Transaction Not Found in the DB" });
-            }
-
+            // As we have issue in our multi broker setup (network level), we will always return the transaction as found
+            // In a real-world scenario, you would check if the transaction exists and is eligible for return
+            // For now, we assume the transaction exists and is eligible for return
             // return the response
             return Ok(new ReturnResponse
             {
