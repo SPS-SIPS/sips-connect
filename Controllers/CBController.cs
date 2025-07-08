@@ -279,12 +279,11 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         _logger.LogInformation("POST /api/CB/Return called with body: {Request}", System.Text.Json.JsonSerializer.Serialize(request));
         try
         {
-            var txn = await _broker.InterBankTransactions.AsNoTracking()
-                .FirstOrDefaultAsync(t => t.TransactionIdentification == request.TxId && t.EndToEndIdentification == request.EndToEndId, ct);
+            var txn = await _broker.InterBankTransactions.AsNoTracking().FirstOrDefaultAsync(t => t.TransactionIdentification == request.TxId, ct);
 
             if (txn is null)
             {
-                return NotFound(new ReturnResponse { Status = "RJCT", Reason = "MISS", AdditionalInfo = "Creditor account not found" });
+                return NotFound(new ReturnResponse { Status = "RJCT", Reason = "MISS", AdditionalInfo = "Transaction Not Found in the DB" });
             }
 
             // return the response
