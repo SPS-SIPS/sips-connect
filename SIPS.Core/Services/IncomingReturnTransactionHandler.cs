@@ -50,6 +50,7 @@ public sealed class IncomingReturnTransactionHandler(
         // Step 3: Get the original message
         var originalMessage = await _record.GetISOMessageWithTransactionsByTxIdAsync(request.OrgnlTxId, ct);
         var response = BuildInitialResponse(request);
+        _logger.LogInformation("Retrieved original message response (IRTH): {response}", JsonSerializer.Serialize(response, _jsonSerializerOptions));
 
         // Step 4: Check if the message is a transaction request message and if it is not null
         if (originalMessage == null || originalMessage.MessageType != PostgreSQL.Enums.ISOMessageType.TransactionRequest)
@@ -66,9 +67,10 @@ public sealed class IncomingReturnTransactionHandler(
         {
             // Step 5: Send callback and parse result
             var callbackResult = await SendAndParseCallbackAsync(request, response, originalMessage, ct);
-
+            _logger.LogInformation("Callback result: {CallbackResult}", JsonSerializer.Serialize(callbackResult, _jsonSerializerOptions));
             // Step 6: Build, persist, and sign response
             var rsp = ReturnPaymentResponseBuilder.Build(response);
+            _logger.LogInformation("Built response (IRTH): {Response}", rsp);
             await PersistISOMessageAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
@@ -220,9 +222,7 @@ public sealed class IncomingReturnTransactionHandler(
         response.Original.To = originalMessage.ToBIC ?? string.Empty;
         response.Original.BizMsgIdr = originalMessage.BizMsgIdr ?? string.Empty;
         response.Original.MsgId = originalMessage.MsgId ?? string.Empty;
-        response.Original.MsgDefIdr = originalMessage.MsgDefIdr ?? string.Empty;
         response.Original.ClearingSystem = "FP";
-        response.Original.MsgDefIdr = originalMessage.MessageType.ToString();
         response.Original.CreDt = originalMessage.Date.UtcDateTime;
         if (originalTransaction != null)
         {

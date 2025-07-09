@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>SIPS.Core</PackageId>
-    <Version>1.0.9</Version>
+    <Version>1.1.0</Version>
     <Authors>Abdulshakur Ahmed</Authors>
     <Product>SIPS Core</Product>
     <Description>SIPS CORE</Description>
@@ -18,7 +18,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.1" />
     <PackageReference Include="sips.adapter" Version="1.0.0" />
     <PackageReference Include="sips.emv" Version="1.0.1" />
-    <PackageReference Include="sips.iso20022" Version="1.0.4" />
+    <PackageReference Include="sips.iso20022" Version="1.0.5" />
     <PackageReference Include="sips.postgresql" Version="1.0.1" />
     <PackageReference Include="sips.xmldsig.xades" Version="1.0.6" />
   </ItemGroup>

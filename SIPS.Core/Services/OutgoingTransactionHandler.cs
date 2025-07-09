@@ -7,6 +7,7 @@ using SIPS.ISO20022.Options;
 using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionHandler(
     ISO20022Options options,
@@ -52,6 +53,12 @@ public sealed class OutgoingTransactionHandler(
                 await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, ct);
                 return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
+            _logger.LogInformation("Original Response from SIPS: {message}", responseMessage.Data!);
+            _logger.LogInformation("Parsed Response from SIPS: {Response}", JsonSerializer.Serialize(rs, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = true,
+            }));
             await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, ct, rs.TxId ?? string.Empty, rs.Original?.EndToEndId ?? string.Empty);
 
             // Step 4: Return success response

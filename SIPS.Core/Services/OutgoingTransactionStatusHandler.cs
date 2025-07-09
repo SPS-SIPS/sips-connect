@@ -11,6 +11,7 @@ using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
 using SIPS.PostgreSQL.Models;
+using System.Text.Json;
 namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionStatusHandler(
     ISO20022Options options,
@@ -36,6 +37,11 @@ public sealed class OutgoingTransactionStatusHandler(
         {
             // Step 1: Retrieve ISO message by TxId
             var isoMessage = await _record.GetISOMessageByTxIdAsync(message.TxId, ct);
+            _logger.LogInformation("Retrieved ISO message: {ISOMessage}", JsonSerializer.Serialize(isoMessage, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = true,
+            }));
             if (isoMessage == null)
                 return Response<PaymentResponseDto>.Fail("Transaction not found", System.Net.HttpStatusCode.NotFound);
 
