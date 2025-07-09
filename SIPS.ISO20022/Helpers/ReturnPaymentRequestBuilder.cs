@@ -161,6 +161,8 @@ public static class ReturnPaymentRequestBuilder
         {
             MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",
             BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "",
+            From = document.PmtRtr?.GrpHdr?.InstgAgt?.FinInstnId?.Othr.Id ?? "",
+            To = document.PmtRtr?.GrpHdr?.InstdAgt?.FinInstnId?.Othr.Id ?? "",
 
             MsgId = document.PmtRtr?.GrpHdr?.MsgId ?? "",
             CreDt = document.PmtRtr?.GrpHdr?.CreDtTm ?? DateTime.UtcNow,
@@ -169,8 +171,7 @@ public static class ReturnPaymentRequestBuilder
             ClearingSystem = document?.PmtRtr?.GrpHdr?.SttlmInf?.ClrSys?.Prtry ?? "FP",
             LocalInstrument = document?.PmtRtr?.GrpHdr?.PmtTpInf?.LclInstrm?.Prtry ?? "",
             CategoryPurpose = document?.PmtRtr?.GrpHdr?.PmtTpInf?.CtgyPurp?.Prtry ?? "",
-            From = document.PmtRtr?.GrpHdr?.InstgAgt?.FinInstnId?.Othr.Id ?? "",
-            To = document.PmtRtr?.GrpHdr?.InstgAgt?.FinInstnId?.Othr.Id ?? "",
+
 
             ReturnId = document?.PmtRtr?.TxInf.FirstOrDefault()?.RtrId ?? "",
             OriginalEndToEnd = document?.PmtRtr?.TxInf.FirstOrDefault()?.OrgnlEndToEndId ?? "",

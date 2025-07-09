@@ -135,7 +135,7 @@ public static class PaymentRequestResponseBuilder
                             OrgnlMsgNmId = request.Original.MsgDefIdr,
                             OrgnlCreDtTm = request.Original.CreDt
                         },
-                        OrgnlEndToEndId = request.Original.TxId,
+                        OrgnlEndToEndId = request.Original.EndToEndId,
                         OrgnlTxId = request.Original.TxId,
                         TxSts = request.Status,
                         StsRsnInf = request.Status != "ACSC"? [

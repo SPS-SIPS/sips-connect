@@ -179,30 +179,33 @@ public static class ReturnPaymentResponseBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
-        var rsp = new Response();
-        // Current Message Information
-        rsp.MsgId = document.FIToFIPmtStsRpt.GrpHdr?.MsgId ?? "";
-        rsp.CreDt = document.FIToFIPmtStsRpt.GrpHdr?.CreDtTm ?? DateTime.UtcNow;
-        rsp.From = document.FIToFIPmtStsRpt.GrpHdr?.InstgAgt?.FinInstnId?.Othr?.Id ?? "";
-        rsp.To = document.FIToFIPmtStsRpt.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "";
-        rsp.BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "";
-        rsp.MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "";
-        rsp.TxId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxId;
-        rsp.Status = document.FIToFIPmtStsRpt.TxInfAndSts[0].TxSts ?? "RJCT";
-        rsp.Reason = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?.Select(x => x.Rsn?.Prtry)?.FirstOrDefault();
-        rsp.AdditionalInfo = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?
-            .SelectMany(x => x.AddtlInf)
-            .FirstOrDefault();
-        // Original Message Information
-        rsp.Original = new()
+        var rsp = new Response
         {
-            MsgId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlGrpInf?.OrgnlMsgId ?? "",
-            MsgDefIdr = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlGrpInf?.OrgnlMsgNmId ?? "",
-            CreDt = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlGrpInf?.OrgnlCreDtTm ?? DateTime.UtcNow,
-            OriginalEndToEnd = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlEndToEndId ?? "",
-            OrgnlTxId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxId ?? "",
-            OriginalAmount = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.TypedValue ?? 0,
-            OriginalCurrency = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.Ccy ?? "USD"
+            BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "",
+            MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",
+            CreDt = document.FIToFIPmtStsRpt.GrpHdr?.CreDtTm ?? DateTime.UtcNow,
+            // GrdHeader Information
+            MsgId = document.FIToFIPmtStsRpt.GrpHdr?.MsgId ?? "",
+            From = document.FIToFIPmtStsRpt.GrpHdr?.InstgAgt?.FinInstnId?.Othr?.Id ?? "",
+            To = document.FIToFIPmtStsRpt.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "",
+            Status = document.FIToFIPmtStsRpt.TxInfAndSts[0].TxSts ?? "RJCT",
+            Reason = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?.Select(x => x.Rsn?.Prtry)?.FirstOrDefault(),
+            AdditionalInfo = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?
+                .SelectMany(x => x.AddtlInf)
+                .FirstOrDefault(),
+            TxId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxId,
+
+            // Original Message Information
+            Original = new()
+            {
+                MsgId = document.FIToFIPmtStsRpt?.OrgnlGrpInfAndSts[0]?.OrgnlMsgId ?? "",
+                BizMsgIdr = document.FIToFIPmtStsRpt?.OrgnlGrpInfAndSts[0]?.OrgnlMsgNmId ?? "",
+                CreDt = document.FIToFIPmtStsRpt?.OrgnlGrpInfAndSts[0]?.OrgnlCreDtTm ?? DateTime.UtcNow,
+                OriginalEndToEnd = document.FIToFIPmtStsRpt?.TxInfAndSts[0].OrgnlEndToEndId ?? "",
+                OrgnlTxId = document.FIToFIPmtStsRpt?.TxInfAndSts[0].OrgnlTxId ?? "",
+                OriginalAmount = document.FIToFIPmtStsRpt?.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.TypedValue ?? 0,
+                OriginalCurrency = document.FIToFIPmtStsRpt?.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.Ccy ?? "",
+            }
         };
 
         return rsp;

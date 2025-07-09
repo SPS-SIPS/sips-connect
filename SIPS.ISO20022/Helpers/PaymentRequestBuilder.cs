@@ -229,40 +229,42 @@ public static class PaymentRequestBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
-        var request = new Request();
-        request.From = document.FIToFICstmrCdtTrf.GrpHdr.InstgAgt.FinInstnId.Othr.Id;
-        request.To = document.FIToFICstmrCdtTrf.GrpHdr.InstdAgt.FinInstnId.Othr.Id;
-        request.BizMsgIdr = envelope.AppHdr.BizMsgIdr;
-        request.MsgDefIdr = envelope.AppHdr.MsgDefIdr;
-        request.CreDt = envelope.AppHdr.CreDt;
-        request.SettlementMethod = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf.SttlmMtd;
-        request.ClearingSystem = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf.ClrSys.Prtry;
-        request.LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.LclInstrm.Prtry;
-        request.CategoryPurpose = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.CtgyPurp.Prtry;
-        request.TxId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.TxId;
-        request.EndToEndId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.EndToEndId;
-        request.Amount = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.TypedValue;
-        request.Currency = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.Ccy;
-        request.ChargeBearer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].ChrgBr;
-        request.Debtor = new Person
+        var request = new Request
         {
-            Name = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Dbtr.Nm,
-            Address = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Dbtr?.PstlAdr?.AdrLine[0] ?? "",
-            Account = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.Id,
-            AccountType = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.SchmeNm.Prtry,
-            Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.Issr,
-            AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAgt.FinInstnId.Othr.Id
+            From = document.FIToFICstmrCdtTrf.GrpHdr.InstgAgt.FinInstnId.Othr.Id,
+            To = document.FIToFICstmrCdtTrf.GrpHdr.InstdAgt.FinInstnId.Othr.Id,
+            BizMsgIdr = envelope.AppHdr.BizMsgIdr,
+            MsgDefIdr = envelope.AppHdr.MsgDefIdr,
+            CreDt = envelope.AppHdr.CreDt,
+            SettlementMethod = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf.SttlmMtd,
+            ClearingSystem = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf.ClrSys.Prtry,
+            LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.LclInstrm.Prtry,
+            CategoryPurpose = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.CtgyPurp.Prtry,
+            TxId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.TxId,
+            EndToEndId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.EndToEndId,
+            Amount = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.TypedValue,
+            Currency = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.Ccy,
+            ChargeBearer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].ChrgBr,
+            Debtor = new Person
+            {
+                Name = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Dbtr.Nm,
+                Address = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Dbtr?.PstlAdr?.AdrLine[0] ?? "",
+                Account = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.Id,
+                AccountType = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.SchmeNm.Prtry,
+                Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.Issr,
+                AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAgt.FinInstnId.Othr.Id
+            },
+            Creditor = new Person
+            {
+                Name = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Cdtr.Nm,
+                Address = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Cdtr?.PstlAdr?.AdrLine[0] ?? "",
+                Account = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.Id,
+                AccountType = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.SchmeNm.Prtry,
+                Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.Issr,
+                AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAgt.FinInstnId.Othr.Id
+            },
+            Ustrd = string.Join(" ", document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].RmtInf.Ustrd)
         };
-        request.Creditor = new Person
-        {
-            Name = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Cdtr.Nm,
-            Address = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Cdtr?.PstlAdr?.AdrLine[0] ?? "",
-            Account = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.Id,
-            AccountType = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.SchmeNm.Prtry,
-            Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.Issr,
-            AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAgt.FinInstnId.Othr.Id
-        };
-        request.Ustrd = string.Join(" ", document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].RmtInf.Ustrd);
 
         return request;
     }
