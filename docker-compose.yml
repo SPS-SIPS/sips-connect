@@ -1,7 +1,7 @@
 name: ${INSTITUTION_NAME:-agro}-sips-connect
 services:
   sips-connect:
-    image: hanad/sips-connect:1.0.7
+    image: hanad/sips-connect:1.1.0
     environment:
       - DB_HOST=${DB_HOST:-sips-connect-db}
       - DB_PORT=${DB_PORT:-5432}
@@ -50,28 +50,14 @@ services:
       - sips-network
     volumes:
       - grafana_data:/var/lib/grafana
-  sips-connect-db:
-    image: postgres:16
-    ports:
-      - "5432:5432"
-    env_file:
-      - ./.env
-    networks:
-      - sips-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready", "-d", "postgres", "-U", "postgres"]
-      interval: '10s'
-      timeout: '30s'
-      retries: 5
-      start_period: '20s'
-    volumes:
-      - pg_data:/var/lib/postgresql/data
   sips-corebank:
-    image: hanad/sips-consumer:1.0.0
+    image: hanad/sips-consumer:1.0.8
     ports:
       - "${CB_PORT:-9032}:8080"
     env_file:
       - ./.env
+    volumes:
+      - ./db.json:/app/db.json:rw
     networks:
       - sips-network
 volumes:
@@ -81,4 +67,3 @@ volumes:
 networks:
   sips-network:
     driver: bridge
-    external: true
