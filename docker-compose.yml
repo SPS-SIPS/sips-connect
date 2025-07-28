@@ -30,7 +30,7 @@ services:
   sips-connect-db:
     image: postgres:16
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     env_file:
       - ./.env
     networks:
