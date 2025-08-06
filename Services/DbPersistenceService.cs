@@ -24,7 +24,7 @@ public class DbPersistenceService(string filePath)
                 NbOfTxs = tx.NbOfTxs,
                 SettlementMethod = tx.SettlementMethod.Id,
                 ClearingSystem = tx.ClearingSystem,
-                PaymentTypeInformation = tx.PaymentTypeInformation.Id,
+                PaymentTypeInformation = tx.PaymentTypeInformation,
                 PaymentTypeInformationCategoryPurpose = tx.PaymentTypeInformationCategoryPurpose.Id,
                 InstructingAgent = tx.InstructingAgent,
                 InstructedAgent = tx.InstructedAgent,
@@ -78,7 +78,7 @@ public class DbPersistenceService(string filePath)
         if (data != null)
         {
             // Map InterBankTransactionDto to InterBankTransaction
-            data.InterBankTransactionsMapped = data.InterBankTransactions
+            data.InterBankTransactionsMapped = [.. data.InterBankTransactions
                 .Select(dto => new InterBankTransaction
                 {
                     Id = dto.Id,
@@ -90,7 +90,7 @@ public class DbPersistenceService(string filePath)
                     NbOfTxs = dto.NbOfTxs,
                     SettlementMethod = Enumeration<string>.FromId<SettlementMethods>(dto.SettlementMethod),
                     ClearingSystem = dto.ClearingSystem,
-                    PaymentTypeInformation = Enumeration<string>.FromId<LclInstrm>(dto.PaymentTypeInformation),
+                    PaymentTypeInformation = dto.PaymentTypeInformation,
                     PaymentTypeInformationCategoryPurpose = Enumeration<string>.FromId<CategoryPurpose>(dto.PaymentTypeInformationCategoryPurpose),
                     InstructingAgent = dto.InstructingAgent,
                     InstructedAgent = dto.InstructedAgent,
@@ -117,11 +117,10 @@ public class DbPersistenceService(string filePath)
                     RemittanceInformationStructuredNumber = dto.RemittanceInformationStructuredNumber,
                     RemittanceInformationUnstructured = dto.RemittanceInformationUnstructured,
                     Status = Enumeration<string>.FromId<TransactionStatus>(dto.Status)
-                })
-                .ToList();
+                })];
 
             // Map AccountDto to Account
-            data.AccountsMapped = data.Accounts
+            data.AccountsMapped = [.. data.Accounts
                 .Select(dto => new Account
                 {
                     Id = dto.Id,
@@ -133,21 +132,20 @@ public class DbPersistenceService(string filePath)
                     Balance = dto.Balance,
                     Active = dto.Active,
                     WalletId = dto.WalletId
-                })
-                .ToList();
+                })];
         }
         return data;
     }
 
     public class PersistedData
     {
-        public List<InterBankTransactionDto> InterBankTransactions { get; set; } = new();
-        public List<AccountDto> Accounts { get; set; } = new();
+        public List<InterBankTransactionDto> InterBankTransactions { get; set; } = [];
+        public List<AccountDto> Accounts { get; set; } = [];
         // This property is not serialized, only used at runtime after mapping
         [System.Text.Json.Serialization.JsonIgnore]
-        public List<InterBankTransaction> InterBankTransactionsMapped { get; set; } = new();
+        public List<InterBankTransaction> InterBankTransactionsMapped { get; set; } = [];
         // This property is not serialized, only used at runtime after mapping
         [System.Text.Json.Serialization.JsonIgnore]
-        public List<Account> AccountsMapped { get; set; } = new();
+        public List<Account> AccountsMapped { get; set; } = [];
     }
 }

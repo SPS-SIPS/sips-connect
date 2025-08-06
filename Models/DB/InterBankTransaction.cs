@@ -19,7 +19,7 @@ public sealed class InterBankTransaction
     public int NbOfTxs { get; set; } = 1;
     public SettlementMethods SettlementMethod { get; set; } = default!;
     public string ClearingSystem { get; set; } = default!;
-    public LclInstrm PaymentTypeInformation { get; set; } = default!;
+    public string PaymentTypeInformation { get; set; } = default!;
     public CategoryPurpose PaymentTypeInformationCategoryPurpose { get; set; } = default!;
     public string InstructingAgent { get; set; } = default!;
     public string InstructedAgent { get; set; } = default!;

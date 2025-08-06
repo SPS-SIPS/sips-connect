@@ -64,7 +64,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 t.CreditorAccountType,
                 t.Purpose,
                 Status = t.Status.Id,
-                PaymentTypeInformation = t.PaymentTypeInformation.Id,
+                t.PaymentTypeInformation,
                 PaymentTypeInformationCategoryPurpose = t.PaymentTypeInformationCategoryPurpose.Id,
                 SettlementMethod = t.SettlementMethod.Id,
                 ChargeBearer = t.ChargeBearer.Id,
@@ -73,7 +73,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 t.ClearingSystem,
                 FromBIC = t.InstructingAgent,
                 ToBIC = t.InstructedAgent,
-                LocalInstrument = t.PaymentTypeInformation.Id,
+                LocalInstrument = t.PaymentTypeInformation,
                 CategoryPurpose = t.PaymentTypeInformationCategoryPurpose.Id,
             })
             .AsNoTracking()
@@ -164,7 +164,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 RemittanceInformation = txn.Purpose,
                 FromBIC = txn.InstructingAgent,
                 ToBIC = txn.InstructedAgent,
-                LocalInstrument = txn.PaymentTypeInformation.Id,
+                LocalInstrument = txn.PaymentTypeInformation,
                 CategoryPurpose = txn.PaymentTypeInformationCategoryPurpose.Id,
                 SettlementMethod = txn.SettlementMethod.Id,
                 ChargeBearer = txn.ChargeBearer.Id,
@@ -221,7 +221,6 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
             response.AcceptanceDate = DateTime.UtcNow;
 
             var settlementMethod = request.SettlementMethod!.ToUpper();
-            var localInstrument = request.LocalInstrument!.ToUpper();
             var categoryPurpose = request.CategoryPurpose!.ToUpper();
             var chargeBearer = request.ChargeBearer!.ToUpper();
 
@@ -235,7 +234,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 NbOfTxs = 1,
                 SettlementMethod = Enumeration<string>.FromId<SettlementMethods>(settlementMethod),
                 ClearingSystem = settlementMethod,
-                PaymentTypeInformation = Enumeration<string>.FromId<LclInstrm>(localInstrument),
+                PaymentTypeInformation = request.LocalInstrument,
                 PaymentTypeInformationCategoryPurpose = Enumeration<string>.FromId<CategoryPurpose>(categoryPurpose),
                 InstructingAgent = request.FromBIC,
                 InstructedAgent = request.ToBIC,
