@@ -10,6 +10,9 @@ services:
     env_file:
       - .env.local
     restart: always
+    volumes:
+      - ./certs:/app/certs:ro
+    entrypoint: ["/bin/sh", "/app/entrypoint-https.sh"]
     networks:
       - sips-network
 
