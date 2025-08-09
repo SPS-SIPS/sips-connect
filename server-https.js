@@ -10,9 +10,11 @@ const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
+const certPath = process.env.NEXTJS_TLS_CERT || './certs/tls.crt';
+const keyPath = process.env.NEXTJS_TLS_KEY || './certs/tls.key';
 const httpsOptions = {
-    key: readFileSync('./certs/tls.key'),
-    cert: readFileSync('./certs/tls.crt'),
+    key: readFileSync(keyPath),
+    cert: readFileSync(certPath),
 };
 
 app.prepare().then(() => {

@@ -9,6 +9,9 @@ services:
       - "3000:3000"
     env_file:
       - .env.local
+    environment:
+      - NEXTJS_TLS_CERT=/app/certs/tls.crt
+      - NEXTJS_TLS_KEY=/app/certs/tls.key
     restart: always
     volumes:
       - ./certs:/app/certs:ro
