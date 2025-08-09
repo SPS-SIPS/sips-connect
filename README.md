@@ -12,57 +12,29 @@ This guide provides a straightforward approach to deploying the SIPS Connect Pla
 5. **Environment Variables**: You will need to set up environment variables for your deployment. Create a `.env` file in the root directory of the project.
 6. **PKI Certificate from SPS**: You must request a PKI certificate from SPS, as it is always required to sign transactions. The self-signed certificate instructions below are for application deployment.
 
-## Sample `.env` File
+## Important Environment Variables
 
-```env
-Serilog__WriteTo__File__Args__path=/logs/log.log
-Serilog__MinimumLevel__Override__Microsoft=Information
-Serilog__MinimumLevel__Override__System=Information
-Serilog__MinimumLevel__Default=Information
+| Variable                        | Description                                                      |
+|---------------------------------|------------------------------------------------------------------|
+| DB_PASSWORD                     | Database password used by Postgres, Keycloak, and SIPS Connect   |
+| KEYCLOAK_KEYSTORE_PASSWORD      | Password for Keycloak's PKCS#12 SSL certificate (keycloak.p12)    |
+| SIPS_CONNECT_TLS_PFX_PASSWORD   | Password for SIPS Connect's PKCS#12 SSL certificate (sips-connect.pfx) |
 
+**Keep these passwords secure and do not share them publicly.**
 
-ASPNETCORE_ENVIRONMENT=Development
+## Application Ports
 
-PGUSER=postgres
-POSTGRES_PASSWORD=<YOUR_STRONG_DB_PASSWORD>
-POSTGRES_DB=postgres
+You can configure the application ports by changing the corresponding variables in your `.env` file. This allows you to avoid conflicts or fit your environment.
 
-ConnectionStrings__db="Host=sips-connect-db;Database=sips.db.agro;Include Error Detail=True;Username=postgres;Password=<YOUR_STRONG_DB_PASSWORD>;"
-KC_DB=postgres
-KC_DB_USERNAME=postgres
-KC_DB_PASSWORD=<YOUR_STRONG_DB_PASSWORD>
-KC_DB_URL="jdbc:postgresql://sips-connect-db/postgres"
-KEYCLOAK_HOST_IP=<YOUR_KEYCLOAK_HOST_IP>
-KEYCLOAK_KEYSTORE_PASSWORD=<YOUR_KEYCLOAK_KEYSTORE_PASSWORD>
+| Service         | Variable Name           | Default Host:Container | Description                |
+|-----------------|------------------------|------------------------|----------------------------|
+| SIPS Connect    | SIPS_CONNECT_PORT, SIPS_CONNECT_HTTPS_PORT | 9080:8080, 9443:443 | Main API service (HTTP/HTTPS) |
+| Keycloak (IDP)  | IDP_PORT               | 8443:8443              | Identity provider (OIDC, HTTPS) |
+| Grafana         | GRAFANA_PORT           | 9083:3000              | Monitoring dashboard       |
+| Loki            | LOKI_PORT              | 3500:3100              | Log aggregation            |
+| Corebank        | CB_PORT                | 9082:8080              | Example consumer service   |
 
-Keycloak__Realm__Host="idp:8443"
-Keycloak__Realm__Protocol="https"
-Keycloak__Realm__ValidateIssuer=true
-Keycloak__Realm__Name="mgt"
-Keycloak__Realm__Audience="sc-api"
-Keycloak__Realm__ValidIssuers__0="https://idp:8443"
-Keycloak__Realm__ValidIssuers__1="https://<YOUR_KEYCLOAK_HOST_IP>:8443"
-
-# Compose Ports::
-SIPS_CONNECT_PORT=9080
-IDP_PORT=8443
-LOKI_PORT=3500
-GRAFANA_PORT=9083
-INSTITUTION_NAME=<YOUR_INSTITUTION_NAME>
-DB_HOST=sips-connect-db
-DB_PORT=5432
-CB_PORT=9082
-
-# DB File - This is the file where dummy accounts/transactions are stored
-DbPersistenceFile="/app/db.json"
-
-# Kestrel HTTPS certificate override for SIPS Connect
-Kestrel__Endpoints__Https__Certificate__Path=/certs/sips-connect.pfx
-Kestrel__Endpoints__Https__Certificate__Password=YOUR_PASSWORD
-Kestrel__Endpoints__Https__Url=https://0.0.0.0:443
-```
-
-
+Change these variables in your `.env` file to suit your needs.
 ## Generating Self-Signed Certificates for HTTPS
 
 To enable HTTPS for Keycloak and the Next.js portal, generate a self-signed certificate and key as follows (replace the IP with your own):
@@ -95,11 +67,26 @@ Place `tls.crt` and `tls.key` in the appropriate `certs/` directory for your Nex
    ```bash
    cd Connect.Deployment
    ```
-3. **Create the `.env` File**: Create a `.env` file in the root directory of the project and populate it with your environment variables as shown above.
+3. **Configure Environment Variables**: Copy the provided `.env.example` file to `.env` in the root directory of the project:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Then edit the `.env` file and update the variables for your environment. The most important variables are explained at the top of this README.
 4. **Start the Services**: Use Docker Compose to start the services defined in the `docker-compose.yml` file:
    ```bash
    docker-compose up -d or docker compose up -d 
    ```
-5. **Access the Application**: Once the services are up and running, you can access the SIPS Connect Platform at `http://localhost:9080/swagger/index.html` in your web browser.
-6. **Access Keycloak**: You can access Keycloak at `http://localhost:9081/auth` to manage your authentication settings.
-7. **Access Grafana**: Grafana can be accessed at `http://localhost:9083` for monitoring and visualization.
+5. **Access the Application**: Once the services are up and running, access the applications using your host machine's IP address and the ports you configured in your `.env` file. For example:
+
+    - **SIPS Connect API (Swagger):**  
+       `http://<HOST_MACHINE_IP>:<SIPS_CONNECT_PORT>/swagger/index.html`
+    - **SIPS Connect API (HTTPS):**  
+       `https://<HOST_MACHINE_IP>:<SIPS_CONNECT_HTTPS_PORT>/swagger/index.html`
+    - **Keycloak Admin Console:**  
+       `https://<HOST_MACHINE_IP>:<IDP_PORT>/`
+    - **Grafana Dashboard:**  
+       `http://<HOST_MACHINE_IP>:<GRAFANA_PORT>/`
+
+    Replace `<HOST_MACHINE_IP>` and the port variables with the values you set in your `.env` file.
