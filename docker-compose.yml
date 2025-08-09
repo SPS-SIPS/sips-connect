@@ -15,8 +15,10 @@ services:
       - ./certs:/certs:ro
       - ./appsettings.json:/app/appsettings.json:rw
       - ./jsonAdapter.json:/app/jsonAdapter.json:rw
+      - ./certs/tls.crt:/usr/local/share/ca-certificates/tls.crt:ro
     networks:
       - sips-network
+    entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec dotnet SIPS.Connect.dll"]
   idp:
     image: keycloak/keycloak:26.2.0
     env_file:
@@ -30,7 +32,6 @@ services:
       - --hostname-strict=false
       - --http-enabled=false
       - --https-port=${IDP_PORT:-8443}
-      - --hostname=${KEYCLOAK_HOST_IP}
     volumes:
       - ./realm-config:/opt/keycloak/data/import
       - ./certs/keycloak.p12:/opt/keycloak/certs/keycloak.p12:ro
