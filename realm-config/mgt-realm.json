@@ -70,9 +70,11 @@
             "publicClient": true,
             "protocol": "openid-connect",
             "redirectUris": [
+                "https://localhost:3000/*",
                 "http://localhost:3000/*"
             ],
             "webOrigins": [
+                "https://localhost:3000",
                 "http://localhost:3000"
             ],
             "protocolMappers": [
