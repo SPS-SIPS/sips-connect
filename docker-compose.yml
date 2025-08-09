@@ -6,7 +6,8 @@ services:
       - DB_HOST=${DB_HOST:-sips-connect-db}
       - DB_PORT=${DB_PORT:-5432}
     ports:
-      - "${SIPS_CONNECT_PORT:-9030}:8080"
+      - "${SIPS_CONNECT_PORT:-9030}:8080"   # HTTP (existing)
+      - "${SIPS_CONNECT_HTTPS_PORT:-9443}:443"   # HTTPS (new)
     env_file:
       - ./.env
     volumes:
@@ -20,11 +21,21 @@ services:
     image: keycloak/keycloak:26.2.0
     env_file:
       - ./.env
-    command: "start-dev --import-realm --verbose"
+    command:
+      - start-dev
+      - --import-realm
+      - --verbose
+      - --https-key-store-file=/opt/keycloak/certs/keycloak.p12
+      - --https-key-store-password=${KEYCLOAK_KEYSTORE_PASSWORD}
+      - --hostname-strict=false
+      - --http-enabled=false
+      - --https-port=${IDP_PORT:-8443}
+      - --hostname=${KEYCLOAK_HOST_IP}
     volumes:
       - ./realm-config:/opt/keycloak/data/import
+      - ./certs/keycloak.p12:/opt/keycloak/certs/keycloak.p12:ro
     ports:
-      - "${IDP_PORT:-9031}:8080"
+      - "${IDP_PORT:-9031}:8443"
     networks:
       - sips-network
   sips-connect-db:
@@ -74,6 +85,7 @@ services:
       - ./.env
     volumes:
       - ./db.json:/app/db.json:rw
+      - ./certs:/certs:ro
     networks:
       - sips-network
 volumes:
