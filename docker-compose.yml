@@ -35,7 +35,7 @@ services:
       - ./realm-config:/opt/keycloak/data/import
       - ./certs/keycloak.p12:/opt/keycloak/certs/keycloak.p12:ro
     ports:
-      - "${IDP_PORT:-9031}:8443"
+      - "${IDP_PORT:-9031}:${IDP_PORT:-8443}"
     networks:
       - sips-network
   sips-connect-db:
