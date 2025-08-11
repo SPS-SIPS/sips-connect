@@ -33,7 +33,7 @@
         },
         {
           "InternalField": "Type",
-          "UserField": "accountTYpe",
+          "UserField": "accountType",
           "Type": "string"
         },
         {

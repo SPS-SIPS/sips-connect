@@ -110,7 +110,7 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
 
         var mp = new P2PPayload
         {
-            PayloadFormatIndicator = Constants.PayloadFormatIndicator,
+            PayloadFormatIndicator = version,
             PointOfInitializationMethod = PointOfInitializationMethod.GetQRType(payload.Amount),
             SchemeIdentifier = fiType,
             FiName = fiName,
@@ -119,6 +119,7 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
             Amount = payload.Amount,
             Particulars = payload.Particulars
         };
+
         try
         {
             var result = mp.GeneratePayload();

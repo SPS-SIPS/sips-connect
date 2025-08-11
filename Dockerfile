@@ -22,4 +22,4 @@ COPY --from=build /src/wait-for-it.sh .
 RUN chmod +x wait-for-it.sh
 
 COPY --from=publish /app/publish .
-ENTRYPOINT ["./wait-for-it.sh","sips-connect-db:5432","--timeout=60","--strict","--","dotnet","SIPS.Connect.dll"]
+ENTRYPOINT ["/bin/sh", "-c", "./wait-for-it.sh \"$DB_HOST:$DB_PORT\" --timeout=60 --strict -- dotnet SIPS.Connect.dll"]

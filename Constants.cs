@@ -1,8 +1,8 @@
 namespace SIPS.Connect;
+
 public static class Constants
 {
     public const string DomainId = "so.somqr.sips";
-    public const string PayloadFormatIndicator = "02";
     public const string VerificationRequest = "VerificationRequest";
     public const string VerificationResponse = "VerificationResponse";
     public const string PaymentRequest = "PaymentRequest";
