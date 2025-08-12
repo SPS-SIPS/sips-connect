@@ -9,7 +9,7 @@ This guide provides a straightforward approach to deploying the SIPS Connect Pla
 2. **Docker Compose**: This is typically included with Docker Desktop installations. If you're using Linux, you may need to install it separately. Follow the instructions on [Docker Compose's official documentation](https://docs.docker.com/compose/install/).
 3. **Git**: Ensure Git is installed to clone the repository. You can download it from [Git's official website](https://git-scm.com/downloads).
 4. **OpenSSL**: Required for generating self-signed certificates for HTTPS. Most Linux and macOS systems have it pre-installed. On Windows, you can get it from [OpenSSL for Windows](https://slproweb.com/products/Win32OpenSSL.html).
-5. **Environment Variables**: You will need to set up environment variables for your deployment. Create a `.env` file in the root directory of the project.
+5. **Environment Variables**: You will need to set up environment variables for your deployment. Copy it from our `.env.example` file in the root directory of the project, and name it `.env`.
 6. **PKI Certificate from SPS**: You must request a PKI certificate from SPS, as it is always required to sign transactions. The self-signed certificate instructions below are for application deployment.
 
 ## Important Environment Variables
@@ -33,7 +33,7 @@ You can configure the application ports by changing the corresponding variables 
 | Grafana         | GRAFANA_PORT           | 9083:3000              | Monitoring dashboard       |
 | Loki            | LOKI_PORT              | 3500:3100              | Log aggregation            |
 | Corebank        | CB_PORT                | 9082:8080              | Example consumer service   |
-
+****
 Change these variables in your `.env` file to suit your needs.
 ## Generating Self-Signed Certificates for HTTPS
 
@@ -45,6 +45,8 @@ To enable HTTPS for Keycloak and the Next.js portal, generate a self-signed cert
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -config san.cnf -extensions req_ext
 # 2. Convert the key and certificate to a PKCS#12 file (for Keycloak, set your own password)
 openssl pkcs12 -export -in tls.crt -inkey tls.key -out keycloak.p12 -name keycloak -password pass:YOUR_PASSWORD
+# Change the permissions of the keycloak.p12 file
+chmod 644 keycloak.p12
 # 4. Convert the key and certificate to a PFX file (for SIPS Connect, set your own password)
 openssl pkcs12 -export -in tls.crt -inkey tls.key -out sips-connect.pfx -name sips-connect -password pass:YOUR_PASSWORD
 ```
