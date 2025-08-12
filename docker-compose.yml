@@ -1,10 +1,10 @@
 name: ${INSTITUTION_NAME:-agro}-sips-connect
 services:
   sips-connect:
-    image: hanad/sips-connect:1.1.0
+    image: hanad/sips-connect:1.1.1
     environment:
       - DB_HOST=${DB_HOST:-sips-connect-db}
-      - DB_PORT=${DB_PORT:-5432}
+      - DB_PORT=5432
     ports:
       - "${SIPS_CONNECT_PORT:-9030}:8080"   # HTTP (existing)
       - "${SIPS_CONNECT_HTTPS_PORT:-9443}:443"   # HTTPS (new)
@@ -18,7 +18,6 @@ services:
       - ./certs/tls.crt:/usr/local/share/ca-certificates/tls.crt:ro
     networks:
       - sips-network
-    entrypoint: ["/bin/sh", "-c", "update-ca-certificates && exec dotnet SIPS.Connect.dll"]
   idp:
     image: keycloak/keycloak:26.2.0
     env_file:
