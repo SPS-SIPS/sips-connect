@@ -22,4 +22,3 @@ services:
 networks:
   sips-network:
     driver: bridge
-    external: true
