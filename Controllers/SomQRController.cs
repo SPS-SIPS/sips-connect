@@ -20,6 +20,9 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
         if (!GetKeyFromConfiguration(_configuration, "Emv:AcquirerId", out var acquirerId))
             return Results.BadRequest(new { message = "AcquirerId not found!" });
 
+        if (!GetKeyFromConfiguration(_configuration, "Emv:FIType", out var fiType))
+            return Results.BadRequest(new { message = "FIType not found!" });
+
         if (!GetKeyFromConfiguration(_configuration, "Emv:Tags:MerchantIdentifier", out var merchantIdentifier))
             return Results.BadRequest(new { message = "MerchantIdentifier not found!" });
 
@@ -32,9 +35,6 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
         if (!GetKeyFromConfiguration(_configuration, "Emv:CountryCode", out var countryCode))
             return Results.BadRequest(new { message = "Som QR countryCode not found!" });
 
-        if (!GetKeyFromConfiguration(_configuration, "Emv:Version", out var version))
-            return Results.BadRequest(new { message = "Som QR Version not found!" });
-
         // run validation if type == 2 then amount is required, also check if the amount is greater than 0 than type must be 2
         if (payload.Type == 2 && payload.Amount <= 0)
             return Results.BadRequest(new { message = "Amount is required for dynamic codes" });
@@ -44,7 +44,7 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
 
         var mp = new MerchantPayload
         {
-            PayloadFormatIndicator = version,
+            PayloadFormatIndicator = "01",
             PointOfInitializationMethod = $"{payload.Method}{payload.Type}",
             MerchantAccount = new MerchantAccountDictionary {
                 {
@@ -53,7 +53,7 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
                     {
                         GlobalUniqueIdentifier = Constants.DomainId,
                         PaymentNetworkSpecific = new Dictionary<int, string>{
-                            { int.Parse(acquirerTag), acquirerId },
+                            { int.Parse(acquirerTag), fiType + acquirerId },
                             { int.Parse(merchantIdTag), payload.MerchantId! }
                         }
                     }
@@ -103,14 +103,11 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
             return Results.BadRequest(new { message = "FIType not found!" });
         if (!GetKeyFromConfiguration(_configuration, "Emv:FIName", out var fiName))
             return Results.BadRequest(new { message = "FIName not found!" });
-        if (!GetKeyFromConfiguration(_configuration, "Emv:Version", out var version))
-            return Results.BadRequest(new { message = "Som QR Version not found!" });
-
 
 
         var mp = new P2PPayload
         {
-            PayloadFormatIndicator = version,
+            PayloadFormatIndicator = "02",
             PointOfInitializationMethod = PointOfInitializationMethod.GetQRType(payload.Amount),
             SchemeIdentifier = fiType,
             FiName = fiName,
