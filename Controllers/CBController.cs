@@ -86,11 +86,15 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         _logger.LogInformation("POST /api/CB/Verify called with body: {Request}", System.Text.Json.JsonSerializer.Serialize(request));
         if (!ModelState.IsValid)
             return BadRequest("Invalid request");
-
         try
         {
             var accountNo = request.AccountNo.StartsWith("USD:", StringComparison.OrdinalIgnoreCase) ? request.AccountNo[4..] : request.AccountNo;
             var accountType = accountNo.StartsWith("SO", StringComparison.OrdinalIgnoreCase) ? "IBAN" : request.AccountType;
+
+            if (accountType == null || accountType == string.Empty)
+            {
+                return BadRequest("Account type is required, allowed IBAN, MSIS, EWLT, ACCT");
+            }
 
             var query = _broker.Accounts.AsNoTracking().AsQueryable();
             query = accountType switch
