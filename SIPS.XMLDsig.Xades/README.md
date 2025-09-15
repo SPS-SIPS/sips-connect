@@ -38,7 +38,8 @@ dotnet add package SIPS.XMLDsig.Xades
     ],
     "VerificationWindowMinutes": 100,
     "BIC": "",
-    "WithoutPKI": false
+    "WithoutPKI": false,
+    "BaseDN": ""
   }
 }
 ```
