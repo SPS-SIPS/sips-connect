@@ -8,7 +8,6 @@ public static class DI
         services.AddSingleton<ICertificateService, CertificateService>();
         services.AddSingleton<INativeSigner, NativeSigner>();
         services.AddSingleton<INativeVerifier, NativeVerifier>();
-        services.AddSingleton<INativeVerifier, NativeVerifier>();
         return services;
     }
 }

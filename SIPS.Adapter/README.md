@@ -28,7 +28,38 @@ services.AddJsonAdapter();
 
 var jsonAdapter = serviceProvider.GetRequiredService<IJsonAdapter>();
 
-var internalJson = jsonAdapter.Transform(userJson);
-
-
+// Provide the endpoint name that corresponds to your configured mapping
+var internalJson = jsonAdapter.Transform(userJson, endpointName);
 ```
+
+### Configuring Endpoint Mappings
+
+The adapter requires an `endpointName` to determine how to map incoming JSON. Provide a configured `JsonAdapterOptions` instance via DI (the library registers an empty default you can replace):
+
+```csharp
+services.AddSingleton(new JsonAdapterOptions
+{
+    Endpoints = new Dictionary<string, EndpointMapping>
+    {
+        ["createPayment"] = new EndpointMapping
+        {
+            FieldMappings = new List<FieldMapping>
+            {
+                new FieldMapping { InternalField = "amount", UserField = "data.amount", Type = "int" },
+                new FieldMapping { InternalField = "reference", UserField = "data.ref", Type = "string" },
+                new FieldMapping { InternalField = "timestamp", UserField = "meta.createdAt", Type = "datetime" }
+            }
+        }
+    }
+});
+
+// Later
+var mapped = jsonAdapter.Transform(userJson, "createPayment");
+```
+
+### Reverse Mapping From Object to External JSON
+
+To map from a local object into an external (user) JSON shape, use the generic overload:
+
+```csharp
+var userJsonOut = jsonAdapter.Transform(localObject, endpointName);

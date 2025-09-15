@@ -75,8 +75,9 @@ To use the core packages, you can add the following configuration to your `appse
 }
 ```
 
-Add the following configuration to your `Startup.cs` file:
+Register SIPS Core in your DI container (requires `IConfiguration`):
 
 ```csharp
-services.AddCore();
+services.AddCore(configuration);
 ```
+

@@ -43,25 +43,10 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Type mismatch for field '{userField}' in endpoint '{endpointName}': {ex.Message}");
+                    _logger.LogWarning("Type mismatch for field '{UserField}' in endpoint '{EndpointName}' expected as '{ExpectedType}': {Message}", userField, endpointName, expectedType, ex.Message);
                     outputJson[internalField] = null; // Set default or handle as needed
                 }
             }
-
-            // if (userJson.TryGetPropertyValue(userField, out JsonNode? node))
-            // {
-            //     try
-            //     {
-            //         // Validate and convert the value to the expected type
-            //         object? convertedValue = node != null ? ConvertToType(node.ToString(), expectedType) : null;
-            //         outputJson[internalField] = JsonValue.Create(convertedValue);
-            //     }
-            //     catch (Exception ex)
-            //     {
-            //         _logger.LogWarning("Type mismatch for field '{userField}' expected as '{expectedType}': {Message}", userField, expectedType, ex.Message);
-            //         outputJson[internalField] = null;
-            //     }
-            // }
         }
 
         return outputJson;

@@ -24,7 +24,7 @@ dotnet add package SIPS.PostgreSQL
 ```json
 {
   "ConnectionStrings": {
-    "PostgreSQL": "Host=localhost;Port=5432;Database=<database>;Username=<username>;Password=<password>"
+    "db": "Host=localhost;Port=5432;Database=<database>;Username=<username>;Password=<password>"
   }
 }
 ```
@@ -42,8 +42,11 @@ To use the package, follow these steps:
 1. Add it to your Service Collection:
 
 ```csharp
-services.AddPostgreSQL();
+services.AddPostgreSQL(configuration);
 
-this will inject IStorageBroker, IIncomingRecorder, and IStorageBrokerInitializer into the service collection
+// The following services will be registered:
+// - IStorageBroker (DbContext abstraction)
+// - IIncomingRecorder
+// - IStorageBrokerInitializer
 
 ```
