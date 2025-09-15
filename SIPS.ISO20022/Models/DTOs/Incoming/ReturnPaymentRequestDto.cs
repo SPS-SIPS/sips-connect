@@ -6,5 +6,5 @@ public sealed class ReturnPaymentRequestDto
     public string OriginalEndToEndId { get; set; } = default!;
     public string Reason { get; set; } = default!;
     public string AdditionalInfo { get; set; } = default!;
-    public string ReturnId { get; set; }
+    public string ReturnId { get; set; } = default!;
 }

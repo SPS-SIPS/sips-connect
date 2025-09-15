@@ -28,7 +28,7 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
         {
             string internalField = mapping.InternalField;
             string userField = mapping.UserField;
-            string expectedType = mapping.Type;
+            MappingType expectedType = ResolveMappingType(mapping);
 
             // Get the value from the nested JSON structure
             JsonNode? node = GetNestedJsonValue(userJson, userField);
@@ -65,7 +65,7 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
         {
             string internalField = mapping.InternalField;
             string userField = mapping.UserField;
-            string expectedType = mapping.Type;
+            MappingType expectedType = ResolveMappingType(mapping);
 
             try
             {
@@ -99,39 +99,92 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
         return JsonSerializer.Deserialize<T>(validatedJsonString, _serializerOptions) ?? throw new InvalidOperationException("Deserialization failed.");
     }
 
-    private object? ConvertToType(string value, string expectedType)
+    private object? ConvertToType(string value, MappingType expectedType)
     {
-        // add current system culture date format
-        return expectedType.ToLower() switch
+        // Normalize into expected type; DateTime normalized to ISO-8601 string
+        return expectedType switch
         {
-            "datetime" => DateTime.TryParse(value, out var dateTimeValue) ? dateTimeValue.ToString("o") : value,
-            "string" => value,
-            "int" => int.TryParse(value, out var intValue) ? intValue : throw new InvalidCastException("Invalid integer value."),
-            "double" => double.TryParse(value, out var doubleValue) ? doubleValue : throw new InvalidCastException("Invalid double value."),
-            "bool" => bool.TryParse(value, out var boolValue) ? boolValue : throw new InvalidCastException("Invalid boolean value."),
+            MappingType.DateTime => DateTime.TryParse(value, out var dateTimeValue) ? dateTimeValue.ToString("o") : value,
+            MappingType.String => value,
+            MappingType.Int => int.TryParse(value, out var intValue) ? intValue : throw new InvalidCastException("Invalid integer value."),
+            MappingType.Double => double.TryParse(value, out var doubleValue) ? doubleValue : throw new InvalidCastException("Invalid double value."),
+            MappingType.Bool => bool.TryParse(value, out var boolValue) ? boolValue : throw new InvalidCastException("Invalid boolean value."),
             _ => throw new NotSupportedException($"Type '{expectedType}' is not supported.")
+        };
+    }
+
+    private static MappingType ResolveMappingType(FieldMapping mapping)
+    {
+        if (mapping.EnumType.HasValue) return mapping.EnumType.Value;
+        return ParseType(mapping.Type);
+    }
+
+    private static MappingType ParseType(string type)
+    {
+        return type.Trim().ToLowerInvariant() switch
+        {
+            "string" => MappingType.String,
+            "int" => MappingType.Int,
+            "double" => MappingType.Double,
+            "bool" => MappingType.Bool,
+            "datetime" => MappingType.DateTime,
+            _ => throw new NotSupportedException($"Type '{type}' is not supported."),
         };
     }
 
     private static JsonNode? GetNestedJsonValue(JsonObject jsonObject, string userField)
     {
-        var fields = userField.Split('.'); // Split the path into parts (e.g., "data.name" -> ["data", "name"])
-        JsonNode? currentNode = jsonObject;
+        var segments = userField.Split('.');
+        JsonNode? current = jsonObject;
 
-        foreach (var field in fields)
+        foreach (var segment in segments)
         {
-            if (currentNode is JsonObject currentObject && currentObject.TryGetPropertyValue(field, out var nextNode))
+            if (current == null) return null;
+
+            // Handle array indexer e.g., items[0]
+            var name = segment;
+            int? index = null;
+            var bracketStart = segment.IndexOf('[');
+            if (bracketStart >= 0 && segment.EndsWith("]"))
             {
-                currentNode = nextNode;
+                name = segment.Substring(0, bracketStart);
+                var indexStr = segment.Substring(bracketStart + 1, segment.Length - bracketStart - 2);
+                if (int.TryParse(indexStr, out var idx))
+                {
+                    index = idx;
+                }
+                else
+                {
+                    return null;
+                }
             }
-            else
+
+            if (!string.IsNullOrEmpty(name))
             {
-                // Return null if the field doesn't exist
-                return null;
+                if (current is JsonObject obj && obj.TryGetPropertyValue(name, out var next))
+                {
+                    current = next;
+                }
+                else
+                {
+                    return null;
+                }
+            }
+
+            if (index.HasValue)
+            {
+                if (current is JsonArray arr)
+                {
+                    if (index.Value < 0 || index.Value >= arr.Count) return null;
+                    current = arr[index.Value];
+                }
+                else
+                {
+                    return null;
+                }
             }
         }
 
-        return currentNode; // Return the final node
+        return current;
     }
-
 }

@@ -37,6 +37,8 @@ var internalJson = jsonAdapter.Transform(userJson, endpointName);
 The adapter requires an `endpointName` to determine how to map incoming JSON. Provide a configured `JsonAdapterOptions` instance via DI (the library registers an empty default you can replace):
 
 ```csharp
+using SIPS.Adapter.Models;
+
 services.AddSingleton(new JsonAdapterOptions
 {
     Endpoints = new Dictionary<string, EndpointMapping>
@@ -45,9 +47,9 @@ services.AddSingleton(new JsonAdapterOptions
         {
             FieldMappings = new List<FieldMapping>
             {
-                new FieldMapping { InternalField = "amount", UserField = "data.amount", Type = "int" },
-                new FieldMapping { InternalField = "reference", UserField = "data.ref", Type = "string" },
-                new FieldMapping { InternalField = "timestamp", UserField = "meta.createdAt", Type = "datetime" }
+                new FieldMapping { InternalField = "amount", UserField = "data.amount", Type = MappingType.Int },
+                new FieldMapping { InternalField = "reference", UserField = "data.ref", Type = MappingType.String },
+                new FieldMapping { InternalField = "timestamp", UserField = "meta.createdAt", Type = MappingType.DateTime }
             }
         }
     }

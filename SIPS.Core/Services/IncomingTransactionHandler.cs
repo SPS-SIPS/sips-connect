@@ -59,7 +59,13 @@ public sealed class IncomingTransactionHandler(
 
             // Step 5: Build, persist, and sign response
             var rsp = PaymentRequestResponseBuilder.Build(response);
-            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, response.TxId, request.EndToEndId, rsp, ct);
+            await PersistISOMessageAsync(record,
+                response.Status ?? RJCT,
+                response.Reason ?? MISS,
+                response.AdditionalInfo,
+                response.TxId ?? string.Empty,
+                request.EndToEndId ?? string.Empty,
+                rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -67,7 +73,13 @@ public sealed class IncomingTransactionHandler(
             _logger.LogError(ex, "INCOMING PS Handler Exception for TxId {TxId}", request?.TxId);
             response.AdditionalInfo = "Failed to process Transaction";
             var rsp = PaymentRequestResponseBuilder.Build(response);
-            await PersistISOMessageAsync(record, response.Status, response.Reason, response.AdditionalInfo, response.TxId, request?.EndToEndId, rsp, ct);
+            await PersistISOMessageAsync(record,
+                response.Status ?? RJCT,
+                response.Reason ?? MISS,
+                response.AdditionalInfo,
+                response.TxId ?? string.Empty,
+                request?.EndToEndId ?? string.Empty,
+                rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
     }

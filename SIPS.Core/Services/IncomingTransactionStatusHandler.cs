@@ -114,7 +114,7 @@ public sealed class IncomingTransactionStatusHandler(
         };
     }
 
-    private async Task<ISO20022.Models.DTOs.Response<JsonObject?>> SendAndParseCallbackAsync(ISOMessageStatus? record, PaymentStatusRequestBuilder.Request request, PaymentStatusRequestResponseBuilder.Response response, CancellationToken ct)
+    private async Task<ISO20022.Models.DTOs.Response<JsonObject?>> SendAndParseCallbackAsync(ISOMessageStatus record, PaymentStatusRequestBuilder.Request request, PaymentStatusRequestResponseBuilder.Response response, CancellationToken ct)
     {
         var responseMessage = await SendCallbackAsync(request, ct);
         if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
@@ -181,7 +181,7 @@ public sealed class IncomingTransactionStatusHandler(
     }
     private void ParseCallbackResult(JsonObject data, PaymentStatusRequestResponseBuilder.Response response)
     {
-        Console.WriteLine("Callback result: " + data.ToString());
+        _logger.LogDebug("Callback result: {Data}", data.ToString());
         var js = JsonSerializer.Deserialize<JsonObject>(data, _jsonSerializerOptions);
 
         var md = _jsonAdapter.Transform(js!, CB_PaymentStatusResponse);
