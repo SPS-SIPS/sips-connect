@@ -11,4 +11,5 @@ public class XadesOptions
     public string BIC { get; set; } = string.Empty;
     public bool WithoutPKI { get; set; } = false;
     public string DefaultSignatureMethod { get; set; } = "SHA256withRSA";
+    public string BaseDN { get; set; } = string.Empty;
 }

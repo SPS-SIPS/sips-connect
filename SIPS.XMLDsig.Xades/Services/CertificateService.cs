@@ -127,7 +127,7 @@ public sealed class CertificateService : ICertificateService
     {
         keyInfoId = "_" + keyInfoId;
         signedPropsId = "_" + signedPropsId;
-        var x509IssuerName = XmlSecurityHelpers.FormatIssuerDN(Certificate!);
+        var x509IssuerName = _configuration.BaseDN;
         var x509SerialNumber = Certificate!.SerialNumber.ToString();
 
         XDocument signatureDoc = XmlSignatureGenerator.GenerateSignatureXml(keyInfoId, signedPropsId, x509IssuerName, x509SerialNumber, signingTime, algorithm);
