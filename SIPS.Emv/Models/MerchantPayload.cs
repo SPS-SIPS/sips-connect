@@ -8,7 +8,7 @@ public class MerchantPayload : IValidateObject
 
     [EmvSpecification(00, MaxLength = 2)]
     [Required]
-    public string PayloadFormatIndicator { get; set; } = "02";
+    public string PayloadFormatIndicator { get; set; } = "01";
 
     [EmvSpecification(01, MaxLength = 2)]
     [Range(11, 12)]
@@ -91,7 +91,7 @@ public class MerchantPayload : IValidateObject
         if (errors.Any())
         {
             var errorMessageBuilder = new StringBuilder();
-            errorMessageBuilder.AppendLine("The following errors occurred while validating the MerchantPayload:");
+            errorMessageBuilder.AppendLine("The following errors occurred while validating the Merchant Payload:");
 
             foreach (var item in errors)
             {

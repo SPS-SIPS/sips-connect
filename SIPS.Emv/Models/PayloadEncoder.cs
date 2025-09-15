@@ -48,7 +48,11 @@ public class PayloadEncoder : IPayloadEncoding<MerchantPayload>
             sb.Append(EncodeProperty(nameof(MerchantPayload.MerchantInformation), languageTemplateBuilder.ToString()));
         }
 
-        sb.Append(EncodeProperty(nameof(MerchantPayload.TransactionAmount), payload.TransactionAmount));
+        if (payload.TransactionAmount > 0)
+        {
+            sb.Append(EncodeProperty(nameof(MerchantPayload.TransactionAmount), payload.TransactionAmount.ToString()));
+        }
+
         sb.Append(EncodeProperty(nameof(MerchantPayload.TipOrConvenienceIndicator), payload.TipOrConvenienceIndicator));
         sb.Append(EncodeProperty(nameof(MerchantPayload.ValueOfConvenienceFeeFixed), payload.ValueOfConvenienceFeeFixed));
         sb.Append(EncodeProperty(nameof(MerchantPayload.ValueOfConvenienceFeePercentage), payload.ValueOfConvenienceFeePercentage));
@@ -104,9 +108,9 @@ public class PayloadEncoder : IPayloadEncoding<MerchantPayload>
         sb.Append(EncodePropertyP2P(nameof(P2PPayload.AccountName), payload.AccountName));
         if (payload.Amount > 0)
         {
-            sb.Append(EncodePropertyP2P(nameof(P2PPayload.Amount), payload.Amount));
+            sb.Append(EncodePropertyP2P(nameof(P2PPayload.Amount), payload.Amount.ToString()));
+            sb.Append(EncodePropertyP2P(nameof(P2PPayload.Particulars), payload.Particulars));
         }
-        sb.Append(EncodePropertyP2P(nameof(P2PPayload.Particulars), payload.Particulars));
 
         sb.Append("1004");
         var crc16ccittFalseParameters = CrcStandardParams.StandardParameters[CrcAlgorithms.Crc16CcittFalse];

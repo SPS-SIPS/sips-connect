@@ -185,6 +185,7 @@ public sealed class IncomingVerificationHandler(
 
     private void ParseCallbackResult(JsonObject data, PayeeVerificationResponseBuilder.Request response)
     {
+        _logger.LogInformation("Callback Response: {Response}", data.ToJsonString(_jsonSerializerOptions));
         var js = JsonSerializer.Deserialize<JsonObject>(data, _jsonSerializerOptions);
         var md = _jsonAdapter.Transform(js!, CB_VerificationResponse);
         var deserializedContent = _jsonAdapter.ToObject<VerificationResponseDto>(md);

@@ -49,7 +49,7 @@ public class P2PPayload : IValidatableObject
         if (errors.Any())
         {
             var errorMessageBuilder = new StringBuilder();
-            errorMessageBuilder.AppendLine("The following errors occurred while validating the MerchantPayload:");
+            errorMessageBuilder.AppendLine("The following errors occurred while validating the P2P QR Code:");
 
             foreach (var item in errors)
             {
