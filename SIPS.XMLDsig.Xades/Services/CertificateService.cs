@@ -8,6 +8,7 @@ using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Security.Certificates;
 using Org.BouncyCastle.X509;
 namespace SIPS.XMLDsig.Xades.Services;
+
 public sealed class CertificateService : ICertificateService
 {
     public CertificateService(XadesOptions options)
@@ -127,7 +128,7 @@ public sealed class CertificateService : ICertificateService
     {
         keyInfoId = "_" + keyInfoId;
         signedPropsId = "_" + signedPropsId;
-        var x509IssuerName = _configuration.BaseDN;
+        var x509IssuerName = _configuration.BaseDN ?? throw new ArgumentNullException("XadesConfig.BaseDN is required in appSettings.json");
         var x509SerialNumber = Certificate!.SerialNumber.ToString();
 
         XDocument signatureDoc = XmlSignatureGenerator.GenerateSignatureXml(keyInfoId, signedPropsId, x509IssuerName, x509SerialNumber, signingTime, algorithm);

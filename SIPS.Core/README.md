@@ -47,7 +47,8 @@ To use the core packages, you can add the following configuration to your `appse
     ],
     "VerificationWindowMinutes": 100,
     "BIC": "",
-    "WithoutPKI": false
+    "WithoutPKI": false,
+    "BaseDN": ""
   },
   "ISO20022": {
     "SIPS": "",
