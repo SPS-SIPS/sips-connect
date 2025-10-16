@@ -3,6 +3,13 @@ global using SIPS.Core.Interfaces;
 using SIPS.Adapter;
 using SIPS.Core.Services;
 using SIPS.ISO20022.Interfaces;
+using SIPS.ISO20022.Adapters;
+using SIPS.Core.Services.Verification;
+using SIPS.Core.Services.ISOParsers;
+using SIPS.Core.Services.Callback;
+using SIPS.Core.Services.Responses;
+using SIPS.Core.Services.Persistence;
+using SIPS.Core.Services.Correlation;
 using SIPS.PostgreSQL;
 using SIPS.XMLDsig.Xades;
 using SIPS.XMLDsig.Xades.Interfaces;
@@ -20,6 +27,17 @@ public static class DI
         services.AddSingleton<ICacheService, CacheService>();
         services.AddSingleton<ICertificateDownloadService, CertificateDownloadService>();
         services.AddScoped<IIncoming, Incoming>();
+
+        // ISO20022 helpers/adapters
+        services.AddSingleton<IPaymentStatusRequestBuilder, PaymentStatusRequestBuilderAdapter>();
+
+        services.AddSingleton<ISignatureService, SignatureService>();
+        services.AddSingleton<ICorrelationService, CorrelationService>();
+        services.AddSingleton<IPaymentRequestParser, PaymentRequestParser>();
+        services.AddSingleton<IPaymentStatusRequestParser, PaymentStatusRequestParser>();
+        services.AddSingleton<ICallbackClient, CallbackClient>();
+        services.AddSingleton<IResponseFactory, ResponseFactory>();
+        services.AddSingleton<IPersistenceGateway, PersistenceGateway>();
 
         services.AddScoped<IIncomingVerificationHandler, IncomingVerificationHandler>();
         services.AddScoped<IIncomingTransactionHandler, IncomingTransactionHandler>();
