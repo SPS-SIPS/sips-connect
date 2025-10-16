@@ -12,6 +12,7 @@ public interface IPersistenceGateway
     Task ISOMessageResponseAsync(ISOMessage message, CancellationToken ct);
     Task ISOMessageStatusResponseAsync(ISOMessageStatus status, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct);
+    Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct);
 }
 
 public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceGateway
@@ -32,4 +33,7 @@ public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceG
 
     public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct)
         => _record.GetISOMessageByTxIdAsync(txId, ct);
+
+    public Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct)
+        => _record.GetISOMessageWithTransactionsByTxIdAsync(txId, ct);
 }

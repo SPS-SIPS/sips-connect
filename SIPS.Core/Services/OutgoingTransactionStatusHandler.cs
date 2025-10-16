@@ -12,6 +12,9 @@ using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
 using SIPS.PostgreSQL.Models;
 using System.Text.Json;
+using SIPS.Core.Services.Verification;
+using SIPS.Core.Services.Persistence;
+using SIPS.Core.Services.Correlation;
 namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionStatusHandler(
     ISO20022Options options,
@@ -19,7 +22,10 @@ public sealed class OutgoingTransactionStatusHandler(
     IInterfaceHttpClient httpClient,
     INativeSigner signer,
     INativeVerifier verifier,
-    IIncomingRecorder record
+    IIncomingRecorder record,
+    ISignatureService signature,
+    IPersistenceGateway persistence,
+    ICorrelationService correlation
     ) : IOutgoingTransactionStatusHandler
 {
     private readonly IInterfaceHttpClient _httpClient = httpClient;
@@ -28,16 +34,20 @@ public sealed class OutgoingTransactionStatusHandler(
     private readonly INativeSigner _signer = signer;
     private readonly INativeVerifier _verifier = verifier;
     private readonly IIncomingRecorder _record = record;
+    private readonly ISignatureService _signature = signature;
+    private readonly IPersistenceGateway _persistence = persistence;
+    private readonly ICorrelationService _correlation = correlation;
     public async Task<Response<PaymentResponseDto>> HandleAsync(StatusRequestDto message, CancellationToken ct)
     {
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
+        var cid = _correlation.Create(message.TxId);
 
         try
         {
             // Step 1: Retrieve ISO message by TxId
-            var isoMessage = await _record.GetISOMessageByTxIdAsync(message.TxId, ct);
-            _logger.LogInformation("Retrieved ISO message: {ISOMessage}", JsonSerializer.Serialize(isoMessage, new JsonSerializerOptions
+            var isoMessage = await _persistence.GetISOMessageByTxIdAsync(message.TxId, ct);
+            _logger.LogInformation("[{CorrelationId}] Retrieved ISO message: {ISOMessage}", cid, JsonSerializer.Serialize(isoMessage, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true,
@@ -53,7 +63,7 @@ public sealed class OutgoingTransactionStatusHandler(
             var record = await CreateISOMessageAsync(signed, isoMessage, ct);
 
             // Step 3: Call SIPS and handle response
-            var responseMessage = await SendRequestAsync(url, signed, ct);
+            var responseMessage = await SendRequestAsync(url, signed, ct, cid);
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
@@ -61,7 +71,7 @@ public sealed class OutgoingTransactionStatusHandler(
             // Step 4: Parse and persist SIPS response
             if (!TryParse(responseMessage?.Data!, out var rs) || rs == null)
             {
-                _logger.LogError("Failed to parse the message: {message}", responseMessage?.Data ?? "");
+                _logger.LogError("[{CorrelationId}] Failed to parse the message: {message}", cid, responseMessage?.Data ?? "");
                 await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage?.Data!, ct);
                 return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
@@ -80,7 +90,7 @@ public sealed class OutgoingTransactionStatusHandler(
         }
         catch (Exception ex)
         {
-            _logger.LogError("Failed to Send Request To SIPS Error: {Error}", ex);
+            _logger.LogError("[{CorrelationId}] Failed to Send Request To SIPS Error: {Error}", cid, ex);
             return Response<PaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
         }
     }
@@ -111,15 +121,15 @@ public sealed class OutgoingTransactionStatusHandler(
             Status = TransactionStatus.Pending,
         };
 
-        return await _record.ISOMessageStatusAsync(entity, ct);
+        return await _persistence.RecordISOMessageStatusAsync(entity, ct);
     }
 
-    private async Task<Response<string>?> SendRequestAsync(string url, string signed, CancellationToken ct)
+    private async Task<Response<string>?> SendRequestAsync(string url, string signed, CancellationToken ct, string cid)
     {
         var content = new StringContent(signed, Encoding.UTF8, "application/xml");
         // Log the callback URL and payload
-        _logger.LogInformation("Callback URL: {Url}", url);
-        _logger.LogInformation("Callback Payload: {Payload}", signed);
+        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, url);
+        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, signed);
         return await _httpClient.Send4XML(url, content, ct);
     }
 
@@ -170,7 +180,8 @@ public sealed class OutgoingTransactionStatusHandler(
         }
 
         // Verify signature
-        if (!await VerifySignatureAsync(responseMessage.Data, ct))
+        var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
+        if (!ok)
         {
             _logger.LogError("Failed to verify the signature: {Verbose}", responseMessage.Data);
             await PersistISOMessageAsync(record, RJCT, "Failed to verify the signature", "Failed to verify the signature", responseMessage.Data, ct);
@@ -184,17 +195,7 @@ public sealed class OutgoingTransactionStatusHandler(
         });
     }
 
-    private async Task<bool> VerifySignatureAsync(string message, CancellationToken ct)
-    {
-        var (result, verbose) = await _verifier.VerifySignature(message, false, ct);
-
-        if (!result)
-        {
-            _logger.LogError("Failed to verify the signature: verbose {verbose}", verbose);
-        }
-
-        return result;
-    }
+    // verification delegated to shared signature service
 
     private async Task<Response<PaymentResponseDto>> LogPersistAndReturnAsync(
         ISOMessageStatus record,
@@ -218,7 +219,7 @@ public sealed class OutgoingTransactionStatusHandler(
         isoMessage.AdditionalInfo = additionalInfo;
         // Persist the message status
         isoMessage.ISOMessage.Status = status == ACSC ? TransactionStatus.Success : TransactionStatus.Failed;
-        await _record.ISOMessageStatusResponseAsync(isoMessage, ct);
+        await _persistence.ISOMessageStatusResponseAsync(isoMessage, ct);
     }
 
     private static bool TryParse(string message, out PaymentRequestResponseBuilder.Response? response)

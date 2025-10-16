@@ -8,6 +8,9 @@ using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using SIPS.Core.Services.Verification;
+using SIPS.Core.Services.Persistence;
+using SIPS.Core.Services.Correlation;
 namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionHandler(
     ISO20022Options options,
@@ -15,7 +18,10 @@ public sealed class OutgoingTransactionHandler(
     IInterfaceHttpClient httpClient,
     INativeSigner signer,
     INativeVerifier verifier,
-    IIncomingRecorder record
+    IIncomingRecorder record,
+    ISignatureService signature,
+    IPersistenceGateway persistence,
+    ICorrelationService correlation
     ) : IOutgoingTransactionHandler
 {
     private readonly IInterfaceHttpClient _httpClient = httpClient;
@@ -24,6 +30,9 @@ public sealed class OutgoingTransactionHandler(
     private readonly INativeSigner _signer = signer;
     private readonly INativeVerifier _verifier = verifier;
     private readonly IIncomingRecorder _record = record;
+    private readonly ISignatureService _signature = signature;
+    private readonly IPersistenceGateway _persistence = persistence;
+    private readonly ICorrelationService _correlation = correlation;
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
         _logger.LogInformation("Processing Outgoing Transaction Request");
@@ -31,6 +40,7 @@ public sealed class OutgoingTransactionHandler(
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var ourAgentBic = _configuration.Agent ?? throw new InvalidOperationException("Agent BIC not found in configuration.");
         var txId = Transformers.GenerateId(_configuration.BIC!);
+        var cid = _correlation.Create(txId);
 
         try
         {
@@ -38,10 +48,10 @@ public sealed class OutgoingTransactionHandler(
             var (document, bizMsgIdr, type, msgId) = BuildRequest(message, fromBIC, ourAgentBic, txId);
             var signed = _signer.SignEnvelope(document);
             var entity = CreateISOMessage(message, fromBIC, ourAgentBic, txId, signed, bizMsgIdr, type, msgId);
-            var record = await _record.ISOMessageAsync(entity, ct);
+            var record = await _persistence.RecordISOMessageAsync(entity, ct);
 
             // Step 2: Call SIPS and handle response
-            var responseMessage = await CallSIPSAsync(url, signed, ct);
+            var responseMessage = await CallSIPSAsync(url, signed, ct, cid);
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
@@ -49,12 +59,12 @@ public sealed class OutgoingTransactionHandler(
             // Step 3: Parse and persist SIPS response
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
-                _logger.LogError("Failed to parse the message: {message}", responseMessage.Data);
+                _logger.LogError("[{CorrelationId}] Failed to parse the message: {message}", cid, responseMessage.Data);
                 await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, ct);
                 return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
-            _logger.LogInformation("Original Response from SIPS: {message}", responseMessage.Data!);
-            _logger.LogInformation("Parsed Response from SIPS: {Response}", JsonSerializer.Serialize(rs, new JsonSerializerOptions
+            _logger.LogInformation("[{CorrelationId}] Original Response from SIPS: {message}", cid, responseMessage.Data!);
+            _logger.LogInformation("[{CorrelationId}] Parsed Response from SIPS: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true,
@@ -74,7 +84,7 @@ public sealed class OutgoingTransactionHandler(
         }
         catch (Exception ex)
         {
-            _logger.LogError("Failed to Send Request To SIPS Error: {Error}", ex);
+            _logger.LogError("[{CorrelationId}] Failed to Send Request To SIPS Error: {Error}", cid, ex);
             return Response<PaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
         }
     }
@@ -149,12 +159,12 @@ public sealed class OutgoingTransactionHandler(
 
         return entity;
     }
-    private async Task<Response<string>> CallSIPSAsync(string url, string signed, CancellationToken ct)
+    private async Task<Response<string>> CallSIPSAsync(string url, string signed, CancellationToken ct, string cid)
     {
         var content = new StringContent(signed, Encoding.UTF8, "application/xml");
         // Log the callback URL and payload
-        _logger.LogInformation("Callback URL: {Url}", url);
-        _logger.LogInformation("Callback Payload: {Payload}", signed);
+        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, url);
+        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, signed);
         return await _httpClient.Send4XML(url, content, ct);
     }
     private async Task<Response<PaymentResponseDto>> HandleSIPSCallExceptionAsync(
@@ -204,7 +214,8 @@ public sealed class OutgoingTransactionHandler(
         }
 
         // Verify signature
-        if (!await VerifySignatureAsync(responseMessage.Data, ct))
+        var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
+        if (!ok)
         {
             _logger.LogError("Failed to verify the signature: {Verbose}", responseMessage.Data);
             await PersistISOMessageAsync(record, RJCT, "Failed to verify the signature", "Failed to verify the signature", responseMessage.Data, ct);
@@ -241,18 +252,7 @@ public sealed class OutgoingTransactionHandler(
 
         return true;
     }
-    private async Task<bool> VerifySignatureAsync(string message, CancellationToken ct)
-    {
-        var (result, verbose) = await _verifier.VerifySignature(message, false, ct);
-
-        if (!result)
-        {
-            var verboseJson = System.Text.Json.JsonSerializer.Serialize(verbose);
-            _logger.LogError("Failed to verify the signature: verbose {verbose}", verboseJson);
-        }
-
-        return result;
-    }
+    // verification delegated to shared signature service
     private async Task PersistISOMessageAsync(PostgreSQL.Models.ISOMessage isoMessage, string status, string reason, string? additionalInfo, string rsp, CancellationToken ct, string txId = "", string endToEndId = "")
     {
         isoMessage.Response = Encoding.UTF8.GetBytes(rsp);
@@ -267,6 +267,6 @@ public sealed class OutgoingTransactionHandler(
         {
             isoMessage.EndToEndId = endToEndId;
         }
-        await _record.ISOMessageResponseAsync(isoMessage, ct);
+        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
     }
 }

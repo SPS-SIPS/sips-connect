@@ -8,6 +8,9 @@ using SIPS.PostgreSQL.Interfaces;
 using SIPS.PostgreSQL.Models;
 using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
+using SIPS.Core.Services.Verification;
+using SIPS.Core.Services.Persistence;
+using SIPS.Core.Services.Correlation;
 
 namespace SIPS.Core.Services;
 
@@ -17,7 +20,10 @@ public sealed class OutgoingVerificationHandler(
     IInterfaceHttpClient httpClient,
     INativeSigner signer,
     INativeVerifier verifier,
-    IIncomingRecorder record
+    IIncomingRecorder record,
+    ISignatureService signature,
+    IPersistenceGateway persistence,
+    ICorrelationService correlation
     ) : IOutgoingVerificationHandler
 {
     private readonly IInterfaceHttpClient _httpClient = httpClient;
@@ -26,12 +32,16 @@ public sealed class OutgoingVerificationHandler(
     private readonly INativeSigner _signer = signer;
     private readonly INativeVerifier _verifier = verifier;
     private readonly IIncomingRecorder _record = record;
+    private readonly ISignatureService _signature = signature;
+    private readonly IPersistenceGateway _persistence = persistence;
+    private readonly ICorrelationService _correlation = correlation;
 
     public async Task<Response<VerificationResponseDto>> HandleAsync(VerificationRequestDto message, CancellationToken ct)
     {
         // Step 1: Validate configuration and request values
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
+        var cid = _correlation.Create();
 
         if (string.IsNullOrEmpty(message.Alias) ||
             string.IsNullOrEmpty(message.Type) ||
@@ -60,10 +70,10 @@ public sealed class OutgoingVerificationHandler(
                 BizMsgIdr = bizMsgIdr,
                 MsgDefIdr = type,
             };
-            var record = await _record.ISOMessageAsync(isoMessage, ct);
+            var record = await _persistence.RecordISOMessageAsync(isoMessage, ct);
 
             // Step 4: Send the verification request to SIPS
-            var responseMessage = await SendRequestToSIPSAsync(signedRequest, url, ct);
+            var responseMessage = await SendRequestToSIPSAsync(signedRequest, url, ct, cid);
             record.Response = Encoding.UTF8.GetBytes(responseMessage.Data ?? "");
 
             // Step 5: Validate the SIPS response
@@ -74,11 +84,11 @@ public sealed class OutgoingVerificationHandler(
             }
 
             // Step 6: Verify the signature on the SIPS response
-            var (isSignatureValid, verbose) = await _verifier.VerifySignature(responseMessage.Data, false, ct);
-            if (!isSignatureValid)
+            var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
+            if (!ok)
             {
                 await PersistISOMessageAsync(record, false, "Failed to verify the signature from SIPS", "Signature verification failed", responseMessage.Data, string.Empty, ct);
-                _logger.LogError("Failed to verify the signature: verbose {Verbose}", verbose);
+                _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {Verbose}", cid, verbose);
                 return Response<VerificationResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
             }
 
@@ -100,7 +110,7 @@ public sealed class OutgoingVerificationHandler(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to process the verification request.");
+            _logger.LogError(ex, "[{CorrelationId}] Failed to process the verification request.", cid);
             return Response<VerificationResponseDto>.Fail("Failed to process the request", System.Net.HttpStatusCode.InternalServerError);
         }
     }
@@ -127,11 +137,11 @@ public sealed class OutgoingVerificationHandler(
         }
     }
 
-    private async Task<Response<string>> SendRequestToSIPSAsync(string message, string url, CancellationToken ct)
+    private async Task<Response<string>> SendRequestToSIPSAsync(string message, string url, CancellationToken ct, string cid)
     {
         // Log the callback URL and payload
-        _logger.LogInformation("Callback URL: {Url}", url);
-        _logger.LogInformation("Callback Payload: {Payload}", message);
+        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, url);
+        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, message);
         var content = new StringContent(message, Encoding.UTF8, "application/xml");
         return await _httpClient.Send4XML(url, content, ct);
     }
@@ -143,6 +153,6 @@ public sealed class OutgoingVerificationHandler(
         isoMessage.AdditionalInfo = additionalInfo;
         isoMessage.Response = Encoding.UTF8.GetBytes(response);
         isoMessage.TxId = originalId;
-        await _record.ISOMessageResponseAsync(isoMessage, ct);
+        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
     }
 }
