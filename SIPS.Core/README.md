@@ -82,3 +82,16 @@ Register SIPS Core in your DI container (requires `IConfiguration`):
 services.AddCore(configuration);
 ```
 
+### Shared Services
+
+These services are now used internally by handlers and can be injected elsewhere as needed:
+
+- `ISignatureService` (`SIPS.Core/Services/Verification/SignatureService.cs`)
+- `IPersistenceGateway` (`SIPS.Core/Services/Persistence/PersistenceGateway.cs`)
+- `ICorrelationService` (`SIPS.Core/Services/Correlation/CorrelationService.cs`)
+- `ICallbackClient` (`SIPS.Core/Services/Callback/CallbackClient.cs`)
+- `IResponseFactory` (`SIPS.Core/Services/Responses/ResponseFactory.cs`)
+- `IPaymentRequestParser`, `IPaymentStatusRequestParser` (`SIPS.Core/Services/ISOParsers/`)
+
+Handlers have been refactored to use these services and include correlation IDs in logs.
+
