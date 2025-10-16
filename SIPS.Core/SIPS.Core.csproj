@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -16,17 +16,22 @@
     <PackageReference Include="Cronos" Version="0.9.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.1" />
-    <PackageReference Include="sips.adapter" Version="1.0.0" />
-    <PackageReference Include="sips.emv" Version="1.0.2" />
-    <PackageReference Include="sips.iso20022" Version="1.0.5" />
-    <PackageReference Include="sips.postgresql" Version="1.0.1" />
-    <PackageReference Include="sips.xmldsig.xades" Version="1.0.7" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SIPS.ISO20022\SIPS.ISO20022.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="README.md">
       <Pack>true</Pack>
       <PackagePath>README.md</PackagePath>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../SIPS.PostgreSQL/SIPS.PostgreSQL.csproj" />
+    <ProjectReference Include="../SIPS.XMLDsig.Xades/SIPS.XMLDsig.Xades.csproj" />
+    <ProjectReference Include="../SIPS.Adapter/SIPS.Adapter.csproj" />
+    <ProjectReference Include="../SIPS.Emv/SIPS.Emv.csproj" />
   </ItemGroup>
 
 </Project>

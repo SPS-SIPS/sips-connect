@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SIPS.Adapter.Models;
@@ -104,13 +105,28 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
         // Normalize into expected type; DateTime normalized to ISO-8601 string
         return expectedType switch
         {
-            MappingType.DateTime => DateTime.TryParse(value, out var dateTimeValue) ? dateTimeValue.ToString("o") : value,
+            MappingType.DateTime => NormalizeDateTime(value),
             MappingType.String => value,
             MappingType.Int => int.TryParse(value, out var intValue) ? intValue : throw new InvalidCastException("Invalid integer value."),
             MappingType.Double => double.TryParse(value, out var doubleValue) ? doubleValue : throw new InvalidCastException("Invalid double value."),
             MappingType.Bool => bool.TryParse(value, out var boolValue) ? boolValue : throw new InvalidCastException("Invalid boolean value."),
             _ => throw new NotSupportedException($"Type '{expectedType}' is not supported.")
         };
+    }
+
+    private static string NormalizeDateTime(string value)
+    {
+        // Prefer DateTimeOffset parsing to preserve offsets, then normalize to UTC (Z)
+        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto))
+        {
+            return dto.UtcDateTime.ToString("o");
+        }
+        // Fallback to DateTime with AssumeUniversal
+        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var dt))
+        {
+            return dt.ToString("o");
+        }
+        return value;
     }
 
     private static MappingType ResolveMappingType(FieldMapping mapping)
