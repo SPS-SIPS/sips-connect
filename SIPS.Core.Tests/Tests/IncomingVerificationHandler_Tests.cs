@@ -37,10 +37,6 @@ public class IncomingVerificationHandler_Tests
 
         var logger = Mock.Of<ILogger<IncomingVerificationHandler>>();
 
-        var verifier = new Mock<INativeVerifier>();
-        verifier.Setup(v => v.VerifySignature(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((true, new VerboseResult { SignatureStatus = "ok" }));
-
         var http = new Mock<IInterfaceHttpClient>();
         http.Setup(h => h.Send(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<StringContent>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => httpResultFactory());
@@ -65,7 +61,10 @@ public class IncomingVerificationHandler_Tests
                  .ReturnsAsync((true, "ok"));
         var correlation = new SIPS.Core.Services.Correlation.CorrelationService();
 
-        var sut = new IncomingVerificationHandler(options, logger, http.Object, signer, adapter.Object, recorder.Object, parser, signature.Object, correlation);
+        var cbLogger = Mock.Of<ILogger<SIPS.Core.Services.Callback.CallbackClient>>();
+        var callback = new SIPS.Core.Services.Callback.CallbackClient(http.Object, cbLogger, correlation);
+
+        var sut = new IncomingVerificationHandler(options, logger, signer, adapter.Object, recorder.Object, parser, signature.Object, correlation, callback);
         return (sut, recorder, http, adapter);
     }
 

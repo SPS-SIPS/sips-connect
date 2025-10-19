@@ -17,21 +17,23 @@ using Microsoft.Extensions.Logging;
 using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Verification;
 using SIPS.Core.Services.Correlation;
+using SIPS.Core.Services.Callback;
+
 namespace SIPS.Core.Services;
+
 public sealed class IncomingVerificationHandler(
     ISO20022Options options,
     ILogger<IncomingVerificationHandler> logger,
-    IInterfaceHttpClient httpClient,
     INativeSigner signer,
     IJsonAdapter jsonAdapter,
     IIncomingRecorder record,
     IPayeeVerificationRequestParser parser,
     ISignatureService signature,
-    ICorrelationService correlation
-    ) : IIncomingVerificationHandler
+    ICorrelationService correlation,
+    ICallbackClient callback
+) : IIncomingVerificationHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
-    private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ILogger<IncomingVerificationHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
@@ -39,12 +41,14 @@ public sealed class IncomingVerificationHandler(
     private readonly IPayeeVerificationRequestParser _parser = parser;
     private readonly ISignatureService _signature = signature;
     private readonly ICorrelationService _correlation = correlation;
+    private readonly ICallbackClient _callback = callback;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
+
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         var cid = _correlation.Create();
@@ -164,11 +168,11 @@ public sealed class IncomingVerificationHandler(
         _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, requestToCB);
 
         var content = new StringContent(requestToCB, Encoding.UTF8, "application/json");
-        var responseMessage = await _httpClient.Send(_callbackLinks.Verification!,
-            new Dictionary<string, string>() {
-                    { API_Key, _callbackLinks.Key! },
-                    { API_Secret, _callbackLinks.Secret! }
-            }, content, ct);
+        var headers = new Dictionary<string, string>() {
+            { API_Key, _callbackLinks.Key! },
+            { API_Secret, _callbackLinks.Secret! }
+        };
+        var responseMessage = await _callback.SendAsync(_callbackLinks.Verification!, headers, content, ct, cid);
 
         return responseMessage;
     }
