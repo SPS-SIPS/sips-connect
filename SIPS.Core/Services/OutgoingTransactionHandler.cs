@@ -51,7 +51,7 @@ public sealed class OutgoingTransactionHandler(
             var record = await _persistence.RecordISOMessageAsync(entity, ct);
 
             // Step 2: Call SIPS and handle response
-            var responseMessage = await CallSIPSAsync(url, signed, ct, cid);
+            var responseMessage = await SendRequestToSIPSAsync(url, signed, ct, cid);
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
@@ -159,7 +159,7 @@ public sealed class OutgoingTransactionHandler(
 
         return entity;
     }
-    private async Task<Response<string>> CallSIPSAsync(string url, string signed, CancellationToken ct, string cid)
+    private async Task<Response<string>> SendRequestToSIPSAsync(string url, string signed, CancellationToken ct, string cid)
     {
         var content = new StringContent(signed, Encoding.UTF8, "application/xml");
         // Log the callback URL and payload

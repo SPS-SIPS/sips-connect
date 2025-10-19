@@ -237,7 +237,7 @@ public sealed class IncomingReturnTransactionHandler(
         isoMessage.Status = status == ACSC ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
-        await _record.ISOMessageResponseAsync(isoMessage, ct);
+        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
     }
 
     private static PostgreSQL.Models.ISOMessage CreateISOMessage(ReturnPaymentRequestBuilder.Request request, string message)
@@ -291,6 +291,6 @@ public sealed class IncomingReturnTransactionHandler(
         isoMessage.AdditionalInfo = additionalInfo;
         isoMessage.TxId = txId;
         isoMessage.EndToEndId = end2endId;
-        await _record.ISOMessageResponseAsync(isoMessage, ct);
+        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
     }
 }
