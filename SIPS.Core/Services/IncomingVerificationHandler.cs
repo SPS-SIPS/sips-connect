@@ -14,6 +14,7 @@ using SIPS.PostgreSQL.Models;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Services;
 using Microsoft.Extensions.Logging;
+using SIPS.Core.Services.ISOParsers;
 namespace SIPS.Core.Services;
 public sealed class IncomingVerificationHandler(
     ISO20022Options options,
@@ -22,7 +23,8 @@ public sealed class IncomingVerificationHandler(
     INativeSigner signer,
     INativeVerifier verifier,
     IJsonAdapter jsonAdapter,
-    IIncomingRecorder record
+    IIncomingRecorder record,
+    IPayeeVerificationRequestParser parser
     ) : IIncomingVerificationHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -32,6 +34,7 @@ public sealed class IncomingVerificationHandler(
     private readonly INativeVerifier _verifier = verifier;
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
     private readonly IIncomingRecorder _record = record;
+    private readonly IPayeeVerificationRequestParser _parser = parser;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -74,7 +77,7 @@ public sealed class IncomingVerificationHandler(
     {
         if (!await VerifySignatureAsync(message, ct))
             return (false, null);
-        if (!TryParse(message, out var request))
+        if (!_parser.TryParse(message, out var request))
             return (false, null);
         return (true, request);
     }
