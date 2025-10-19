@@ -133,7 +133,7 @@ services.AddScoped<IOutgoingReturnTransactionHandler, OutgoingReturnTransactionH
 - **IncomingTransactionStatusHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IResponseFactory`, `IPaymentStatusRequestParser`.
 - **IncomingReturnTransactionHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IReturnPaymentRequestParser`.
 - **IncomingVerificationHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IPayeeVerificationRequestParser`.
-- **Outgoing handlers** use `ISignatureService`, `IPersistenceGateway`, `ICorrelationService` and send to SIPS via `IInterfaceHttpClient.Send4XML(...)`; signing and verification via `INativeSigner`/`INativeVerifier`.
+- **Outgoing handlers** use `ISignatureService`, `IPersistenceGateway`, and `ICorrelationService`; they communicate with SIPS via `IInterfaceHttpClient.Send4XML(...)` and perform signing/verification using `INativeSigner`/`INativeVerifier`.
 
 ## Parser Fixtures and Test Shims
 
@@ -143,10 +143,9 @@ Under `SIPS.Core.Tests/TestData/`:
 - `pacs.002.xml` with `PaymentStatusRequestParserShim`
 - `acmt.023.xml` with `PayeeVerificationRequestParserShim`
 - `pacs.004.xml` with `ReturnPaymentRequestParserShim`
-// Additional fixture available:
-- `acmt.024.xml` (present for completeness)
+- `acmt.024.xml` (additional fixture available)
 
-Shims parse essential fields and provide safe defaults to avoid ISO schema initializers and MinLength constraints in tests.
+Shims parse essential fields and provide safe defaults to avoid schema constructor and MinLength constraints during tests. This keeps tests deterministic and independent of full ISO 20022 schema enforcement.
 
 ## Correlation IDs
 
