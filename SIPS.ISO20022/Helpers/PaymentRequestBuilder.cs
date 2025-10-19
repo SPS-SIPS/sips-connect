@@ -236,6 +236,7 @@ public static class PaymentRequestBuilder
             BizMsgIdr = envelope.AppHdr.BizMsgIdr,
             MsgDefIdr = envelope.AppHdr.MsgDefIdr,
             CreDt = envelope.AppHdr.CreDt,
+            MsgId = document.FIToFICstmrCdtTrf.GrpHdr.MsgId,
             SettlementMethod = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf.SttlmMtd,
             ClearingSystem = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf.ClrSys.Prtry,
             LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.LclInstrm.Prtry,
