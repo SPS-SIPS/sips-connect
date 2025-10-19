@@ -38,7 +38,7 @@ public static class DI
         services.AddSingleton<IPayeeVerificationRequestParser, PayeeVerificationRequestParser>();
         services.AddSingleton<ICallbackClient, CallbackClient>();
         services.AddSingleton<IResponseFactory, ResponseFactory>();
-        services.AddSingleton<IPersistenceGateway, PersistenceGateway>();
+        services.AddScoped<IPersistenceGateway, PersistenceGateway>();
 
         services.AddScoped<IIncomingVerificationHandler, IncomingVerificationHandler>();
         services.AddScoped<IIncomingTransactionHandler, IncomingTransactionHandler>();
