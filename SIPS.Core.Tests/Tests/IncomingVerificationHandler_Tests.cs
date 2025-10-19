@@ -64,7 +64,8 @@ public class IncomingVerificationHandler_Tests
         var cbLogger = Mock.Of<ILogger<SIPS.Core.Services.Callback.CallbackClient>>();
         var callback = new SIPS.Core.Services.Callback.CallbackClient(http.Object, cbLogger, correlation);
 
-        var sut = new IncomingVerificationHandler(options, logger, signer, adapter.Object, recorder.Object, parser, signature.Object, correlation, callback);
+        var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
+        var sut = new IncomingVerificationHandler(options, logger, signer, adapter.Object, persistence, parser, signature.Object, correlation, callback);
         return (sut, recorder, http, adapter);
     }
 

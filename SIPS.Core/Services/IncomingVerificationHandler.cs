@@ -9,7 +9,6 @@ using SIPS.ISO20022.Interfaces;
 using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Options;
-using SIPS.PostgreSQL.Interfaces;
 using SIPS.PostgreSQL.Models;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Services;
@@ -18,6 +17,7 @@ using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Verification;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Callback;
+using SIPS.Core.Services.Persistence;
 
 namespace SIPS.Core.Services;
 
@@ -26,7 +26,7 @@ public sealed class IncomingVerificationHandler(
     ILogger<IncomingVerificationHandler> logger,
     INativeSigner signer,
     IJsonAdapter jsonAdapter,
-    IIncomingRecorder record,
+    IPersistenceGateway persistence,
     IPayeeVerificationRequestParser parser,
     ISignatureService signature,
     ICorrelationService correlation,
@@ -37,7 +37,7 @@ public sealed class IncomingVerificationHandler(
     private readonly ILogger<IncomingVerificationHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
-    private readonly IIncomingRecorder _record = record;
+    private readonly IPersistenceGateway _persistence = persistence;
     private readonly IPayeeVerificationRequestParser _parser = parser;
     private readonly ISignatureService _signature = signature;
     private readonly ICorrelationService _correlation = correlation;
@@ -135,7 +135,7 @@ public sealed class IncomingVerificationHandler(
     private async Task<ISOMessage> CreateISOMessage(PayeeVerificationBuilder.Request request, string message, CancellationToken ct)
     {
         // record the incoming message
-        return await _record.ISOMessageAsync(
+        return await _persistence.RecordISOMessageAsync(
                    new ISOMessage
                    {
                        MessageType = PostgreSQL.Enums.ISOMessageType.VerificationRequest,
@@ -197,6 +197,6 @@ public sealed class IncomingVerificationHandler(
         isoMessage.Response = Encoding.UTF8.GetBytes(rsp);
         isoMessage.Status = status == SUCC ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
         isoMessage.Reason = reason;
-        await _record.ISOMessageResponseAsync(isoMessage, ct);
+        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
     }
 }
