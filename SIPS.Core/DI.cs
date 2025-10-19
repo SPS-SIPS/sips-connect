@@ -35,6 +35,7 @@ public static class DI
         services.AddSingleton<ICorrelationService, CorrelationService>();
         services.AddSingleton<IPaymentRequestParser, PaymentRequestParser>();
         services.AddSingleton<IPaymentStatusRequestParser, PaymentStatusRequestParser>();
+        services.AddSingleton<IPayeeVerificationRequestParser, PayeeVerificationRequestParser>();
         services.AddSingleton<ICallbackClient, CallbackClient>();
         services.AddSingleton<IResponseFactory, ResponseFactory>();
         services.AddSingleton<IPersistenceGateway, PersistenceGateway>();
