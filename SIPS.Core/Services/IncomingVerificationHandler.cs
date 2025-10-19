@@ -23,7 +23,6 @@ public sealed class IncomingVerificationHandler(
     ILogger<IncomingVerificationHandler> logger,
     IInterfaceHttpClient httpClient,
     INativeSigner signer,
-    INativeVerifier verifier,
     IJsonAdapter jsonAdapter,
     IIncomingRecorder record,
     IPayeeVerificationRequestParser parser,
@@ -35,7 +34,6 @@ public sealed class IncomingVerificationHandler(
     private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ILogger<IncomingVerificationHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
-    private readonly INativeVerifier _verifier = verifier;
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
     private readonly IIncomingRecorder _record = record;
     private readonly IPayeeVerificationRequestParser _parser = parser;

@@ -17,24 +17,22 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Callback;
 using SIPS.Core.Services.Responses;
+using SIPS.Core.Services.ISOParsers;
 namespace SIPS.Core.Services;
 public sealed class IncomingReturnTransactionHandler(
     ISO20022Options options,
     ILogger<IncomingReturnTransactionHandler> logger,
-    IInterfaceHttpClient httpClient,
     INativeSigner signer,
-    INativeVerifier verifier,
     IJsonAdapter jsonAdapter,
     IIncomingRecorder record,
     ISignatureService signature,
     IPersistenceGateway persistence,
     ICorrelationService correlation,
     ICallbackClient callback,
-    IResponseFactory responses
+    IReturnPaymentRequestParser parser
     ) : IIncomingReturnTransactionHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
-    private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ILogger<IncomingReturnTransactionHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
@@ -43,7 +41,7 @@ public sealed class IncomingReturnTransactionHandler(
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
     private readonly ICallbackClient _callback = callback;
-    private readonly IResponseFactory _responses = responses;
+    private readonly IReturnPaymentRequestParser _parser = parser;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -107,7 +105,7 @@ public sealed class IncomingReturnTransactionHandler(
             _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {verbose}", cid, verbose);
             return (false, null);
         }
-        if (!TryParse(message, out var request))
+        if (!_parser.TryParse(message, out var request))
             return (false, null);
         return (true, request);
     }
@@ -166,17 +164,7 @@ public sealed class IncomingReturnTransactionHandler(
         return AdminMessage.Generate(message);
     }
 
-    private static bool TryParse(string message, out ReturnPaymentRequestBuilder.Request request)
-    {
-        request = ReturnPaymentRequestBuilder.Parse(message);
-
-        if (request == null || request.OrgnlTxId == null || request.OriginalEndToEnd == null || request.ReturnId == null)
-        {
-            return false;
-        }
-
-        return true;
-    }
+    
     private async Task<ISO20022.Models.DTOs.Response<JsonObject?>> SendCallbackAsync(ReturnPaymentRequestBuilder.Request request, CancellationToken ct, string cid)
     {
         JsonObject md = _jsonAdapter.Transform(new CBReturnRequestDto
