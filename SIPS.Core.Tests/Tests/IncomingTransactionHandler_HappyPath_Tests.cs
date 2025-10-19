@@ -83,7 +83,7 @@ public class IncomingTransactionHandler_HappyPath_Tests
         signatureMock.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync((true, "ok"));
         var signature = signatureMock.Object;
-        var parser = new PaymentRequestParser();
+        var parser = new SIPS.Core.Tests.Parsers.PaymentRequestParserShim();
 
         var sut = new IncomingTransactionHandler(options, logger, http.Object, signer.Object, verifier.Object, adapter.Object, recorder.Object,
             signature, parser, callback, responses, persistence, correlation);
@@ -93,28 +93,7 @@ public class IncomingTransactionHandler_HappyPath_Tests
     [Fact]
     public async Task HandleAsync_ReturnsSignedEnvelope_AndPersistsSuccess()
     {
-        // Arrange: construct a valid payment request XML
-        var request = new PaymentRequestBuilder.Request
-        {
-            From = "BICA",
-            To = "BICB",
-            BizMsgIdr = "",
-            MsgDefIdr = "",
-            CreDt = DateTime.UtcNow,
-            SettlementMethod = SIPS.ISO20022.Schemas.PRDocument.SettlementMethod1Code.CLRG,
-            ClearingSystem = "FP",
-            LocalInstrument = "LI",
-            CategoryPurpose = "CP",
-            TxId = "TX1234",
-            EndToEndId = "E2E1234",
-            Amount = 100,
-            Currency = "USD",
-            ChargeBearer = SIPS.ISO20022.Schemas.PRDocument.ChargeBearerType1Code.SLEV,
-            Debtor = new SIPS.ISO20022.Models.Person { Name = "Alice", Account = "A1", AccountType = "CHK", AgentBIC = "AGT1", Issuer = "C" },
-            Creditor = new SIPS.ISO20022.Models.Person { Name = "Bob", Account = "B1", AccountType = "SAV", AgentBIC = "AGT2", Issuer = "C" },
-            Ustrd = "payment"
-        };
-        var (xml, _, _, _) = PaymentRequestBuilder.Build(request);
+        var xml = System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "TestData", "pacs.008.xml"));
 
         var (sut, recorder, _, _, _) = CreateSut();
 
