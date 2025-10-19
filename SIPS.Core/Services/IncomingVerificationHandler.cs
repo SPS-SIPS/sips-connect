@@ -15,6 +15,8 @@ using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Services;
 using Microsoft.Extensions.Logging;
 using SIPS.Core.Services.ISOParsers;
+using SIPS.Core.Services.Verification;
+using SIPS.Core.Services.Correlation;
 namespace SIPS.Core.Services;
 public sealed class IncomingVerificationHandler(
     ISO20022Options options,
@@ -24,7 +26,9 @@ public sealed class IncomingVerificationHandler(
     INativeVerifier verifier,
     IJsonAdapter jsonAdapter,
     IIncomingRecorder record,
-    IPayeeVerificationRequestParser parser
+    IPayeeVerificationRequestParser parser,
+    ISignatureService signature,
+    ICorrelationService correlation
     ) : IIncomingVerificationHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -35,6 +39,8 @@ public sealed class IncomingVerificationHandler(
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
     private readonly IIncomingRecorder _record = record;
     private readonly IPayeeVerificationRequestParser _parser = parser;
+    private readonly ISignatureService _signature = signature;
+    private readonly ICorrelationService _correlation = correlation;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -43,8 +49,9 @@ public sealed class IncomingVerificationHandler(
     };
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
+        var cid = _correlation.Create();
         // Step 1: Verify signature and parse message
-        var (isValid, request) = await VerifyAndParseAsync(message, ct);
+        var (isValid, request) = await VerifyAndParseAsync(message, ct, cid);
         if (!isValid || request == null)
             return ErrorResponse("Failed to verify the signature or parse the message.");
 
@@ -57,7 +64,7 @@ public sealed class IncomingVerificationHandler(
         try
         {
             // Step 4: Send callback and parse result
-            var callbackResult = await SendAndParseCallbackAsync(request, response, ct);
+            var callbackResult = await SendAndParseCallbackAsync(request, response, ct, cid);
 
             // Step 5: Build, persist, and sign response
             var rsp = PayeeVerificationResponseBuilder.Build(response);
@@ -66,17 +73,21 @@ public sealed class IncomingVerificationHandler(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to verify payee");
+            _logger.LogError(ex, "[{CorrelationId}] Failed to verify payee", cid);
             var rsp = PayeeVerificationResponseBuilder.Build(response);
             await PersistISOMessageAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
     }
 
-    private async Task<(bool, PayeeVerificationBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct)
+    private async Task<(bool, PayeeVerificationBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct, string cid)
     {
-        if (!await VerifySignatureAsync(message, ct))
+        var (ok, verbose) = await _signature.VerifyAsync(message, ct);
+        if (!ok)
+        {
+            _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {verbose}", cid, verbose);
             return (false, null);
+        }
         if (!_parser.TryParse(message, out var request))
             return (false, null);
         return (true, request);
@@ -98,9 +109,9 @@ public sealed class IncomingVerificationHandler(
         };
     }
 
-    private async Task<Response<JsonObject?>> SendAndParseCallbackAsync(PayeeVerificationBuilder.Request request, PayeeVerificationResponseBuilder.Request response, CancellationToken ct)
+    private async Task<Response<JsonObject?>> SendAndParseCallbackAsync(PayeeVerificationBuilder.Request request, PayeeVerificationResponseBuilder.Request response, CancellationToken ct, string cid)
     {
-        var responseMessage = await SendCallbackAsync(request, ct);
+        var responseMessage = await SendCallbackAsync(request, ct, cid);
         if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
         {
             ParseCallbackResult(responseMessage.Data, response);
@@ -117,29 +128,7 @@ public sealed class IncomingVerificationHandler(
         return AdminMessage.Generate(message);
     }
 
-    private async Task<bool> VerifySignatureAsync(string message, CancellationToken ct)
-    {
-        var (result, verbose) = await _verifier.VerifySignature(message, false, ct);
-
-        if (!result)
-        {
-            _logger.LogError("Failed to verify the signature: verbose {verbose}", verbose);
-        }
-
-        return result;
-    }
-
-    private static bool TryParse(string message, out PayeeVerificationBuilder.Request request)
-    {
-        request = PayeeVerificationBuilder.Parse(message);
-
-        if (request == null)
-        {
-            return false;
-        }
-
-        return true;
-    }
+    
 
     private async Task<ISOMessage> CreateISOMessage(PayeeVerificationBuilder.Request request, string message, CancellationToken ct)
     {
@@ -161,7 +150,7 @@ public sealed class IncomingVerificationHandler(
                , ct);
     }
 
-    private async Task<Response<JsonObject?>> SendCallbackAsync(PayeeVerificationBuilder.Request request, CancellationToken ct)
+    private async Task<Response<JsonObject?>> SendCallbackAsync(PayeeVerificationBuilder.Request request, CancellationToken ct, string cid)
     {
         JsonObject md = _jsonAdapter.Transform(new CBVerificationRequestDto
         {
@@ -173,8 +162,8 @@ public sealed class IncomingVerificationHandler(
 
         var requestToCB = JsonSerializer.Serialize(md, _jsonSerializerOptions);
         // Log the callback URL and payload
-        _logger.LogInformation("Callback URL: {Url}", _callbackLinks.Verification);
-        _logger.LogInformation("Callback Payload: {Payload}", requestToCB);
+        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, _callbackLinks.Verification);
+        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, requestToCB);
 
         var content = new StringContent(requestToCB, Encoding.UTF8, "application/json");
         var responseMessage = await _httpClient.Send(_callbackLinks.Verification!,

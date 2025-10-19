@@ -12,6 +12,11 @@ using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Services;
 using Microsoft.Extensions.Logging;
+using SIPS.Core.Services.Verification;
+using SIPS.Core.Services.Persistence;
+using SIPS.Core.Services.Correlation;
+using SIPS.Core.Services.Callback;
+using SIPS.Core.Services.Responses;
 namespace SIPS.Core.Services;
 public sealed class IncomingReturnTransactionHandler(
     ISO20022Options options,
@@ -20,16 +25,25 @@ public sealed class IncomingReturnTransactionHandler(
     INativeSigner signer,
     INativeVerifier verifier,
     IJsonAdapter jsonAdapter,
-    IIncomingRecorder record
+    IIncomingRecorder record,
+    ISignatureService signature,
+    IPersistenceGateway persistence,
+    ICorrelationService correlation,
+    ICallbackClient callback,
+    IResponseFactory responses
     ) : IIncomingReturnTransactionHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
     private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ILogger<IncomingReturnTransactionHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
-    private readonly INativeVerifier _verifier = verifier;
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
     private readonly IIncomingRecorder _record = record;
+    private readonly ISignatureService _signature = signature;
+    private readonly IPersistenceGateway _persistence = persistence;
+    private readonly ICorrelationService _correlation = correlation;
+    private readonly ICallbackClient _callback = callback;
+    private readonly IResponseFactory _responses = responses;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -38,19 +52,20 @@ public sealed class IncomingReturnTransactionHandler(
     };
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
+        var cid = _correlation.Create();
         // Step 1: Verify signature and parse message
-        var (isValid, request) = await VerifyAndParseAsync(message, ct);
+        var (isValid, request) = await VerifyAndParseAsync(message, ct, cid);
         if (!isValid || request == null)
             return ErrorResponse("Failed to verify the signature or parse the message.");
 
         // Step 2: Save the message as you received it
         var entity = CreateISOMessage(request, message);
-        var record = await _record.ISOMessageAsync(entity, ct);
+        var record = await _persistence.RecordISOMessageAsync(entity, ct);
 
         // Step 3: Get the original message
-        var originalMessage = await _record.GetISOMessageWithTransactionsByTxIdAsync(request.OrgnlTxId, ct);
+        var originalMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.OrgnlTxId, ct);
         var response = BuildInitialResponse(request);
-        _logger.LogInformation("Retrieved original message response (IRTH): {response}", JsonSerializer.Serialize(response, _jsonSerializerOptions));
+        _logger.LogInformation("[{CorrelationId}] Retrieved original message response (IRTH): {response}", cid, JsonSerializer.Serialize(response, _jsonSerializerOptions));
 
         // Step 4: Check if the message is a transaction request message and if it is not null
         if (originalMessage == null || originalMessage.MessageType != PostgreSQL.Enums.ISOMessageType.TransactionRequest)
@@ -66,17 +81,17 @@ public sealed class IncomingReturnTransactionHandler(
         try
         {
             // Step 5: Send callback and parse result
-            var callbackResult = await SendAndParseCallbackAsync(request, response, originalMessage, ct);
-            _logger.LogInformation("Callback result: {CallbackResult}", JsonSerializer.Serialize(callbackResult, _jsonSerializerOptions));
+            var callbackResult = await SendAndParseCallbackAsync(request, response, originalMessage, ct, cid);
+            _logger.LogInformation("[{CorrelationId}] Callback result: {CallbackResult}", cid, JsonSerializer.Serialize(callbackResult, _jsonSerializerOptions));
             // Step 6: Build, persist, and sign response
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            _logger.LogInformation("Built response (IRTH): {Response}", rsp);
+            _logger.LogInformation("[{CorrelationId}] Built response (IRTH): {Response}", cid, rsp);
             await PersistISOMessageAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "INCOMING PS Handler Exception for TxId {TxId}", request.OrgnlTxId);
+            _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request.OrgnlTxId);
             response.AdditionalInfo = "Failed to transfer: " + ex.Message;
             var rsp = ReturnPaymentResponseBuilder.Build(response);
             await PersistISOMessageAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
@@ -84,10 +99,14 @@ public sealed class IncomingReturnTransactionHandler(
         }
     }
 
-    private async Task<(bool, ReturnPaymentRequestBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct)
+    private async Task<(bool, ReturnPaymentRequestBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct, string cid)
     {
-        if (!await VerifySignatureAsync(message, ct))
+        var (ok, verbose) = await _signature.VerifyAsync(message, ct);
+        if (!ok)
+        {
+            _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {verbose}", cid, verbose);
             return (false, null);
+        }
         if (!TryParse(message, out var request))
             return (false, null);
         return (true, request);
@@ -128,9 +147,9 @@ public sealed class IncomingReturnTransactionHandler(
         };
     }
 
-    private async Task<ISO20022.Models.DTOs.Response<JsonObject?>> SendAndParseCallbackAsync(ReturnPaymentRequestBuilder.Request request, ReturnPaymentResponseBuilder.Response response, PostgreSQL.Models.ISOMessage originalMessage, CancellationToken ct)
+    private async Task<ISO20022.Models.DTOs.Response<JsonObject?>> SendAndParseCallbackAsync(ReturnPaymentRequestBuilder.Request request, ReturnPaymentResponseBuilder.Response response, PostgreSQL.Models.ISOMessage originalMessage, CancellationToken ct, string cid)
     {
-        var responseMessage = await SendCallbackAsync(request, ct);
+        var responseMessage = await SendCallbackAsync(request, ct, cid);
         if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
         {
             ParseCallbackResult(responseMessage.Data, response, originalMessage);
@@ -146,17 +165,7 @@ public sealed class IncomingReturnTransactionHandler(
     {
         return AdminMessage.Generate(message);
     }
-    private async Task<bool> VerifySignatureAsync(string message, CancellationToken ct)
-    {
-        var (result, verbose) = await _verifier.VerifySignature(message, false, ct);
 
-        if (!result)
-        {
-            _logger.LogError("Failed to verify the signature: verbose {verbose}", verbose);
-        }
-
-        return result;
-    }
     private static bool TryParse(string message, out ReturnPaymentRequestBuilder.Request request)
     {
         request = ReturnPaymentRequestBuilder.Parse(message);
@@ -168,7 +177,7 @@ public sealed class IncomingReturnTransactionHandler(
 
         return true;
     }
-    private async Task<ISO20022.Models.DTOs.Response<JsonObject?>> SendCallbackAsync(ReturnPaymentRequestBuilder.Request request, CancellationToken ct)
+    private async Task<ISO20022.Models.DTOs.Response<JsonObject?>> SendCallbackAsync(ReturnPaymentRequestBuilder.Request request, CancellationToken ct, string cid)
     {
         JsonObject md = _jsonAdapter.Transform(new CBReturnRequestDto
         {
@@ -182,16 +191,16 @@ public sealed class IncomingReturnTransactionHandler(
 
         var requestToCB = JsonSerializer.Serialize(md, _jsonSerializerOptions);
         // Log the callback URL and payload
-        _logger.LogInformation("Callback URL: {Url}", _callbackLinks.Return);
-        _logger.LogInformation("Callback Payload: {Payload}", requestToCB);
+        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, _callbackLinks.Return);
+        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, requestToCB);
 
         var content = new StringContent(requestToCB, Encoding.UTF8, "application/json");
 
-        var responseMessage = await _httpClient.Send(_callbackLinks.Return!,
+        var responseMessage = await _callback.SendAsync(_callbackLinks.Return!,
             new Dictionary<string, string>() {
                     { API_Key, _callbackLinks.Key! },
                     { API_Secret, _callbackLinks.Secret! }
-            }, content, ct);
+            }, content, ct, cid);
 
         return responseMessage;
     }

@@ -61,8 +61,12 @@ public class IncomingVerificationHandler_Tests
                 .ReturnsAsync((ISOMessage m, CancellationToken _) => m);
 
         var parser = new SIPS.Core.Tests.Parsers.PayeeVerificationRequestParserShim();
+        var signature = new Mock<SIPS.Core.Services.Verification.ISignatureService>();
+        signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((true, "ok"));
+        var correlation = new SIPS.Core.Services.Correlation.CorrelationService();
 
-        var sut = new IncomingVerificationHandler(options, logger, http.Object, signer, verifier.Object, adapter.Object, recorder.Object, parser);
+        var sut = new IncomingVerificationHandler(options, logger, http.Object, signer, verifier.Object, adapter.Object, recorder.Object, parser, signature.Object, correlation);
         return (sut, recorder, http, adapter);
     }
 
