@@ -104,10 +104,18 @@ public sealed class IncomingVerificationHandler(
                 { API_Key, _callbackLinks.Key! },
                 { API_Secret, _callbackLinks.Secret! }
             };
+            // Normalize alias and type prior to CoreBank matching
+            var normalizedAlias = (request.Alias ?? string.Empty).Trim();
+            if (normalizedAlias.StartsWith("USD:", StringComparison.OrdinalIgnoreCase))
+                normalizedAlias = normalizedAlias.Substring(4).TrimStart();
+            var normalizedType = request.Type;
+            if (normalizedAlias.StartsWith("SO", StringComparison.OrdinalIgnoreCase))
+                normalizedType = IBAN;
+
             var dto = new CBVerificationRequestDto
             {
-                Alias = request.Alias,
-                Type = request.Type,
+                Alias = normalizedAlias,
+                Type = normalizedType,
                 FromBIC = request.From,
                 VerificationId = request.SIPSRequestId!
             };
