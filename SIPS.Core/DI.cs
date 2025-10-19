@@ -39,6 +39,7 @@ public static class DI
         services.AddSingleton<IPaymentStatusRequestParser, PaymentStatusRequestParser>();
         services.AddSingleton<IPayeeVerificationRequestParser, PayeeVerificationRequestParser>();
         services.AddSingleton<IReturnPaymentRequestParser, ReturnPaymentRequestParser>();
+        services.AddSingleton<IPaymentStatusReportParser, PaymentStatusReportParser>();
         services.AddSingleton<ICallbackClient, CallbackClient>();
         services.AddSingleton<IResponseFactory, ResponseFactory>();
         // new helper services
@@ -52,6 +53,7 @@ public static class DI
         services.AddScoped<IIncomingTransactionHandler, IncomingTransactionHandler>();
         services.AddScoped<IIncomingTransactionStatusHandler, IncomingTransactionStatusHandler>();
         services.AddScoped<IIncomingReturnTransactionHandler, IncomingReturnTransactionHandler>();
+        services.AddScoped<IIncomingPaymentStatusReportHandler, IncomingPaymentStatusReportHandler>();
 
         services.AddScoped<IOutgoingVerificationHandler, OutgoingVerificationHandler>();
         services.AddScoped<IOutgoingTransactionStatusHandler, OutgoingTransactionStatusHandler>();

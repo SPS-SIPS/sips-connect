@@ -12,14 +12,16 @@ public class Incoming : IIncoming
         IIncomingVerificationHandler vr,
         IIncomingTransactionHandler ith,
         IIncomingTransactionStatusHandler psh,
-        IIncomingReturnTransactionHandler rh)
+        IIncomingReturnTransactionHandler rh,
+        IIncomingPaymentStatusReportHandler psr)
     {
         _handlers = new()
         {
             ["acmt.023.001.03"] = vr.HandleAsync,
             ["pacs.008.001.10"] = ith.HandleAsync,
             ["pacs.028.001.05"] = psh.HandleAsync,
-            ["pacs.004.001.11"] = rh.HandleAsync
+            ["pacs.004.001.11"] = rh.HandleAsync,
+            ["pacs.002.001.12"] = psr.HandleAsync
         };
     }
 
