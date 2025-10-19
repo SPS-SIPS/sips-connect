@@ -18,6 +18,8 @@ using SIPS.Core.Services.Verification;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Callback;
 using SIPS.Core.Services.Persistence;
+using SIPS.Core.Services.Abstractions;
+using SIPS.Core.Services.Implementations;
 
 namespace SIPS.Core.Services;
 
@@ -30,7 +32,10 @@ public sealed class IncomingVerificationHandler(
     IPayeeVerificationRequestParser parser,
     ISignatureService signature,
     ICorrelationService correlation,
-    ICallbackClient callback
+    ICallbackClient callback,
+    IInboundMessageService inbound,
+    ICallbackOrchestrator callbacks,
+    IISOMessageService isoService
 ) : IIncomingVerificationHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -42,6 +47,9 @@ public sealed class IncomingVerificationHandler(
     private readonly ISignatureService _signature = signature;
     private readonly ICorrelationService _correlation = correlation;
     private readonly ICallbackClient _callback = callback;
+    private readonly IInboundMessageService _inbound = inbound;
+    private readonly ICallbackOrchestrator _callbacks = callbacks;
+    private readonly IISOMessageService _isoService = isoService;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -49,50 +57,92 @@ public sealed class IncomingVerificationHandler(
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
+    // Compatibility constructor for tests and existing code paths
+    public IncomingVerificationHandler(
+        ISO20022Options options,
+        ILogger<IncomingVerificationHandler> logger,
+        INativeSigner signer,
+        IJsonAdapter jsonAdapter,
+        IPersistenceGateway persistence,
+        IPayeeVerificationRequestParser parser,
+        ISignatureService signature,
+        ICorrelationService correlation,
+        ICallbackClient callback)
+        : this(options, logger, signer, jsonAdapter, persistence, parser, signature, correlation, callback,
+              new InboundMessageService(signature),
+              new CallbackOrchestrator(),
+              new ISOMessageService(persistence))
+    {
+    }
+
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         var cid = _correlation.Create();
-        // Step 1: Verify signature and parse message
-        var (isValid, request) = await VerifyAndParseAsync(message, ct, cid);
+        // Step 1: Verify signature and parse message via helper
+        var (isValid, request) = await _inbound.VerifyAndParseAsync(
+            message,
+            (xml) =>
+            {
+                if (!_parser.TryParse(xml, out var req)) return (false, (PayeeVerificationBuilder.Request?)null);
+                return (true, req);
+            },
+            ct,
+            cid);
         if (!isValid || request == null)
             return ErrorResponse("Failed to verify the signature or parse the message.");
 
-        // Step 2: Record the incoming ISO message
-        var isoMessage = await CreateISOMessage(request, message, ct);
+        // Step 2: Record the incoming ISO message via helper
+        var isoMessage = await _isoService.RecordIncomingVerificationAsync(request, message, ct);
 
         // Step 3: Prepare response object
         var response = BuildInitialResponse(request);
 
         try
         {
-            // Step 4: Send callback and parse result
-            var callbackResult = await SendAndParseCallbackAsync(request, response, ct, cid);
+            // Step 4: Send callback and parse result via orchestrator
+            var headers = new Dictionary<string, string>() {
+                { API_Key, _callbackLinks.Key! },
+                { API_Secret, _callbackLinks.Secret! }
+            };
+            var dto = new CBVerificationRequestDto
+            {
+                Alias = request.Alias,
+                Type = request.Type,
+                FromBIC = request.From,
+                VerificationId = request.SIPSRequestId!
+            };
+            var responseMessage = await _callbacks.SendJsonAsync(
+                _callbackLinks.Verification!,
+                headers,
+                dto,
+                CB_VerificationRequest,
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                ct,
+                cid);
+            if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
+            {
+                ParseCallbackResult(responseMessage.Data, response);
+            }
+            else
+            {
+                response.AdditionalInfo = responseMessage.Message;
+            }
 
-            // Step 5: Build, persist, and sign response
+            // Step 5: Build, persist, and sign response via helper
             var rsp = PayeeVerificationResponseBuilder.Build(response);
-            await PersistISOMessageAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
+            await _isoService.PersistResponseAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[{CorrelationId}] Failed to verify payee", cid);
             var rsp = PayeeVerificationResponseBuilder.Build(response);
-            await PersistISOMessageAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
+            await _isoService.PersistResponseAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
-    }
-
-    private async Task<(bool, PayeeVerificationBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct, string cid)
-    {
-        var (ok, verbose) = await _signature.VerifyAsync(message, ct);
-        if (!ok)
-        {
-            _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {verbose}", cid, verbose);
-            return (false, null);
-        }
-        if (!_parser.TryParse(message, out var request))
-            return (false, null);
-        return (true, request);
     }
 
     private PayeeVerificationResponseBuilder.Request BuildInitialResponse(PayeeVerificationBuilder.Request request)
@@ -111,71 +161,6 @@ public sealed class IncomingVerificationHandler(
         };
     }
 
-    private async Task<Response<JsonObject?>> SendAndParseCallbackAsync(PayeeVerificationBuilder.Request request, PayeeVerificationResponseBuilder.Request response, CancellationToken ct, string cid)
-    {
-        var responseMessage = await SendCallbackAsync(request, ct, cid);
-        if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
-        {
-            ParseCallbackResult(responseMessage.Data, response);
-        }
-        else
-        {
-            response.AdditionalInfo = responseMessage.Message;
-        }
-        return responseMessage;
-    }
-
-    private string ErrorResponse(string message)
-    {
-        return AdminMessage.Generate(message);
-    }
-
-    
-
-    private async Task<ISOMessage> CreateISOMessage(PayeeVerificationBuilder.Request request, string message, CancellationToken ct)
-    {
-        // record the incoming message
-        return await _persistence.RecordISOMessageAsync(
-                   new ISOMessage
-                   {
-                       MessageType = PostgreSQL.Enums.ISOMessageType.VerificationRequest,
-                       Date = DateTimeOffset.Now.ToUniversalTime(),
-                       FromBIC = request.From,
-                       ToBIC = request.To,
-                       Message = Encoding.UTF8.GetBytes(message),
-                       Status = PostgreSQL.Enums.TransactionStatus.Pending,
-                       BizMsgIdr = request.BizMsgIdr,
-                       MsgDefIdr = request.MsgDefIdr,
-                       MsgId = request.MsgId,
-                       TxId = request.SIPSRequestId,
-                   }
-               , ct);
-    }
-
-    private async Task<Response<JsonObject?>> SendCallbackAsync(PayeeVerificationBuilder.Request request, CancellationToken ct, string cid)
-    {
-        JsonObject md = _jsonAdapter.Transform(new CBVerificationRequestDto
-        {
-            Alias = request.Alias,
-            Type = request.Type,
-            FromBIC = request.From,
-            VerificationId = request.SIPSRequestId!
-        }, CB_VerificationRequest);
-
-        var requestToCB = JsonSerializer.Serialize(md, _jsonSerializerOptions);
-        // Log the callback URL and payload
-        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, _callbackLinks.Verification);
-        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, requestToCB);
-
-        var content = new StringContent(requestToCB, Encoding.UTF8, "application/json");
-        var headers = new Dictionary<string, string>() {
-            { API_Key, _callbackLinks.Key! },
-            { API_Secret, _callbackLinks.Secret! }
-        };
-        var responseMessage = await _callback.SendAsync(_callbackLinks.Verification!, headers, content, ct, cid);
-
-        return responseMessage;
-    }
 
     private void ParseCallbackResult(JsonObject data, PayeeVerificationResponseBuilder.Request response)
     {
@@ -192,11 +177,9 @@ public sealed class IncomingVerificationHandler(
         response.Address = deserializedContent?.Address ?? string.Empty;
         response.Currency = deserializedContent?.Currency ?? string.Empty;
     }
-    private async Task PersistISOMessageAsync(ISOMessage isoMessage, string status, string reason, string? additionalInfo, string rsp, CancellationToken ct)
+
+    private string ErrorResponse(string message)
     {
-        isoMessage.Response = Encoding.UTF8.GetBytes(rsp);
-        isoMessage.Status = status == SUCC ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
-        isoMessage.Reason = reason;
-        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+        return AdminMessage.Generate(message);
     }
 }

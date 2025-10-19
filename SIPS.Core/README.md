@@ -82,6 +82,8 @@ Register SIPS Core in your DI container (requires `IConfiguration`):
 services.AddCore(configuration);
 ```
 
+Note: This repository is a monorepo. Consumers typically add project references to the relevant projects (e.g., `SIPS.Core.csproj`) rather than installing a NuGet package.
+
 ### Shared Services
 
 These services are now used internally by handlers and can be injected elsewhere as needed:
@@ -112,6 +114,10 @@ services.AddSingleton<ISignatureService, SignatureService>();
 services.AddSingleton<ICorrelationService, CorrelationService>();
 services.AddSingleton<ICallbackClient, CallbackClient>();
 services.AddSingleton<IResponseFactory, ResponseFactory>();
+services.AddSingleton<IInboundMessageService, InboundMessageService>();
+services.AddSingleton<ICallbackOrchestrator, CallbackOrchestrator>();
+services.AddSingleton<IISOMessageService, ISOMessageService>();
+services.AddSingleton<ISipsRequestSender, SipsRequestSender>();
 
 // Persistence
 services.AddScoped<IPersistenceGateway, PersistenceGateway>();
@@ -129,11 +135,58 @@ services.AddScoped<IOutgoingReturnTransactionHandler, OutgoingReturnTransactionH
 
 ## Handler Dependencies
 
-- **IncomingTransactionHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IResponseFactory`, `IPaymentRequestParser`.
-- **IncomingTransactionStatusHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IResponseFactory`, `IPaymentStatusRequestParser`.
-- **IncomingReturnTransactionHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IReturnPaymentRequestParser`.
-- **IncomingVerificationHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IPayeeVerificationRequestParser`.
-- **Outgoing handlers** use `ISignatureService`, `IPersistenceGateway`, and `ICorrelationService`; they communicate with SIPS via `IInterfaceHttpClient.Send4XML(...)` and perform signing/verification using `INativeSigner`/`INativeVerifier`.
+- **IncomingVerificationHandler**
+  - Verification + parse via `IInboundMessageService`
+  - Callback send via `ICallbackOrchestrator`
+  - Persistence via `IISOMessageService` (verification record/persist)
+
+- **IncomingTransactionHandler**
+  - Verification + parse via `IInboundMessageService`
+  - Callback send via `ICallbackOrchestrator`
+  - Persistence via `IISOMessageService` (transaction record/persist)
+
+- **IncomingTransactionStatusHandler**
+  - Verification + parse via `IInboundMessageService`
+  - Callback send via `ICallbackOrchestrator`
+  - Persistence via `IISOMessageService` (status record/persist)
+
+- **IncomingReturnTransactionHandler**
+  - Verification + parse via `IInboundMessageService`
+  - Callback send via `ICallbackOrchestrator`
+  - Persistence via `IISOMessageService` (return record/persist)
+
+- **Outgoing handlers**
+  - Build/sign/verify using `INativeSigner`/`INativeVerifier`
+  - Send XML via `ISipsRequestSender` (centralized over HTTP)
+  - Persist via `IPersistenceGateway`
+
+### Helper Services Overview
+
+- `IInboundMessageService`
+  - `VerifyAndParseAsync<TRequest>(xml, tryParse, ct, correlationId)`
+
+- `ICallbackOrchestrator`
+  - `SendJsonAsync(url, headers, dto, transformKey, jsonAdapter, correlation, serializerOptions, callback, ct, correlationId)`
+
+- `IISOMessageService`
+  - Verification: `RecordIncomingVerificationAsync`, `PersistResponseAsync`
+  - Status: `RecordIncomingStatusAsync`, `PersistStatusResponseAsync`
+  - Transactions: `RecordIncomingTransactionAsync`, `PersistTransactionResponseAsync`
+  - Returns: `RecordIncomingReturnAsync`, `PersistReturnResponseAsync`
+
+- `ISipsRequestSender`
+  - `SendAsync(url, signedXml, ct, correlationId)`
+
+### Helper Source Locations
+
+- `IInboundMessageService` → `SIPS.Core/Services/Abstractions/IInboundMessageService.cs`
+- `InboundMessageService` → `SIPS.Core/Services/Implementations/InboundMessageService.cs`
+- `ICallbackOrchestrator` → `SIPS.Core/Services/Abstractions/ICallbackOrchestrator.cs`
+- `CallbackOrchestrator` → `SIPS.Core/Services/Implementations/CallbackOrchestrator.cs`
+- `IISOMessageService` → `SIPS.Core/Services/Abstractions/IISOMessageService.cs`
+- `ISOMessageService` → `SIPS.Core/Services/Implementations/ISOMessageService.cs`
+- `ISipsRequestSender` → `SIPS.Core/Services/Abstractions/ISipsRequestSender.cs`
+- `SipsRequestSender` → `SIPS.Core/Services/Implementations/SipsRequestSender.cs`
 
 ## Parser Fixtures and Test Shims
 
@@ -162,4 +215,11 @@ All handlers create a correlation ID using `ICorrelationService.Create(...)` and
 ```bash
 dotnet test Packages.sln -c Debug -v minimal
 ```
+
+Helper unit tests live under `SIPS.Core.Tests/Helpers/`:
+
+- `ISOMessageService_Tests.cs`
+- `InboundMessageService_Tests.cs`
+- `SipsRequestSender_Tests.cs`
+- `CallbackOrchestrator_Tests.cs`
 

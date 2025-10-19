@@ -17,24 +17,20 @@ namespace SIPS.Core.Services;
 public sealed class OutgoingVerificationHandler(
     ISO20022Options options,
     ILogger<OutgoingVerificationHandler> logger,
-    IInterfaceHttpClient httpClient,
     INativeSigner signer,
-    INativeVerifier verifier,
-    IIncomingRecorder record,
     ISignatureService signature,
     IPersistenceGateway persistence,
-    ICorrelationService correlation
+    ICorrelationService correlation,
+    SIPS.Core.Services.Abstractions.ISipsRequestSender sips
     ) : IOutgoingVerificationHandler
 {
-    private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ISO20022Options _configuration = options;
     private readonly ILogger<OutgoingVerificationHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
-    private readonly INativeVerifier _verifier = verifier;
-    private readonly IIncomingRecorder _record = record;
     private readonly ISignatureService _signature = signature;
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
+    private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
 
     public async Task<Response<VerificationResponseDto>> HandleAsync(VerificationRequestDto message, CancellationToken ct)
     {
@@ -73,7 +69,7 @@ public sealed class OutgoingVerificationHandler(
             var record = await _persistence.RecordISOMessageAsync(isoMessage, ct);
 
             // Step 4: Send the verification request to SIPS
-            var responseMessage = await SendRequestToSIPSAsync(signedRequest, url, ct, cid);
+            var responseMessage = await _sips.SendAsync(url, signedRequest, ct, cid);
             record.Response = Encoding.UTF8.GetBytes(responseMessage.Data ?? "");
 
             // Step 5: Validate the SIPS response
@@ -137,14 +133,7 @@ public sealed class OutgoingVerificationHandler(
         }
     }
 
-    private async Task<Response<string>> SendRequestToSIPSAsync(string message, string url, CancellationToken ct, string cid)
-    {
-        // Log the callback URL and payload
-        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, url);
-        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, message);
-        var content = new StringContent(message, Encoding.UTF8, "application/xml");
-        return await _httpClient.Send4XML(url, content, ct);
-    }
+
 
     private async Task PersistISOMessageAsync(ISOMessage isoMessage, bool isVerified, string reason, string additionalInfo, string response, string originalId, CancellationToken ct)
     {

@@ -20,6 +20,8 @@ using SIPS.Core.Services.Callback;
 using SIPS.Core.Services.Responses;
 using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
+using SIPS.Core.Services.Abstractions;
+using SIPS.Core.Services.Implementations;
 namespace SIPS.Core.Services;
 public sealed class IncomingTransactionHandler(
     ISO20022Options options,
@@ -34,7 +36,10 @@ public sealed class IncomingTransactionHandler(
     ICallbackClient callback,
     IResponseFactory responseFactory,
     IPersistenceGateway persistence,
-    ICorrelationService correlation
+    ICorrelationService correlation,
+    IInboundMessageService inbound,
+    ICallbackOrchestrator callbacks,
+    IISOMessageService isoService
     ) : IIncomingTransactionHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -50,43 +55,128 @@ public sealed class IncomingTransactionHandler(
     private readonly IResponseFactory _responses = responseFactory;
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
+    private readonly IInboundMessageService _inbound = inbound;
+    private readonly ICallbackOrchestrator _callbacks = callbacks;
+    private readonly IISOMessageService _isoService = isoService;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
+
+    // Compatibility constructor for tests and existing code paths
+    public IncomingTransactionHandler(
+        ISO20022Options options,
+        ILogger<IncomingTransactionHandler> logger,
+        IInterfaceHttpClient httpClient,
+        INativeSigner signer,
+        INativeVerifier verifier,
+        IJsonAdapter jsonAdapter,
+        IIncomingRecorder record,
+        ISignatureService signature,
+        IPaymentRequestParser parser,
+        ICallbackClient callback,
+        IResponseFactory responseFactory,
+        IPersistenceGateway persistence,
+        ICorrelationService correlation)
+        : this(options, logger, httpClient, signer, verifier, jsonAdapter, record, signature, parser, callback, responseFactory, persistence, correlation,
+              new InboundMessageService(signature),
+              new CallbackOrchestrator(),
+              new ISOMessageService(persistence))
+    {
+    }
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         // correlation id
         string cid = _correlation.Create();
 
-        // Step 1: Verify signature and parse message
-        var (isValid, request) = await VerifyAndParseAsync(message, ct, cid);
+        // Step 1: Verify signature and parse message via helper
+        var (isValid, request) = await _inbound.VerifyAndParseAsync(
+            message,
+            (xml) =>
+            {
+                if (!_parser.TryParse(xml, out var req)) return (false, (PaymentRequestBuilder.Request?)null);
+                return (true, req);
+            },
+            ct,
+            cid);
         if (!isValid || request == null)
             return ErrorResponse("Failed to verify the signature or parse the message.");
 
-        // Step 2: Record the incoming ISO message
-        var entity = CreateISOMessage(request, message);
-        var record = await _persistence.RecordISOMessageAsync(entity, ct);
+        // Step 2: Record the incoming ISO message via service
+        var record = await _isoService.RecordIncomingTransactionAsync(request, message, ct);
 
         // Step 3: Prepare response object
         var response = _responses.BuildPaymentInitial(request);
 
         try
         {
-            // Step 4: Send callback and parse result
-            var callbackResult = await SendAndParseCallbackAsync(request, response, ct, cid);
+            // Step 4: Send callback and parse result via orchestrator
+            var headers = new Dictionary<string, string>() {
+                { API_Key, _callbackLinks.Key! },
+                { API_Secret, _callbackLinks.Secret! }
+            };
+            var dto = new CBPaymentRequestDto
+            {
+                FromBIC = request.From,
+                LocalInstrument = request.LocalInstrument,
+                CategoryPurpose = request.CategoryPurpose,
+                EndToEndId = request.EndToEndId,
+                TxId = request.TxId,
+                Amount = request.Amount,
+                Currency = request.Currency,
+                DebtorName = request.Debtor.Name,
+                DebtorAccount = request.Debtor.Account,
+                DebtorAccountType = request.Debtor.AccountType,
+                DebtorAgentBIC = request.Debtor.AgentBIC,
+                DebtorIssuer = request.Debtor.Issuer ?? "C",
+                CreditorName = request.Creditor.Name,
+                CreditorAccount = request.Creditor.Account,
+                CreditorAccountType = request.Creditor.AccountType,
+                CreditorAgentBIC = request.Creditor.AgentBIC,
+                CreditorIssuer = request.Creditor.Issuer ?? "C",
+                RemittanceInformation = request.Ustrd ?? "",
+                Date = request.CreDt,
+                ToBIC = request.To,
+                SettlementMethod = request.SettlementMethod.ToString(),
+                ChargeBearer = request.ChargeBearer.ToString(),
+                BizMsgIdr = request.BizMsgIdr,
+                MsgDefIdr = request.MsgDefIdr,
+                ClearingSystem = request.ClearingSystem,
+                MsgId = request.MsgId
+            };
+            var responseMessage = await _callbacks.SendJsonAsync(
+                _callbackLinks.Transfer!,
+                headers,
+                dto,
+                CB_PaymentRequest,
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                ct,
+                cid);
+            if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
+            {
+                ParseCallbackResult(responseMessage.Data, response);
+            }
+            else
+            {
+                _logger.LogWarning("[{CorrelationId}] Failed to get response from CB. Status: {Status}", cid, responseMessage.StatusCode);
+                response.AdditionalInfo = "Failed to get response from CB.";
+            }
 
             // Step 5: Build, persist, and sign response
             var rsp = PaymentRequestResponseBuilder.Build(response);
-            await PersistISOMessageAsync(record,
+            await _isoService.PersistTransactionResponseAsync(record,
                 response.Status ?? RJCT,
                 response.Reason ?? MISS,
                 response.AdditionalInfo,
+                rsp,
                 response.TxId ?? string.Empty,
                 request.EndToEndId ?? string.Empty,
-                rsp, ct);
+                ct);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -94,143 +184,25 @@ public sealed class IncomingTransactionHandler(
             _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request?.TxId);
             response.AdditionalInfo = "Failed to process Transaction";
             var rsp = PaymentRequestResponseBuilder.Build(response);
-            await PersistISOMessageAsync(record,
+            await _isoService.PersistTransactionResponseAsync(record,
                 response.Status ?? RJCT,
                 response.Reason ?? MISS,
                 response.AdditionalInfo,
+                rsp,
                 response.TxId ?? string.Empty,
                 request?.EndToEndId ?? string.Empty,
-                rsp, ct);
+                ct);
             return _signer.SignEnvelope(rsp);
         }
     }
 
-    private async Task<(bool, PaymentRequestBuilder.Request?)> VerifyAndParseAsync(string message, CancellationToken ct, string cid)
-    {
-        var (ok, verbose) = await _signature.VerifyAsync(message, ct);
-        if (!ok)
-        {
-            _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {verbose}", cid, verbose);
-            return (false, null);
-        }
-        if (!_parser.TryParse(message, out var request))
-            return (false, null);
-        return (true, request);
-    }
-
-    private async Task<Response<JsonObject?>> SendAndParseCallbackAsync(PaymentRequestBuilder.Request request, PaymentRequestResponseBuilder.Response response, CancellationToken ct, string cid)
-    {
-        var responseMessage = await SendCallbackAsync(request, ct);
-        if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
-        {
-            ParseCallbackResult(responseMessage.Data, response);
-        }
-        else
-        {
-            _logger.LogWarning("[{CorrelationId}] Failed to get response from CB. Status: {Status}", cid, responseMessage.StatusCode);
-            response.AdditionalInfo = "Failed to get response from CB.";
-        }
-        return responseMessage;
-    }
 
     private string ErrorResponse(string message)
     {
         return AdminMessage.Generate(message);
     }
 
-    // verification and parsing now delegated to shared services
-
-    private static PostgreSQL.Models.ISOMessage CreateISOMessage(PaymentRequestBuilder.Request request, string message)
-    {
-        var entity = new PostgreSQL.Models.ISOMessage
-        {
-            MessageType = PostgreSQL.Enums.ISOMessageType.TransactionRequest,
-            Date = DateTimeOffset.Now.ToUniversalTime(),
-            FromBIC = request.From,
-            ToBIC = request.To,
-            Message = Encoding.UTF8.GetBytes(message),
-            BizMsgIdr = request.BizMsgIdr,
-            MsgDefIdr = request.MsgDefIdr,
-            MsgId = request.MsgId,
-        };
-        entity.Transactions.Add(new PostgreSQL.Models.Transaction
-        {
-            Type = PostgreSQL.Enums.TransactionType.Deposit,
-            FromBIC = request.From,
-            LocalInstrument = request.LocalInstrument,
-            CategoryPurpose = request.CategoryPurpose,
-            EndToEndId = request.EndToEndId,
-            TxId = request.TxId,
-            Amount = request.Amount,
-            Currency = request.Currency,
-
-            DebtorName = request.Debtor.Name,
-            DebtorAccount = request.Debtor.Account,
-            DebtorAccountType = request.Debtor.AccountType,
-            DebtorAgentBIC = request.Debtor.AgentBIC,
-            DebtorIssuer = request.Debtor.Issuer ?? "C",
-
-            CreditorName = request.Creditor.Name,
-            CreditorAccount = request.Creditor.Account,
-            CreditorAccountType = request.Creditor.AccountType,
-            CreditorAgentBIC = request.Creditor.AgentBIC,
-            CreditorIssuer = request.Creditor.Issuer ?? "C",
-            RemittanceInformation = request.Ustrd ?? ""
-        });
-
-        return entity;
-    }
-
-    private async Task<Response<JsonObject?>> SendCallbackAsync(PaymentRequestBuilder.Request request, CancellationToken ct)
-    {
-        JsonObject md = _jsonAdapter.Transform(new CBPaymentRequestDto
-        {
-            FromBIC = request.From,
-            LocalInstrument = request.LocalInstrument,
-            CategoryPurpose = request.CategoryPurpose,
-            EndToEndId = request.EndToEndId,
-            TxId = request.TxId,
-            Amount = request.Amount,
-            Currency = request.Currency,
-            DebtorName = request.Debtor.Name,
-            DebtorAccount = request.Debtor.Account,
-            DebtorAccountType = request.Debtor.AccountType,
-            DebtorAgentBIC = request.Debtor.AgentBIC,
-            DebtorIssuer = request.Debtor.Issuer ?? "C",
-            CreditorName = request.Creditor.Name,
-            CreditorAccount = request.Creditor.Account,
-            CreditorAccountType = request.Creditor.AccountType,
-            CreditorAgentBIC = request.Creditor.AgentBIC,
-            CreditorIssuer = request.Creditor.Issuer ?? "C",
-            RemittanceInformation = request.Ustrd ?? "",
-            Date = request.CreDt,
-            ToBIC = request.To,
-            SettlementMethod = request.SettlementMethod.ToString(),
-            ChargeBearer = request.ChargeBearer.ToString(),
-            BizMsgIdr = request.BizMsgIdr,
-            MsgDefIdr = request.MsgDefIdr,
-            ClearingSystem = request.ClearingSystem,
-            MsgId = request.MsgId
-        }, CB_PaymentRequest);
-
-        var requestToCB = JsonSerializer.Serialize(md, _jsonSerializerOptions);
-        // Log the callback URL and payload
-        var cid = _correlation.Create(request.BizMsgIdr, request.MsgId, request.TxId, request.EndToEndId);
-        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, _callbackLinks.Transfer);
-        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, requestToCB);
-
-        var content = new StringContent(requestToCB, Encoding.UTF8, "application/json");
-        var headers = new Dictionary<string, string>() {
-            { API_Key, _callbackLinks.Key! },
-            { API_Secret, _callbackLinks.Secret! }
-        };
-        var responseMessage = await _callback.SendAsync(_callbackLinks.Transfer!, headers, content, ct, cid);
-
-        _logger.LogDebug("Response from CB: {Response}", responseMessage.Data);
-
-        return responseMessage;
-    }
-
+    // verification and parsing now delegated to shared services, record/persist via IISOMessageService
     private void ParseCallbackResult(JsonObject data, PaymentRequestResponseBuilder.Response response)
     {
         // convert the responseContent to a JsonObject
@@ -245,14 +217,4 @@ public sealed class IncomingTransactionHandler(
         response.TxId = deserializedContent?.TxId ?? string.Empty;
     }
 
-    private async Task PersistISOMessageAsync(PostgreSQL.Models.ISOMessage isoMessage, string status, string reason, string? additionalInfo, string txId, string end2endId, string rsp, CancellationToken ct)
-    {
-        isoMessage.Response = Encoding.UTF8.GetBytes(rsp);
-        isoMessage.Status = status == ACSC ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
-        isoMessage.Reason = reason;
-        isoMessage.AdditionalInfo = additionalInfo;
-        isoMessage.TxId = txId;
-        isoMessage.EndToEndId = end2endId;
-        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
-    }
 }

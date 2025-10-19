@@ -18,6 +18,8 @@ using Microsoft.Extensions.DependencyInjection;
 using SIPS.Core.Extensions;
 using SIPS.Core.Workers;
 using SIPS.Core.Models;
+using SIPS.Core.Services.Abstractions;
+using SIPS.Core.Services.Implementations;
 namespace SIPS.Core;
 public static class DI
 {
@@ -39,6 +41,11 @@ public static class DI
         services.AddSingleton<IReturnPaymentRequestParser, ReturnPaymentRequestParser>();
         services.AddSingleton<ICallbackClient, CallbackClient>();
         services.AddSingleton<IResponseFactory, ResponseFactory>();
+        // new helper services
+        services.AddSingleton<IInboundMessageService, InboundMessageService>();
+        services.AddSingleton<ICallbackOrchestrator, CallbackOrchestrator>();
+        services.AddSingleton<IISOMessageService, ISOMessageService>();
+        services.AddSingleton<ISipsRequestSender, SipsRequestSender>();
         services.AddScoped<IPersistenceGateway, PersistenceGateway>();
 
         services.AddScoped<IIncomingVerificationHandler, IncomingVerificationHandler>();

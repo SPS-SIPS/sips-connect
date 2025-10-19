@@ -15,24 +15,20 @@ namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionHandler(
     ISO20022Options options,
     ILogger<OutgoingTransactionHandler> logger,
-    IInterfaceHttpClient httpClient,
     INativeSigner signer,
-    INativeVerifier verifier,
-    IIncomingRecorder record,
     ISignatureService signature,
     IPersistenceGateway persistence,
-    ICorrelationService correlation
+    ICorrelationService correlation,
+    SIPS.Core.Services.Abstractions.ISipsRequestSender sips
     ) : IOutgoingTransactionHandler
 {
-    private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ISO20022Options _configuration = options;
     private readonly ILogger<OutgoingTransactionHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
-    private readonly INativeVerifier _verifier = verifier;
-    private readonly IIncomingRecorder _record = record;
     private readonly ISignatureService _signature = signature;
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
+    private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
         _logger.LogInformation("Processing Outgoing Transaction Request");
@@ -51,7 +47,7 @@ public sealed class OutgoingTransactionHandler(
             var record = await _persistence.RecordISOMessageAsync(entity, ct);
 
             // Step 2: Call SIPS and handle response
-            var responseMessage = await SendRequestToSIPSAsync(url, signed, ct, cid);
+            var responseMessage = await _sips.SendAsync(url, signed, ct, cid);
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
@@ -159,14 +155,7 @@ public sealed class OutgoingTransactionHandler(
 
         return entity;
     }
-    private async Task<Response<string>> SendRequestToSIPSAsync(string url, string signed, CancellationToken ct, string cid)
-    {
-        var content = new StringContent(signed, Encoding.UTF8, "application/xml");
-        // Log the callback URL and payload
-        _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, url);
-        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, signed);
-        return await _httpClient.Send4XML(url, content, ct);
-    }
+
     private async Task<Response<PaymentResponseDto>> HandleSIPSCallExceptionAsync(
     PostgreSQL.Models.ISOMessage record,
     Response<string>? responseMessage,
