@@ -95,3 +95,72 @@ These services are now used internally by handlers and can be injected elsewhere
 
 Handlers have been refactored to use these services and include correlation IDs in logs.
 
+
+## Service Registration (DI)
+
+Registering the Core services wires all handlers, parsers, helpers and persistence. See `SIPS.Core/DI.cs` for the full list.
+
+```csharp
+// Parsers (stateless)
+services.AddSingleton<IPaymentRequestParser, PaymentRequestParser>();
+services.AddSingleton<IPaymentStatusRequestParser, PaymentStatusRequestParser>();
+services.AddSingleton<IPayeeVerificationRequestParser, PayeeVerificationRequestParser>();
+services.AddSingleton<IReturnPaymentRequestParser, ReturnPaymentRequestParser>();
+
+// Shared helpers
+services.AddSingleton<ISignatureService, SignatureService>();
+services.AddSingleton<ICorrelationService, CorrelationService>();
+services.AddSingleton<ICallbackClient, CallbackClient>();
+services.AddSingleton<IResponseFactory, ResponseFactory>();
+
+// Persistence
+services.AddScoped<IPersistenceGateway, PersistenceGateway>();
+
+// Handlers (request-scoped)
+services.AddScoped<IIncomingVerificationHandler, IncomingVerificationHandler>();
+services.AddScoped<IIncomingTransactionHandler, IncomingTransactionHandler>();
+services.AddScoped<IIncomingTransactionStatusHandler, IncomingTransactionStatusHandler>();
+services.AddScoped<IIncomingReturnTransactionHandler, IncomingReturnTransactionHandler>();
+services.AddScoped<IOutgoingVerificationHandler, OutgoingVerificationHandler>();
+services.AddScoped<IOutgoingTransactionStatusHandler, OutgoingTransactionStatusHandler>();
+services.AddScoped<IOutgoingTransactionHandler, OutgoingTransactionHandler>();
+services.AddScoped<IOutgoingReturnTransactionHandler, OutgoingReturnTransactionHandler>();
+```
+
+## Handler Dependencies
+
+- **IncomingTransactionHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IResponseFactory`, `IPaymentRequestParser`.
+- **IncomingTransactionStatusHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IResponseFactory`, `IPaymentStatusRequestParser`.
+- **IncomingReturnTransactionHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IReturnPaymentRequestParser`.
+- **IncomingVerificationHandler** uses `ISignatureService`, `IPersistenceGateway`, `ICorrelationService`, `ICallbackClient`, `IPayeeVerificationRequestParser`.
+- **Outgoing handlers** use `ISignatureService`, `IPersistenceGateway`, `ICorrelationService` and send to SIPS via `IInterfaceHttpClient.Send4XML(...)`; signing and verification via `INativeSigner`/`INativeVerifier`.
+
+## Parser Fixtures and Test Shims
+
+Under `SIPS.Core.Tests/TestData/`:
+
+- `pacs.008.xml` with `PaymentRequestParserShim`
+- `pacs.002.xml` with `PaymentStatusRequestParserShim`
+- `acmt.023.xml` with `PayeeVerificationRequestParserShim`
+- `pacs.004.xml` with `ReturnPaymentRequestParserShim`
+// Additional fixture available:
+- `acmt.024.xml` (present for completeness)
+
+Shims parse essential fields and provide safe defaults to avoid ISO schema initializers and MinLength constraints in tests.
+
+## Correlation IDs
+
+All handlers create a correlation ID using `ICorrelationService.Create(...)` and include it in logs as `[{CorrelationId}]` to trace a flow across callbacks and SIPS requests.
+
+## Lifetimes
+
+- Parsers and helper services are stateless → registered as Singleton.
+- `IPersistenceGateway` is Scoped to align with DB-scoped services (avoids captive dependency).
+- All handlers are Scoped (per request/operation).
+
+## Running Tests
+
+```bash
+dotnet test Packages.sln -c Debug -v minimal
+```
+
