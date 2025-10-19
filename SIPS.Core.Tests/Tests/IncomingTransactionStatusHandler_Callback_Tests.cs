@@ -63,7 +63,7 @@ public class IncomingTransactionStatusHandler_Callback_Tests
         recorder.Setup(r => r.GetISOMessageByTxIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new ISOMessage { Id = 10, Status = TransactionStatus.Pending });
         recorder.Setup(r => r.ISOMessageStatusAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((ISOMessageStatus s, CancellationToken _) => s);
+                .ReturnsAsync((ISOMessageStatus s, CancellationToken _) => { s.ISOMessage = new ISOMessage(); return s; });
         recorder.Setup(r => r.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((ISOMessageStatus s, CancellationToken _) => s);
 
@@ -76,48 +76,37 @@ public class IncomingTransactionStatusHandler_Callback_Tests
         var signature = new Mock<ISignatureService>();
         signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((true, "ok"));
-        var parser = new PaymentStatusRequestParser();
+        var parser = new SIPS.Core.Tests.Parsers.PaymentStatusRequestParserShim();
 
         var sut = new IncomingTransactionStatusHandler(options, logger, http.Object, signer, verifier.Object, adapter.Object, recorder.Object,
             signature.Object, parser, callback, responses, persistence, correlation);
         return (sut, recorder, http, adapter);
     }
 
-    private static string MakeValidPaymentStatusRequestXml()
-    {
-        var req = new PaymentStatusRequestBuilder.Request
-        {
-            From = "BICA",
-            To = "BICB",
-            MsgId = "MSG",
-            CreDt = DateTime.UtcNow,
-            OriginalEndToEnd = "E2E",
-            OrgnlTxId = "TX"
-        };
-        return PaymentStatusRequestBuilder.Build(req);
-    }
+    private static string LoadFixture()
+        => System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "TestData", "pacs.002.xml"));
 
-    [Fact(Skip = "Skipped due to schema static initializer (Max35Text) throwing in test environment. TODO: provide stable test XML or shim parser.")]
+    [Fact]
     public async Task HandleAsync_PersistsFailed_WhenHttpIsNotOk()
     {
-        var xml = MakeValidPaymentStatusRequestXml();
+        var xml = LoadFixture();
         var (sut, recorder, _, _) = CreateSut(() => new SIPS.ISO20022.Models.DTOs.Response<JsonObject?>(null) { StatusCode = HttpStatusCode.BadGateway });
 
         var rsp = await sut.HandleAsync(xml, CancellationToken.None);
 
         rsp.Should().NotBeNullOrWhiteSpace();
-        recorder.Verify(r => r.ISOMessageStatusResponseAsync(It.Is<ISOMessageStatus>(m => m.Status == TransactionStatus.Failed), It.IsAny<CancellationToken>()), Times.Once);
+        recorder.Verify(r => r.ISOMessageStatusResponseAsync(It.Is<ISOMessageStatus>(m => m.Status == TransactionStatus.Failed), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
-    [Fact(Skip = "Skipped due to schema static initializer (Max35Text) throwing in test environment. TODO: provide stable test XML or shim parser.")]
+    [Fact]
     public async Task HandleAsync_PersistsFailed_WhenHttpOkButNullData()
     {
-        var xml = MakeValidPaymentStatusRequestXml();
+        var xml = LoadFixture();
         var (sut, recorder, _, _) = CreateSut(() => new SIPS.ISO20022.Models.DTOs.Response<JsonObject?>(null) { StatusCode = HttpStatusCode.OK });
 
         var rsp = await sut.HandleAsync(xml, CancellationToken.None);
 
         rsp.Should().NotBeNullOrWhiteSpace();
-        recorder.Verify(r => r.ISOMessageStatusResponseAsync(It.Is<ISOMessageStatus>(m => m.Status == TransactionStatus.Failed), It.IsAny<CancellationToken>()), Times.Once);
+        recorder.Verify(r => r.ISOMessageStatusResponseAsync(It.Is<ISOMessageStatus>(m => m.Status == TransactionStatus.Failed), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 }

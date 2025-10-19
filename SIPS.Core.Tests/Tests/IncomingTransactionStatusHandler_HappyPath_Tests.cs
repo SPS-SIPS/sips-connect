@@ -96,7 +96,7 @@ public class IncomingTransactionStatusHandler_HappyPath_Tests
         recorder.Setup(r => r.GetISOMessageByTxIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new ISOMessage { Id = 1, Status = TransactionStatus.Pending });
         recorder.Setup(r => r.ISOMessageStatusAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((ISOMessageStatus s, CancellationToken _) => s);
+                .ReturnsAsync((ISOMessageStatus s, CancellationToken _) => { s.ISOMessage = new ISOMessage(); return s; });
         recorder.Setup(r => r.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((ISOMessageStatus s, CancellationToken _) => s);
 
@@ -109,27 +109,17 @@ public class IncomingTransactionStatusHandler_HappyPath_Tests
         var signature = new Mock<ISignatureService>();
         signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((true, "ok"));
-        var parser = new PaymentStatusRequestParser();
+        var parser = new SIPS.Core.Tests.Parsers.PaymentStatusRequestParserShim();
 
         var sut = new IncomingTransactionStatusHandler(options, logger, http.Object, signer.Object, verifier.Object, adapter.Object, recorder.Object,
             signature.Object, parser, callback, responses, persistence, correlation);
         return (sut, recorder, http, adapter, signer);
     }
 
-    [Fact(Skip = "Skipped due to schema static initializer (Max35Text) throwing in test environment. TODO: provide stable test XML or shim parser.")]
+    [Fact]
     public async Task HandleAsync_ReturnsSignedEnvelope_AndPersistsStatus()
     {
-        // Arrange: construct a valid payment status request XML
-        var request = new PaymentStatusRequestBuilder.Request
-        {
-            From = "BICA",
-            To = "BICB",
-            MsgId = "MSG",
-            CreDt = DateTime.UtcNow,
-            OriginalEndToEnd = "E2E1234",
-            OrgnlTxId = "TX1234",
-        };
-        var xml = PaymentStatusRequestBuilder.Build(request);
+        var xml = System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "TestData", "pacs.002.xml"));
 
         var (sut, recorder, _, _, _) = CreateSut();
 
