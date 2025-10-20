@@ -45,7 +45,7 @@ public static class DI
         // new helper services
         services.AddSingleton<IInboundMessageService, InboundMessageService>();
         services.AddSingleton<ICallbackOrchestrator, CallbackOrchestrator>();
-        services.AddSingleton<IISOMessageService, ISOMessageService>();
+        services.AddScoped<IISOMessageService, ISOMessageService>();
         services.AddSingleton<ISipsRequestSender, SipsRequestSender>();
         services.AddScoped<IPersistenceGateway, PersistenceGateway>();
 
