@@ -70,11 +70,11 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
 
             try
             {
-                // Get the value of the property from the object
-                PropertyInfo? property = typeof(T).GetProperty(internalField);
+                var runtimeType = localObject?.GetType() ?? typeof(T);
+                PropertyInfo? property = runtimeType.GetProperty(internalField, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
                 if (property == null)
                 {
-                    _logger.LogWarning($"Property '{internalField}' not found on type '{typeof(T).Name}'.");
+                    _logger.LogWarning($"Property '{internalField}' not found on type '{runtimeType.Name}'.");
                     outputJson[userField] = null;
                     continue;
                 }
