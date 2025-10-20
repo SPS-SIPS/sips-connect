@@ -23,6 +23,9 @@ public sealed class SomQRMerchantRequest
     public string? StoreLabel { get; set; }
     public string? TerminalLabel { get; set; }
     public decimal Amount { get; set; } = 0;
+    public int? TipOrConvenienceIndicator { get; set; }
+    public string? ValueOfConvenienceFeeFixed { get; set; }
+    public string? ValueOfConvenienceFeePercentage { get; set; }
 }
 
 public sealed class SomQRPersonRequest : IValidatableObject
