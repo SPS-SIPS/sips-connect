@@ -93,32 +93,107 @@ public sealed class IncomingPaymentStatusReportHandler(
         if (!isValid || request == null)
             return ErrorResponse("Failed to verify signature or parse TxId.");
 
+        _logger.LogInformation("INCOMING pacs.002 Handler for data {Data}",
+            JsonSerializer.Serialize(request, _jsonSerializerOptions));
+
         // Step 2: Retrieve ISO message by TxId
-        var isoMessage = await _persistence.GetISOMessageByTxIdAsync(request.OrgnlTxId, ct);
+        var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.OriginalTxId, ct);
         if (isoMessage == null)
         {
             return ErrorResponse("Failed to get the Message.");
         }
 
+        var transaction = isoMessage.Transactions.FirstOrDefault();
+
+        if (transaction == null)
+        {
+            return ErrorResponse("Failed to get the Transaction.");
+        }
+
         // Step 3: Record the incoming status report under parent ISOMessage
         var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, ct);
-
         // Step 4: Prepare response object (reuse PaymentStatus request response builder)
         var statusReq = new PaymentStatusRequestBuilder.Request
         {
             From = isoMessage.ToBIC ?? string.Empty,
             To = isoMessage.FromBIC ?? string.Empty,
-            OrgnlTxId = request.OrgnlTxId,
-            OriginalEndToEnd = isoMessage.EndToEndId ?? string.Empty,
+            OrgnlTxId = request.OriginalTxId,
+            OriginalEndToEnd = request.OriginalEndToEndId ?? "",
             BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
             MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
             MsgId = isoMessage.MsgId ?? string.Empty,
         };
+
         var response = _responses.BuildPaymentStatusInitial(statusReq);
 
         try
         {
-            // Step 5: If DB status is Pending/Unknown, query CoreBank; else map DB to response
+            // Step 5: If incoming completion status exists, update DB, notify CoreBank, and respond mirroring status
+            var incomingStatus = request.Status?.ToUpperInvariant();
+            if (!string.IsNullOrWhiteSpace(incomingStatus))
+            {
+                response.Status = incomingStatus;
+                response.Reason = request.Reason ?? string.Empty;
+                response.AdditionalInfo = request.AdditionalInfo ?? string.Empty;
+
+                // Notify CoreBank about completion
+                if (!string.IsNullOrWhiteSpace(_callbackLinks.CompletionNotification))
+                {
+                    var headers = new Dictionary<string, string>() {
+                        { Constants.API_Key, _callbackLinks.Key! },
+                        { Constants.API_Secret, _callbackLinks.Secret! }
+                    };
+
+                    var completionDto = new CBCompletionNotification
+                    {
+                        OriginalTxId = request.OriginalTxId,
+                        OriginalEndToEndId = request.OriginalEndToEndId ?? string.Empty,
+                        Status = incomingStatus,
+                        Reason = request.Reason ?? string.Empty,
+                        AdditionalInfo = request.AdditionalInfo ?? string.Empty
+                    };
+                    Console.WriteLine($"Completion notification: {JsonSerializer.Serialize(completionDto, _jsonSerializerOptions)}");
+                    try
+                    {
+                        await _callbacks.SendJsonAsync(
+                            _callbackLinks.CompletionNotification!,
+                            headers,
+                            completionDto,
+                            Constants.CB_CompletionNotification,
+                            _jsonAdapter,
+                            _correlation,
+                            _jsonSerializerOptions,
+                            _callback,
+                            ct,
+                            cid);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "[{CorrelationId}] Failed to notify CoreBank completion status for TxId {TxId}", cid, request.OriginalTxId);
+                    }
+                }
+
+                // Minimal safeguards for schema-required fields
+                response.Original.Debtor.Name = transaction.DebtorName;
+                response.Original.Creditor.Name = transaction.CreditorName;
+                response.Original.Debtor.Account = transaction.DebtorAccount;
+                response.Original.Creditor.Account = transaction.CreditorAccount;
+                response.Original.Debtor.AccountType = transaction.DebtorAccountType;
+                response.Original.Creditor.AccountType = transaction.CreditorAccountType;
+                response.Original.From = isoMessage.ToBIC ?? _callbackLinks.BIC ?? "NA";
+                response.Original.To = isoMessage.FromBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA";
+                response.Original.EndToEndId = statusReq.OriginalEndToEnd ?? isoMessage.EndToEndId ?? "E2E";
+                response.TxId = statusReq.OrgnlTxId;
+                if (response.Original.Amount <= 0 && transaction.Amount > 0) response.Original.Amount = transaction.Amount;
+                if (string.IsNullOrWhiteSpace(response.Original.Currency)) response.Original.Currency = transaction.Currency;
+
+                // Build, persist, and sign response mirroring the final status
+                var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
+                await _isoService.PersistStatusResponseAsync(record, response.Status ?? "RJCT", response.Reason ?? string.Empty, response.AdditionalInfo ?? string.Empty, rspFinal, ct);
+                return _signer.SignEnvelope(rspFinal);
+            }
+
+            // Step 6: If DB status is Pending/Unknown, query CoreBank; else map DB to response
             if (isoMessage.Status == TransactionStatus.Pending)
             {
                 var headers = new Dictionary<string, string>() {
@@ -155,61 +230,25 @@ public sealed class IncomingPaymentStatusReportHandler(
             }
             else
             {
-                // Map DB status
-                response.Status = (isoMessage.Status == TransactionStatus.Success) ? Constants.ACSC : "RJCT";
+                // Minimal mapping: reflect current DB status only
+                response.Status = (isoMessage.Status == TransactionStatus.Success) ? ACSC : "RJCT";
                 response.Reason = isoMessage.Reason ?? string.Empty;
                 response.TxId = isoMessage.TxId ?? string.Empty;
-                // Populate required original fields from DB entity to satisfy schema
-                response.Original.From = isoMessage.ToBIC ?? response.Original.From;
-                response.Original.To = isoMessage.FromBIC ?? response.Original.To;
-                response.Original.BizMsgIdr = isoMessage.BizMsgIdr ?? response.Original.BizMsgIdr;
-                response.Original.MsgDefIdr = isoMessage.MsgDefIdr ?? response.Original.MsgDefIdr;
-                response.Original.MsgId = isoMessage.MsgId ?? response.Original.MsgId;
-                response.Original.EndToEndId = isoMessage.EndToEndId ?? response.Original.EndToEndId ?? string.Empty;
-                var tx = isoMessage.Transactions.FirstOrDefault();
-                if (tx != null)
-                {
-                    response.Original.LocalInstrument = tx.LocalInstrument ?? response.Original.LocalInstrument ?? "N";
-                    response.Original.CategoryPurpose = tx.CategoryPurpose ?? response.Original.CategoryPurpose ?? "N";
-                    response.Original.Amount = tx.Amount;
-                    response.Original.Currency = tx.Currency ?? response.Original.Currency ?? "USD";
-                    response.Original.Debtor.Name = string.IsNullOrWhiteSpace(tx.DebtorName) ? "N/A" : tx.DebtorName;
-                    response.Original.Debtor.Account = tx.DebtorAccount ?? response.Original.Debtor.Account ?? "NA";
-                    response.Original.Debtor.AccountType = tx.DebtorAccountType ?? response.Original.Debtor.AccountType ?? "NA";
-                    response.Original.Debtor.AgentBIC = tx.DebtorAgentBIC ?? response.Original.Debtor.AgentBIC ?? "NA";
-                    response.Original.Debtor.Issuer = tx.DebtorIssuer ?? response.Original.Debtor.Issuer ?? "C";
-                    response.Original.Creditor.Name = string.IsNullOrWhiteSpace(tx.CreditorName) ? "N/A" : tx.CreditorName;
-                    response.Original.Creditor.Account = tx.CreditorAccount ?? response.Original.Creditor.Account ?? "NA";
-                    response.Original.Creditor.AccountType = tx.CreditorAccountType ?? response.Original.Creditor.AccountType ?? "NA";
-                    response.Original.Creditor.AgentBIC = tx.CreditorAgentBIC ?? response.Original.Creditor.AgentBIC ?? "NA";
-                    response.Original.Creditor.Issuer = tx.CreditorIssuer ?? response.Original.Creditor.Issuer ?? "C";
-                    response.Original.Ustrd = tx.RemittanceInformation ?? response.Original.Ustrd ?? "N";
-                }
-                else
-                {
-                    // Ensure required account fields exist even if transactions are missing
-                    response.Original.Debtor.Name = string.IsNullOrWhiteSpace(response.Original.Debtor.Name) ? "N/A" : response.Original.Debtor.Name;
-                    response.Original.Debtor.Account = string.IsNullOrWhiteSpace(response.Original.Debtor.Account) ? "NA" : response.Original.Debtor.Account;
-                    response.Original.Creditor.Name = string.IsNullOrWhiteSpace(response.Original.Creditor.Name) ? "N/A" : response.Original.Creditor.Name;
-                    response.Original.Creditor.Account = string.IsNullOrWhiteSpace(response.Original.Creditor.Account) ? "NA" : response.Original.Creditor.Account;
-                }
             }
 
-            // Safety defaults to satisfy schema constraints
-            response.Original.From = string.IsNullOrWhiteSpace(response.Original.From) ? (isoMessage.ToBIC ?? _callbackLinks.BIC ?? "NA") : response.Original.From;
-            response.Original.To = string.IsNullOrWhiteSpace(response.Original.To) ? (isoMessage.FromBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA") : response.Original.To;
-            response.Original.MsgDefIdr = string.IsNullOrWhiteSpace(response.Original.MsgDefIdr) ? (isoMessage.MsgDefIdr ?? "pacs.008.001.10") : response.Original.MsgDefIdr;
-            response.Original.BizMsgIdr = string.IsNullOrWhiteSpace(response.Original.BizMsgIdr) ? (isoMessage.BizMsgIdr ?? "BIZ") : response.Original.BizMsgIdr;
-            response.Original.MsgId = string.IsNullOrWhiteSpace(response.Original.MsgId) ? (isoMessage.MsgId ?? "MSG") : response.Original.MsgId;
-            response.Original.Debtor.Name = string.IsNullOrWhiteSpace(response.Original.Debtor.Name) ? "N/A" : response.Original.Debtor.Name;
-            response.Original.Debtor.Account = string.IsNullOrWhiteSpace(response.Original.Debtor.Account) ? "NA" : response.Original.Debtor.Account;
-            response.Original.Debtor.AccountType = string.IsNullOrWhiteSpace(response.Original.Debtor.AccountType) ? "NA" : response.Original.Debtor.AccountType;
-            response.Original.Debtor.AgentBIC = string.IsNullOrWhiteSpace(response.Original.Debtor.AgentBIC) ? "NA" : response.Original.Debtor.AgentBIC;
-            response.Original.Creditor.Name = string.IsNullOrWhiteSpace(response.Original.Creditor.Name) ? "N/A" : response.Original.Creditor.Name;
-            response.Original.Creditor.Account = string.IsNullOrWhiteSpace(response.Original.Creditor.Account) ? "NA" : response.Original.Creditor.Account;
-            response.Original.Creditor.AccountType = string.IsNullOrWhiteSpace(response.Original.Creditor.AccountType) ? "NA" : response.Original.Creditor.AccountType;
-            response.Original.Creditor.AgentBIC = string.IsNullOrWhiteSpace(response.Original.Creditor.AgentBIC) ? "NA" : response.Original.Creditor.AgentBIC;
-            response.Original.EndToEndId = string.IsNullOrWhiteSpace(response.Original.EndToEndId) ? (isoMessage.EndToEndId ?? "E2E") : response.Original.EndToEndId;
+            // Minimal safeguards for schema-required fields
+            response.Original.Debtor.Name = transaction.DebtorName;
+            response.Original.Creditor.Name = transaction.CreditorName;
+            response.Original.Debtor.Account = transaction.DebtorAccount;
+            response.Original.Creditor.Account = transaction.CreditorAccount;
+            response.Original.Debtor.AccountType = transaction.DebtorAccountType;
+            response.Original.Creditor.AccountType = transaction.CreditorAccountType;
+            response.Original.From = isoMessage.ToBIC ?? _callbackLinks.BIC ?? "NA";
+            response.Original.To = isoMessage.FromBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA";
+            response.Original.EndToEndId = statusReq.OriginalEndToEnd ?? isoMessage.EndToEndId ?? "E2E";
+            response.TxId = statusReq.OrgnlTxId;
+            if (response.Original.Amount <= 0 && transaction.Amount > 0) response.Original.Amount = transaction.Amount;
+            if (string.IsNullOrWhiteSpace(response.Original.Currency)) response.Original.Currency = transaction.Currency;
 
             // Step 6: Build, persist, and sign response
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
@@ -218,7 +257,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[{CorrelationId}] INCOMING pacs.002 Handler Exception for TxId {TxId}", cid, request?.OrgnlTxId);
+            _logger.LogError(ex, "[{CorrelationId}] INCOMING pacs.002 Handler Exception for TxId {TxId}", cid, request?.OriginalTxId);
             response.AdditionalInfo = "Failed to process pacs.002";
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
             await _isoService.PersistStatusResponseAsync(record, response.Status ?? "RJCT", response.Reason ?? string.Empty, response.AdditionalInfo ?? string.Empty, rsp, ct);

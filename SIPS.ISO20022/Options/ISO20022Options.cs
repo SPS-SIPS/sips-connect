@@ -2,6 +2,7 @@ namespace SIPS.ISO20022.Options;
 public class ISO20022Options
 {
     public string? Verification { get; set; }
+    public string? CompletionNotification { get; set; }
     public string? Transfer { get; set; }
     public string? Return { get; set; }
     public string? Status { get; set; }

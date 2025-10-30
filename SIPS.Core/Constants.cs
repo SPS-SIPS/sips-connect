@@ -9,6 +9,8 @@ public static class Constants
     public const string CB_PaymentRequest = "CB_PaymentRequest";
     public const string CB_VerificationRequest = "CB_VerificationRequest";
     public const string CB_VerificationResponse = "CB_VerificationResponse";
+    public const string CB_CompletionNotification = "CB_CompletionNotification";
+    public const string CB_CompletionNotificationResponse = "CB_CompletionNotificationResponse";
     public const string API_Key = "ApiKey";
     public const string API_Secret = "ApiSecret";
 

@@ -9,7 +9,12 @@ public interface IPaymentStatusReportParser
 
 public sealed class PaymentStatusReportParser : IPaymentStatusReportParser
 {
-    public sealed record ReportRequest(string OrgnlTxId);
+    public sealed record ReportRequest(
+        string OriginalTxId,
+        string? OriginalEndToEndId,
+        string? Status,
+        string? Reason,
+        string? AdditionalInfo);
 
     public bool TryParse(string xml, out ReportRequest? request)
     {
@@ -18,10 +23,17 @@ public sealed class PaymentStatusReportParser : IPaymentStatusReportParser
         try
         {
             var doc = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
-            // look for TxId or OrgnlTxId anywhere
+            // identify by TxId or OrgnlTxId
             var txId = FindFirstValue(doc, "TxId") ?? FindFirstValue(doc, "OrgnlTxId");
             if (string.IsNullOrWhiteSpace(txId)) return false;
-            request = new ReportRequest(txId.Trim());
+
+            // extract EndToEnd, TxSts (transaction status), reason and additional info
+            var endToEnd = FindFirstValue(doc, "EndToEndId") ?? FindFirstValue(doc, "OrgnlEndToEndId");
+            var status = FindFirstValue(doc, "TxSts");
+            var reason = FindFirstValue(doc, "Rsn") ?? FindFirstValue(doc, "Reason");
+            var additional = FindFirstValue(doc, "AddtlInf") ?? FindFirstValue(doc, "AdditionalInfo");
+
+            request = new ReportRequest(txId.Trim(), endToEnd?.Trim(), status?.Trim(), reason?.Trim(), additional?.Trim());
             return true;
         }
         catch

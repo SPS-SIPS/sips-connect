@@ -65,7 +65,7 @@ public sealed class OutgoingTransactionHandler(
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true,
             }));
-            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, ct, rs.TxId ?? string.Empty, rs.Original?.EndToEndId ?? string.Empty);
+            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? string.Empty, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, ct, rs.TxId ?? string.Empty, rs.Original?.EndToEndId ?? string.Empty);
 
             // Step 4: Return success response
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
