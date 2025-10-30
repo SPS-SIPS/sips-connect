@@ -88,8 +88,8 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
             return BadRequest("Invalid request");
         try
         {
-            var accountNo = request.AccountNo.StartsWith("USD:", StringComparison.OrdinalIgnoreCase) ? request.AccountNo[4..] : request.AccountNo;
-            var accountType = accountNo.StartsWith("SO", StringComparison.OrdinalIgnoreCase) ? "IBAN" : request.AccountType;
+            var accountNo = request.AccountNo;
+            var accountType = request.AccountType;
 
             if (accountType == null || accountType == string.Empty)
             {
@@ -199,8 +199,8 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         try
         {
             var query = _broker.Accounts.AsQueryable();
-            var creditorAccount = request.CreditorAccount.StartsWith("USD:", StringComparison.OrdinalIgnoreCase) ? request.CreditorAccount[4..] : request.CreditorAccount;
-            var creditorAccountType = creditorAccount.StartsWith("SO", StringComparison.OrdinalIgnoreCase) ? "IBAN" : request.CreditorAccountType;
+            var creditorAccount = request.CreditorAccount;
+            var creditorAccountType = request.CreditorAccountType;
 
             query = creditorAccountType switch
             {
@@ -301,6 +301,36 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         {
             _logger.LogError(ex, "Error transferring funds");
             return BadRequest(new ReturnResponse { Status = "RJCT", Reason = "ERRR", AdditionalInfo = "Error receiving funds" });
+        }
+    }
+
+    [HttpPost("CompletionNotification")]
+    public async Task<IActionResult> Confirmation([FromBody] CompletionNotification request, CancellationToken ct)
+    {
+        _logger.LogInformation("POST /api/CB/CompletionNotification called with body: {Request}", System.Text.Json.JsonSerializer.Serialize(request));
+        try
+        {
+            var txn = await _broker.InterBankTransactions.FirstOrDefaultAsync(t => t.TransactionIdentification == request.TxId, ct);
+            var response = new CompletionNotificationResponse();
+            if (txn is null)
+            {
+                response.Status = "RJCT";
+                response.Reason = "NotFound";
+                response.AdditionalInfo = "Transaction not found";
+            }
+            else
+            {
+                txn.Status = Enumeration<string>.FromId<TransactionStatus>(request.Status);
+                await _broker.SaveChangesAsync(ct);
+                _logger.LogInformation("Transaction {TxId} confirmed with status {Status}", txn.TransactionIdentification, txn.Status.Name);
+                response.Status = txn.Status.Name;
+            }
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error confirming transaction");
+            return BadRequest(new CompletionNotificationResponse { Status = "RJCT", Reason = "ERRR", AdditionalInfo = "Error confirming transaction" });
         }
     }
 }

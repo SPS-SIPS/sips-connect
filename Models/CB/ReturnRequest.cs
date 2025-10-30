@@ -1,4 +1,5 @@
 namespace SIPS.Example.Consumer.Models.CB;
+
 public class ReturnRequest
 {
     public string TxId { get; set; } = string.Empty;
