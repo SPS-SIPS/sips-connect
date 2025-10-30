@@ -20,12 +20,13 @@
       - [POST `/api/v1/incoming`](#post-apiv1incoming-1)
       - [POST `/api/v1/incoming`](#post-apiv1incoming-2)
       - [POST `/api/v1/incoming`](#post-apiv1incoming-3)
+      - [POST `/api/v1/incoming`](#post-apiv1incoming-4)
     - [SomQR Merchant](#somqr-merchant)
       - [POST `/api/v1/somqr/GenerateMerchantQR`](#post-apiv1somqrgeneratemerchantqr)
-      - [Get `/api/v1/somqr/ParseMerchantQR`](#get-apiv1somqrparsemerchantqr)
+      - [GET `/api/v1/somqr/ParseMerchantQR`](#get-apiv1somqrparsemerchantqr)
     - [SomQR Person](#somqr-person)
       - [POST `/api/v1/somqr/GeneratePersonQR`](#post-apiv1somqrgeneratepersonqr)
-      - [Get `/api/v1/somqr/ParsePersonQR`](#get-apiv1somqrparsepersonqr)
+      - [GET `/api/v1/somqr/ParsePersonQR`](#get-apiv1somqrparsepersonqr)
   - [Authentication \& Authorization](#authentication--authorization)
     - [Bearer Token Authentication](#bearer-token-authentication)
   - [Error Handling](#error-handling)
@@ -241,44 +242,6 @@ Processes payment status requests by handling `StatusRequest` JSON objects from 
   - `401 Unauthorized` – Missing or invalid authentication credentials.
   - `404 Not Found` – Endpoint or resource not found.
   - `500 Internal Server Error` – Server encountered an unexpected condition.
-- #### POST `/api/v1/gateway/status`
-
-**Description:**  
-Processes payment status requests by handling `StatusRequest` JSON objects from the provided adapter.
-
-**Request:**
-
-- **Headers:**
-
-  - `Authorization: Bearer JWT_TOKEN` or `X-API-KEY: {api_key} X-API-SECRET: {api_secret}`
-  - `Content-Type: application/json`
-
-- **Body:**
-  ```json
-  {
-    "StatusRequest": {
-      /* Status details */
-    }
-  }
-  ```
-
-**Response:**
-
-- **200 OK:**
-
-  ```json
-  {
-    "CB_PaymentStatusResponse": {
-      /* Payment Status Response */
-    }
-  }
-  ```
-
-- **Error Responses:**
-  - `400 Bad Request` – Invalid request format or parameters.
-  - `401 Unauthorized` – Missing or invalid authentication credentials.
-  - `404 Not Found` – Endpoint or resource not found.
-  - `500 Internal Server Error` – Server encountered an unexpected condition.
 
 #### POST `/api/v1/gateway/return`
 
@@ -332,7 +295,8 @@ processes Received ISO 20022 (acmt.023) and parses them into `CB_VerificationReq
 - **Headers:**
 
   - `Url: {verification_callback_url}` from the Configuration
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `ApiKey: {api_key}`
+  - `ApiSecret: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -371,8 +335,9 @@ Processes received ISO 20022 (pacs.008) and parses them into `CB_PaymentRequest`
 
 - **Headers:**
 
-  - `Url: {verification_callback_url}` from the Configuration
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Url: {transfer_callback_url}` from the Configuration
+  - `ApiKey: {api_key}`
+  - `ApiSecret: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -411,8 +376,9 @@ Processes received ISO 20022 (pacs.028) and parses them into `CB_StatusRequest` 
 
 - **Headers:**
 
-  - `Url: {verification_callback_url}` from the Configuration
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Url: {status_callback_url}` from the Configuration
+  - `ApiKey: {api_key}`
+  - `ApiSecret: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -451,8 +417,9 @@ Processes received ISO 20022 (pacs.004) and parses them into `CB_ReturnRequest` 
 
 - **Headers:**
 
-  - `Url: {verification_callback_url}` from the Configuration
-  - `Authorization: Bearer {api_key}:{api_secret}`
+  - `Url: {return_callback_url}` from the Configuration
+  - `ApiKey: {api_key}`
+  - `ApiSecret: {api_secret}`
   - `Content-Type: application/json`
 
 - **Body:**
@@ -482,6 +449,46 @@ Processes received ISO 20022 (pacs.004) and parses them into `CB_ReturnRequest` 
   - `404 Not Found` – Endpoint or resource not found.
   - `500 Internal Server Error` – Server encountered an unexpected condition.
 
+
+#### POST `/api/v1/incoming`
+
+**Description:**
+Processes received ISO 20022 (pacs.002) and parses them into `CB_CompletionNotification` JSON objects and forwards them to your API via the designated callback links.
+
+**Request:**
+
+- **Headers:**
+- `Url: {completion_notification_callback_url}` from the Configuration
+- `ApiKey: {api_key}`
+- `ApiSecret: {api_secret}`
+- `Content-Type: application/json`
+
+- **Body:**
+```json
+{
+  "CB_CompletionNotification": {
+    /* Completion Notification details */
+  }
+}
+```
+
+**Response:**
+
+- **200 OK:**
+
+  ```json
+  {
+    "CB_CompletionNotificationResponse": {
+      /* Completion Notification Response confirmation */
+    }
+  }
+  ```
+
+- **Error Responses:**
+  - `400 Bad Request` – Invalid request format or parameters.
+  - `401 Unauthorized` – Missing or invalid authentication credentials.
+  - `404 Not Found` – Endpoint or resource not found.
+  - `500 Internal Server Error` – Server encountered an unexpected condition.
 
 ### SomQR Merchant
 
@@ -531,7 +538,7 @@ Generates a merchant QR code based on the provided `SomQRMerchantRequest` JSON o
 - `401 Unauthorized` – Missing or invalid authentication credentials.
 - `404 Not Found` – Endpoint or resource not found.
 
-#### Get `/api/v1/somqr/ParseMerchantQR`
+#### GET `/api/v1/somqr/ParseMerchantQR`
 
 **Description:**
 Parses a merchant QR code and returns the corresponding `MerchantPayload` JSON object.
@@ -637,7 +644,7 @@ Generates a person QR code based on the provided `SomQRPersonRequest` JSON objec
 - `400 Bad Request` – Invalid request format or parameters.
 - `401 Unauthorized` – Missing or invalid authentication credentials.
 
-#### Get `/api/v1/somqr/ParsePersonQR`
+#### GET `/api/v1/somqr/ParsePersonQR`
 
 **Description:**
 Parses a person QR code and returns the corresponding `P2PPayload` JSON object.
