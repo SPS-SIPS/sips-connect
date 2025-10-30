@@ -690,6 +690,54 @@
           "Type": "string"
         }
       ]
+    },
+    "CB_CompletionNotification": {
+      "FieldMappings": [
+        {
+          "InternalField": "OriginalTxId",
+          "UserField": "txId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "OriginalEndToEndId",
+          "UserField": "endToEndId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Reason",
+          "UserField": "reason",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AdditionalInfo",
+          "UserField": "additionalInfo",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Status",
+          "UserField": "status",
+          "Type": "string"
+        }
+      ]
+    },
+    "CB_CompletionNotificationResponse": {
+      "FieldMappings": [
+        {
+          "InternalField": "Reason",
+          "UserField": "reason",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AdditionalInfo",
+          "UserField": "additionalInfo",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Status",
+          "UserField": "status",
+          "Type": "string"
+        }
+      ]
     }
   }
 }
