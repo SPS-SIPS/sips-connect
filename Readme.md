@@ -646,32 +646,31 @@ Parses a person QR code and returns the corresponding `P2PPayload` JSON object.
 
 ## Authentication & Authorization
 
-### Bearer Token Authentication
+### Client authentication (Gateway and SomQR)
 
-All API endpoints require authentication via the `Authorization` header using a Bearer token. The token is constructed from an `api_key` and `api_secret`.
+Public API endpoints (e.g., `/api/v1/Gateway/*`, `/api/v1/SomQR/*`) accept either of the following:
 
-**Token Format:**
+- Authorization header (JWT):
+  - `Authorization: Bearer <JWT_TOKEN>`
 
-```
-Bearer api_key:api_secret
-```
+- API key headers:
+  - `X-API-KEY: <api_key>`
+  - `X-API-SECRET: <api_secret>`
 
-**Configuration:**
+Use one method consistently per request.
 
-- **Gateway Bearer Token:**
+### Callback authentication (Orchestrated callbacks)
 
-  - `api_key`: `api_key`
-  - `api_secret`: `very_strong_secret`
-  - **Sample Token:** `Bearer api_key:very_strong_secret`
+When SIPS Connect calls your callback URLs (see Incoming behavior), it authenticates using these headers:
 
-- **Incoming Gateway Bearer Token:**
-  - `api_key`: `api_key`
-  - `api_secret`: `very_strong_secret`
-  - **Sample Token:** `Bearer api_key:very_strong_secret`
+- `ApiKey: <api_key>`
+- `ApiSecret: <api_secret>`
 
-**Token Provisioning:**
+Note the different casing compared to client requests (`ApiKey/ApiSecret` vs `X-API-KEY/X-API-SECRET`).
 
-- The Bearer token is retrieved from a configuration file or environment variable to ensure secure management of credentials.
+### Token provisioning
+
+- JWTs or API credentials are sourced from secure configuration (e.g., environment variables, appsettings).
 
 ## Error Handling
 
