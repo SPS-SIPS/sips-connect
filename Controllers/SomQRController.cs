@@ -71,9 +71,9 @@ public class SomQRController(IConfiguration configuration) : ControllerBase
             },
             PostalCode = payload.PostalCode,
             TransactionAmount = payload.Amount,
-            // TipOrConvenienceIndicator = payload.TipOrConvenienceIndicator,
-            // ValueOfConvenienceFeeFixed = payload.ValueOfConvenienceFeeFixed,
-            // ValueOfConvenienceFeePercentage = payload.ValueOfConvenienceFeePercentage,
+            TipOrConvenienceIndicator = payload.TipOrConvenienceIndicator,
+            ValueOfConvenienceFeeFixed = payload.ValueOfConvenienceFeeFixed,
+            ValueOfConvenienceFeePercentage = payload.ValueOfConvenienceFeePercentage,
         };
 
         try
