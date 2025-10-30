@@ -77,11 +77,11 @@ public sealed class IncomingPaymentStatusReportHandler(
     {
         var cid = _correlation.Create();
         // Step 1: Verify signature and parse via parser
-        var (isValid, request) = await _inbound.VerifyAndParseAsync<PaymentStatusReportParser.ReportRequest>(
+        var (isValid, request) = await _inbound.VerifyAndParseAsync<PaymentRequestResponseBuilder.Response>(
             message,
             (xml) =>
             {
-                if (!_reportParser.TryParse(xml, out var req)) return (false, (PaymentStatusReportParser.ReportRequest?)null);
+                if (!_reportParser.TryParse(xml, out var req)) return (false, (PaymentRequestResponseBuilder.Response?)null);
                 return (true, req);
             },
             ct,
@@ -93,7 +93,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             JsonSerializer.Serialize(request, _jsonSerializerOptions));
 
         // Step 2: Retrieve ISO message by TxId
-        var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.OriginalTxId, ct);
+        var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.TxId, ct);
         if (isoMessage == null)
         {
             return AdminMessage.Generate("Failed to get the Message.");
@@ -106,6 +106,9 @@ public sealed class IncomingPaymentStatusReportHandler(
             return AdminMessage.Generate("Failed to get the Transaction.");
         }
 
+        // Parse incoming pacs.002 to use its debtor/creditor data as fallback where needed
+        var incomingParsed = PaymentRequestResponseBuilder.Parse(message);
+
         // Step 3: Record the incoming status report under parent ISOMessage
         var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, ct);
         // Step 4: Prepare response object (reuse PaymentStatus request response builder)
@@ -113,8 +116,8 @@ public sealed class IncomingPaymentStatusReportHandler(
         {
             From = isoMessage.ToBIC ?? string.Empty,
             To = isoMessage.FromBIC ?? string.Empty,
-            OrgnlTxId = request.OriginalTxId,
-            OriginalEndToEnd = request.OriginalEndToEndId ?? "",
+            OrgnlTxId = request.TxId,
+            OriginalEndToEnd = request.Original?.EndToEndId ?? "",
             BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
             MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
             MsgId = isoMessage.MsgId ?? string.Empty,
@@ -139,8 +142,8 @@ public sealed class IncomingPaymentStatusReportHandler(
 
                     var completionDto = new CBCompletionNotification
                     {
-                        OriginalTxId = request.OriginalTxId,
-                        OriginalEndToEndId = request.OriginalEndToEndId ?? string.Empty,
+                        OriginalTxId = request.TxId,
+                        OriginalEndToEndId = request.Original?.EndToEndId ?? string.Empty,
                         Status = incomingStatus,
                         Reason = request.Reason ?? string.Empty,
                         AdditionalInfo = request.AdditionalInfo ?? string.Empty
@@ -160,21 +163,26 @@ public sealed class IncomingPaymentStatusReportHandler(
                     cid
                 );
 
-                _logger.LogInformation("[{CorrelationId}] Notified CoreBank completion status for TxId {TxId}, {result}", cid, request.OriginalTxId, JsonSerializer.Serialize(result, _jsonSerializerOptions));
+                _logger.LogInformation("[{CorrelationId}] Notified CoreBank completion status for TxId {TxId}, {result}", cid, request.TxId, JsonSerializer.Serialize(result, _jsonSerializerOptions));
 
-                // Minimal safeguards for schema-required fields
-                response.Original.Debtor.Name = transaction.DebtorName;
-                response.Original.Creditor.Name = transaction.CreditorName;
-                response.Original.Debtor.Account = transaction.DebtorAccount;
-                response.Original.Creditor.Account = transaction.CreditorAccount;
-                response.Original.Debtor.AccountType = transaction.DebtorAccountType;
-                response.Original.Creditor.AccountType = transaction.CreditorAccountType;
+                // Minimal safeguards for schema-required fields (prefer transaction, then incoming pacs.002 parsed, then defaults)
+                var incomingDebtorName = incomingParsed?.Original?.Debtor?.Name;
+                var incomingCreditorName = incomingParsed?.Original?.Creditor?.Name;
+                var incomingDebtorAccount = incomingParsed?.Original?.Debtor?.Account;
+                var incomingCreditorAccount = incomingParsed?.Original?.Creditor?.Account;
+
+                response.Original.Debtor.Name = transaction.DebtorName ?? request.Original?.Debtor?.Name ?? "NA";
+                response.Original.Creditor.Name = transaction.CreditorName ?? request.Original?.Creditor?.Name ?? "NA";
+                response.Original.Debtor.Account = transaction.DebtorAccount ?? request.Original?.Debtor?.Account ?? "NA";
+                response.Original.Creditor.Account = transaction.CreditorAccount ?? request.Original?.Creditor?.Account ?? "NA";
+                response.Original.Debtor.AccountType = transaction.DebtorAccountType ?? request.Original?.Debtor?.AccountType ?? "ACCT";
+                response.Original.Creditor.AccountType = transaction.CreditorAccountType ?? request.Original?.Creditor?.AccountType ?? "ACCT";
                 response.Original.From = isoMessage.ToBIC ?? _callbackLinks.BIC ?? "NA";
                 response.Original.To = isoMessage.FromBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA";
                 response.Original.EndToEndId = statusReq.OriginalEndToEnd ?? isoMessage.EndToEndId ?? "E2E";
                 response.TxId = statusReq.OrgnlTxId;
                 if (response.Original.Amount <= 0 && transaction.Amount > 0) response.Original.Amount = transaction.Amount;
-                if (string.IsNullOrWhiteSpace(response.Original.Currency)) response.Original.Currency = transaction.Currency;
+                if (string.IsNullOrWhiteSpace(response.Original.Currency)) response.Original.Currency = string.IsNullOrWhiteSpace(transaction.Currency) ? "USD" : transaction.Currency;
 
                 // Build, persist, and sign response mirroring the final status
                 var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
@@ -190,7 +198,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[{CorrelationId}] INCOMING pacs.002 Handler Exception for TxId {TxId}", cid, request?.OriginalTxId);
+            _logger.LogError(ex, "[{CorrelationId}] INCOMING pacs.002 Handler Exception for TxId {TxId}", cid, request?.TxId);
             response.AdditionalInfo = "Failed to process pacs.002";
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
             await _isoService.PersistStatusResponseAsync(record, response.Status ?? RJCT, response.Reason ?? string.Empty, response.AdditionalInfo ?? string.Empty, rsp, ct);
