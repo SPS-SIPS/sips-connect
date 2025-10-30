@@ -141,9 +141,7 @@ Verifies transaction requests by processing `VerificationRequest` JSON objects f
 - **Body:**
   ```json
   {
-    "VerificationRequest": {
-      /* Verification details */
-    }
+      /*jsonAdapter.VerificationRequest*/
   }
   ```
 
@@ -153,9 +151,7 @@ Verifies transaction requests by processing `VerificationRequest` JSON objects f
 
   ```json
   {
-    "VerificationResponse": {
-      /* Verification results */
-    }
+    /*jsonAdapter.VerificationResponse*/
   }
   ```
 
@@ -180,9 +176,7 @@ Processes payment requests by handling `PaymentRequest` JSON objects from the pr
 - **Body:**
   ```json
   {
-    "PaymentRequest": {
-      /* Payment details */
-    }
+    /*jsonAdapter.PaymentRequest*/
   }
   ```
 
@@ -192,9 +186,7 @@ Processes payment requests by handling `PaymentRequest` JSON objects from the pr
 
   ```json
   {
-    "PaymentResponse": {
-      /* Payment confirmation */
-    }
+    /*jsonAdapter.PaymentResponse*/
   }
   ```
 
@@ -219,9 +211,7 @@ Processes payment status requests by handling `StatusRequest` JSON objects from 
 - **Body:**
   ```json
   {
-    "StatusRequest": {
-      /* Status details */
-    }
+    /*jsonAdapter.StatusRequest*/
   }
   ```
 
@@ -231,9 +221,7 @@ Processes payment status requests by handling `StatusRequest` JSON objects from 
 
   ```json
   {
-    "CB_PaymentStatusResponse": {
-      /* Payment Status Response */
-    }
+    /*jsonAdapter.CB_PaymentStatusResponse*/
   }
   ```
 
@@ -258,9 +246,7 @@ Processes payment return requests by handling `ReturnRequest` JSON objects from 
 - **Body:**
   ```json
   {
-    "ReturnRequest": {
-      /* Return details */
-    }
+    /*jsonAdapter.ReturnRequest*/
   }
   ```
 
@@ -270,9 +256,7 @@ Processes payment return requests by handling `ReturnRequest` JSON objects from 
 
   ```json
   {
-    "CB_ReturnResponse": {
-      /* Payment return Response */
-    }
+    /*jsonAdapter.CB_ReturnResponse*/
   }
   ```
 
@@ -302,9 +286,7 @@ processes Received ISO 20022 (acmt.023) and parses them into `CB_VerificationReq
 - **Body:**
   ```json
   {
-    "CB_VerificationRequest": {
-      /* Verification details */
-    }
+    /*jsonAdapter.CB_VerificationRequest*/
   }
   ```
 
@@ -314,9 +296,7 @@ processes Received ISO 20022 (acmt.023) and parses them into `CB_VerificationReq
 
   ```json
   {
-    "CB_VerificationResponse": {
-      /* Verification results */
-    }
+    /*jsonAdapter.CB_VerificationResponse*/
   }
   ```
 
@@ -343,9 +323,7 @@ Processes received ISO 20022 (pacs.008) and parses them into `CB_PaymentRequest`
 - **Body:**
   ```json
   {
-    "CB_PaymentRequest": {
-      /* Payment details */
-    }
+    /*jsonAdapter.CB_PaymentRequest*/
   }
   ```
 
@@ -355,9 +333,7 @@ Processes received ISO 20022 (pacs.008) and parses them into `CB_PaymentRequest`
 
   ```json
   {
-    "CB_PaymentResponse": {
-      /* Payment confirmation */
-    }
+    /*jsonAdapter.CB_PaymentResponse*/
   }
   ```
 
@@ -384,9 +360,7 @@ Processes received ISO 20022 (pacs.028) and parses them into `CB_StatusRequest` 
 - **Body:**
   ```json
   {
-    "CB_StatusRequest": {
-      /* Status details */
-    }
+    /*jsonAdapter.CB_StatusRequest*/
   }
   ```
 
@@ -396,9 +370,7 @@ Processes received ISO 20022 (pacs.028) and parses them into `CB_StatusRequest` 
 
   ```json
   {
-    "CB_PaymentStatusResponse": {
-      /* Status Response confirmation */
-    }
+    /*jsonAdapter.CB_PaymentStatusResponse*/
   }
   ```
 
@@ -425,9 +397,7 @@ Processes received ISO 20022 (pacs.004) and parses them into `CB_ReturnRequest` 
 - **Body:**
   ```json
   {
-    "CB_ReturnRequest": {
-      /* Return details */
-    }
+    /*jsonAdapter.CB_ReturnRequest*/
   }
   ```
 
@@ -437,9 +407,7 @@ Processes received ISO 20022 (pacs.004) and parses them into `CB_ReturnRequest` 
 
   ```json
   {
-    "CB_ReturnResponse": {
-      /* Return Response confirmation */
-    }
+    /*jsonAdapter.CB_ReturnResponse*/
   }
   ```
 
@@ -466,9 +434,7 @@ Processes received ISO 20022 (pacs.002) and parses them into `CB_CompletionNotif
 - **Body:**
 ```json
 {
-  "CB_CompletionNotification": {
-    /* Completion Notification details */
-  }
+  /*jsonAdapter.CB_CompletionNotification*/
 }
 ```
 
@@ -478,9 +444,7 @@ Processes received ISO 20022 (pacs.002) and parses them into `CB_CompletionNotif
 
   ```json
   {
-    "CB_CompletionNotificationResponse": {
-      /* Completion Notification Response confirmation */
-    }
+    /*jsonAdapter.CB_CompletionNotificationResponse*/
   }
   ```
 
