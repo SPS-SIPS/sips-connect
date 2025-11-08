@@ -171,7 +171,7 @@ public sealed class IncomingTransactionHandler(
             var rsp = PaymentRequestResponseBuilder.Build(response);
             await _isoService.PersistTransactionResponseAsync(record,
                 response.Status ?? RJCT,
-                response.Reason ?? "XYZ",
+                response.Reason ?? MISS,
                 response.AdditionalInfo,
                 rsp,
                 response.TxId ?? string.Empty,
