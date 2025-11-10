@@ -103,14 +103,14 @@ public sealed class IncomingTransactionStatusHandler(
             ct,
             cid);
         if (!isValid || request == null)
-            return ErrorResponse("Failed to verify the signature or parse the message.");
+            return AdminMessage.Generate("Failed to verify the signature or parse the message.");
 
         // Step 2: Retrieve ISO message by TxId
         var isoMessage = await _persistence.GetISOMessageByTxIdAsync(request.OrgnlTxId, ct);
         if (isoMessage == null)
         {
             await CreateISOMessage(request, message, ct);
-            return ErrorResponse("Failed to get the Message.");
+            return AdminMessage.Generate("Failed to get the Message.");
         }
 
         // Step 3: Record the incoming status message
@@ -149,14 +149,14 @@ public sealed class IncomingTransactionStatusHandler(
             }
             else
             {
-                await _isoService.PersistStatusResponseAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", string.Empty, ct);
+                await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Failed to parse the message", "Failed to parse the message", string.Empty, ct);
                 _logger.LogWarning("[{CorrelationId}] Failed to get response from CB. Status: {Status}", cid, responseMessage.StatusCode);
                 response.AdditionalInfo = "Failed to get response from CB.";
             }
 
             // Step 6: Build, persist, and sign response
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -164,14 +164,9 @@ public sealed class IncomingTransactionStatusHandler(
             _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request.OrgnlTxId);
             response.AdditionalInfo = "Failed to transfer: " + ex.Message;
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
             return _signer.SignEnvelope(rsp);
         }
-    }
-
-    private string ErrorResponse(string message)
-    {
-        return AdminMessage.Generate(message);
     }
 
     private void ParseCallbackResult(JsonObject data, PaymentStatusRequestResponseBuilder.Response response)

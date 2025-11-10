@@ -65,7 +65,8 @@ public sealed class OutgoingTransactionHandler(
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true,
             }));
-            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? string.Empty, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, ct, rs.TxId ?? string.Empty, rs.Original?.EndToEndId ?? string.Empty);
+
+            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? string.Empty, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, ct);
 
             // Step 4: Return success response
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
@@ -73,7 +74,7 @@ public sealed class OutgoingTransactionHandler(
                 Status = rs.Status ?? RJCT,
                 AcceptanceDate = rs.AcceptanceDate,
                 TxId = rs.TxId ?? string.Empty,
-                EndToEndId = rs.Original?.EndToEndId ?? string.Empty,
+                EndToEndId = message.EndToEndId,
                 Reason = rs.Reason ?? string.Empty,
                 AdditionalInfo = rs.AdditionalInfo ?? string.Empty
             });
@@ -127,7 +128,9 @@ public sealed class OutgoingTransactionHandler(
             Message = Encoding.UTF8.GetBytes(signedMessage),
             BizMsgIdr = bizMsgIdr,
             MsgDefIdr = msgDefIdr,
-            MsgId = msgId
+            MsgId = msgId,
+            EndToEndId = message.EndToEndId,
+            TxId = txId
         };
         entity.Transactions.Add(new PostgreSQL.Models.Transaction
         {

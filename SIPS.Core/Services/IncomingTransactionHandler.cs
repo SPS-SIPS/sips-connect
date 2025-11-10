@@ -1,10 +1,8 @@
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using SIPS.Adapter;
-using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Interfaces;
 using SIPS.ISO20022.Models.DTOs;
@@ -22,6 +20,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
+using SIPS.PostgreSQL.Enums;
 namespace SIPS.Core.Services;
 public sealed class IncomingTransactionHandler(
     ISO20022Options options,
@@ -102,8 +101,7 @@ public sealed class IncomingTransactionHandler(
             ct,
             cid);
         if (!isValid || request == null)
-            return ErrorResponse("Failed to verify the signature or parse the message.");
-
+            return AdminMessage.Generate("Failed to verify the signature or parse the message.");
         // Step 2: Record the incoming ISO message via service
         var record = await _isoService.RecordIncomingTransactionAsync(request, message, ct);
 
@@ -112,69 +110,19 @@ public sealed class IncomingTransactionHandler(
 
         try
         {
-            // Step 4: Send callback and parse result via orchestrator
-            var headers = new Dictionary<string, string>() {
-                { API_Key, _callbackLinks.Key! },
-                { API_Secret, _callbackLinks.Secret! }
-            };
-            var dto = new CBPaymentRequestDto
-            {
-                FromBIC = request.From,
-                LocalInstrument = request.LocalInstrument,
-                CategoryPurpose = request.CategoryPurpose,
-                EndToEndId = request.EndToEndId,
-                TxId = request.TxId,
-                Amount = request.Amount,
-                Currency = request.Currency,
-                DebtorName = request.Debtor.Name,
-                DebtorAccount = request.Debtor.Account,
-                DebtorAccountType = request.Debtor.AccountType,
-                DebtorAgentBIC = request.Debtor.AgentBIC,
-                DebtorIssuer = request.Debtor.Issuer ?? "C",
-                CreditorName = request.Creditor.Name,
-                CreditorAccount = request.Creditor.Account,
-                CreditorAccountType = request.Creditor.AccountType,
-                CreditorAgentBIC = request.Creditor.AgentBIC,
-                CreditorIssuer = request.Creditor.Issuer ?? "C",
-                RemittanceInformation = request.Ustrd ?? "",
-                Date = request.CreDt,
-                ToBIC = request.To,
-                SettlementMethod = request.SettlementMethod.ToString(),
-                ChargeBearer = request.ChargeBearer.ToString(),
-                BizMsgIdr = request.BizMsgIdr,
-                MsgDefIdr = request.MsgDefIdr,
-                ClearingSystem = request.ClearingSystem,
-                MsgId = request.MsgId
-            };
-            var responseMessage = await _callbacks.SendJsonAsync(
-                _callbackLinks.Transfer!,
-                headers,
-                dto,
-                CB_PaymentRequest,
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                ct,
-                cid);
-            if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
-            {
-                ParseCallbackResult(responseMessage.Data, response);
-            }
-            else
-            {
-                _logger.LogWarning("[{CorrelationId}] Failed to get response from CB. Status: {Status}", cid, responseMessage.StatusCode);
-                response.AdditionalInfo = "Failed to get response from CB.";
-            }
+            // Step 4: Immediately acknowledge with ACSC to the sender; CoreBank processing will occur upon status report
+            response.Status = ACSC;
+            response.Reason = null;
+            response.AdditionalInfo = null;
 
             // Step 5: Build, persist, and sign response
             var rsp = PaymentRequestResponseBuilder.Build(response);
             await _isoService.PersistTransactionResponseAsync(record,
-                response.Status ?? RJCT,
-                response.Reason ?? MISS,
-                response.AdditionalInfo,
+                TransactionStatus.Pending,
+                "Transaction Is Pending For Approval",
+                null,
                 rsp,
-                response.TxId ?? string.Empty,
+                request.TxId ?? string.Empty,
                 request.EndToEndId ?? string.Empty,
                 ct);
             return _signer.SignEnvelope(rsp);
@@ -185,36 +133,14 @@ public sealed class IncomingTransactionHandler(
             response.AdditionalInfo = "Failed to process Transaction";
             var rsp = PaymentRequestResponseBuilder.Build(response);
             await _isoService.PersistTransactionResponseAsync(record,
-                response.Status ?? RJCT,
-                response.Reason ?? MISS,
+                TransactionStatus.Failed,
+                "Failed to process Transaction",
                 response.AdditionalInfo,
                 rsp,
-                response.TxId ?? string.Empty,
+                request?.TxId ?? string.Empty,
                 request?.EndToEndId ?? string.Empty,
                 ct);
             return _signer.SignEnvelope(rsp);
         }
     }
-
-
-    private string ErrorResponse(string message)
-    {
-        return AdminMessage.Generate(message);
-    }
-
-    // verification and parsing now delegated to shared services, record/persist via IISOMessageService
-    private void ParseCallbackResult(JsonObject data, PaymentRequestResponseBuilder.Response response)
-    {
-        // convert the responseContent to a JsonObject
-        var js = JsonSerializer.Deserialize<JsonObject>(data, _jsonSerializerOptions);
-        var md = _jsonAdapter.Transform(js!, "CB_PaymentResponse");
-        var deserializedContent = _jsonAdapter.ToObject<PaymentResponseDto>(md);
-
-        response.Status = deserializedContent?.Status ?? RJCT;
-        response.Reason = deserializedContent?.Reason ?? string.Empty;
-        response.AdditionalInfo = deserializedContent?.AdditionalInfo ?? string.Empty;
-        response.AcceptanceDate = deserializedContent?.AcceptanceDate ?? DateTime.UtcNow;
-        response.TxId = deserializedContent?.TxId ?? string.Empty;
-    }
-
 }

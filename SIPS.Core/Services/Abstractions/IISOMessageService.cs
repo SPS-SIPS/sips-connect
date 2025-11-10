@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using SIPS.PostgreSQL.Models;
 using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Helpers;
+using SIPS.PostgreSQL.Enums;
 
 namespace SIPS.Core.Services.Abstractions;
 
@@ -28,7 +29,7 @@ public interface IISOMessageService
 
     Task PersistStatusResponseAsync(
         ISOMessageStatus isoMessageStatus,
-        string status,
+        TransactionStatus status,
         string reason,
         string? additionalInfo,
         string responseXml,
@@ -42,7 +43,7 @@ public interface IISOMessageService
 
     Task PersistTransactionResponseAsync(
         ISOMessage isoMessage,
-        string status,
+        TransactionStatus status,
         string reason,
         string? additionalInfo,
         string responseXml,

@@ -68,18 +68,16 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
 
     public async Task PersistStatusResponseAsync(
         ISOMessageStatus isoMessageStatus,
-        string status,
+        TransactionStatus status,
         string reason,
         string? additionalInfo,
         string responseXml,
         CancellationToken ct)
     {
         isoMessageStatus.Response = Encoding.UTF8.GetBytes(responseXml);
-        isoMessageStatus.Status = status == "ACSC" ? TransactionStatus.Success : TransactionStatus.Failed;
+        isoMessageStatus.Status = status;
         isoMessageStatus.Reason = reason;
         isoMessageStatus.AdditionalInfo = additionalInfo;
-        // Also mirror final status to parent ISOMessage
-        isoMessageStatus.ISOMessage.Status = isoMessageStatus.Status;
         await _persistence.ISOMessageStatusResponseAsync(isoMessageStatus, ct);
     }
 
@@ -95,6 +93,9 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
             FromBIC = request.From,
             ToBIC = request.To,
             Message = Encoding.UTF8.GetBytes(rawXml),
+            Status = TransactionStatus.Pending,
+            TxId = request.TxId,
+            EndToEndId = request.EndToEndId,
             BizMsgIdr = request.BizMsgIdr,
             MsgDefIdr = request.MsgDefIdr,
             MsgId = request.MsgId,
@@ -126,7 +127,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
 
     public async Task PersistTransactionResponseAsync(
         ISOMessage isoMessage,
-        string status,
+        TransactionStatus status,
         string reason,
         string? additionalInfo,
         string responseXml,
@@ -135,7 +136,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         CancellationToken ct)
     {
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
-        isoMessage.Status = status == "ACSC" ? TransactionStatus.Success : TransactionStatus.Failed;
+        isoMessage.Status = status;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
         isoMessage.TxId = txId;

@@ -20,6 +20,7 @@ using SIPS.Core.Services.Responses;
 using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
+using SIPS.PostgreSQL.Enums;
 namespace SIPS.Core.Services;
 public sealed class IncomingReturnTransactionHandler(
     ISO20022Options options,
@@ -106,7 +107,7 @@ public sealed class IncomingReturnTransactionHandler(
             response.Reason = MISS;
             response.Status = RJCT;
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            await _isoService.PersistTransactionResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, response.TxId ?? string.Empty, request.OriginalEndToEnd ?? string.Empty, ct);
+            await _isoService.PersistTransactionResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, response.TxId ?? string.Empty, request.OriginalEndToEnd ?? string.Empty, ct);
             return _signer.SignEnvelope(rsp);
         }
 

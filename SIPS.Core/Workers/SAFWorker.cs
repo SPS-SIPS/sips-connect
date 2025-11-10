@@ -31,7 +31,7 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
 
         var query = storage.ISOMessages
             .Where(x
-                => x.Status == TransactionStatus.Pending &&
+                => x.Status == TransactionStatus.CheckStatus &&
                     x.Round < options.SAFMaxRetries &&
                     x.FromBIC == bic
                 )

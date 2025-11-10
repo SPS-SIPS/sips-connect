@@ -2,6 +2,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SIPS.PostgreSQL.Interfaces;
 using SIPS.PostgreSQL.Models;
+using SIPS.PostgreSQL.Enums;
 
 namespace SIPS.Core.Services.Persistence;
 
@@ -13,6 +14,7 @@ public interface IPersistenceGateway
     Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus status, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct);
+    Task<List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct);
 }
 
 public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceGateway
@@ -36,4 +38,7 @@ public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceG
 
     public Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct)
         => _record.GetISOMessageWithTransactionsByTxIdAsync(txId, ct);
+
+    public Task<List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct)
+        => _record.GetISOMessagesByStatusAsync(status, ct);
 }

@@ -17,6 +17,8 @@ using SIPS.ISO20022.Options;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Services;
 using SIPS.Core.Services.ISOParsers;
+using SIPS.PostgreSQL.Enums;
+using SIPS.ISO20022.Models.DTOs;
 
 namespace SIPS.Core.Services;
 
@@ -94,23 +96,40 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         // Step 2: Retrieve ISO message by TxId
         var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.TxId, ct);
+
         if (isoMessage == null)
         {
             return AdminMessage.Generate("Failed to get the Message.");
         }
 
+        // Step 3: Record the incoming status report under parent ISOMessage
+        var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, ct);
         var transaction = isoMessage.Transactions.FirstOrDefault();
 
         if (transaction == null)
         {
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Failed To locate", "Not found", "No Message Found", ct);
             return AdminMessage.Generate("Failed to get the Transaction.");
         }
 
-        // Parse incoming pacs.002 to use its debtor/creditor data as fallback where needed
-        var incomingParsed = PaymentRequestResponseBuilder.Parse(message);
+        if (transaction.Amount != request.Original?.Amount)
+        {
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Amount", "Invalid Amount", "Invalid Amount", ct);
+            return AdminMessage.Generate("Invalid Transaction Amount!");
+        }
 
-        // Step 3: Record the incoming status report under parent ISOMessage
-        var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, ct);
+        if (transaction.Currency != request.Original?.Currency)
+        {
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Currency", "Invalid Currency", "Invalid Currency", ct);
+            return AdminMessage.Generate("Invalid Transaction Currency!");
+        }
+
+        if ((transaction.DebtorAccount != request.Original?.Debtor?.Account) || (transaction.CreditorAccount != request.Original?.Creditor?.Account))
+        {
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Debtor or Creditor", "Invalid Debtor or Creditor", "Invalid Debtor or Creditor", ct);
+            return AdminMessage.Generate("Invalid Transaction Accounts");
+        }
+
         // Step 4: Prepare response object (reuse PaymentStatus request response builder)
         var statusReq = new PaymentStatusRequestBuilder.Request
         {
@@ -125,36 +144,73 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         var response = _responses.BuildPaymentStatusInitial(statusReq);
 
-        try
-        {
-            // Step 5: Incoming completion status is always present; update DB, notify CoreBank, and respond mirroring status
-            var incomingStatus = request.Status?.ToUpperInvariant();
-            if (!string.IsNullOrWhiteSpace(incomingStatus))
-            {
-                response.Status = incomingStatus;
-                response.Reason = request.Reason ?? string.Empty;
-                response.AdditionalInfo = request.AdditionalInfo ?? string.Empty;
+        // Step 5: Incoming completion status is always present; if Pending exists, decide flow:
+        // - RJCT: persist as failed and return (no CoreBank call)
+        // - ACSC: forward original payment to CoreBank, then persist and return
+        response.Status = request.Status;
+        response.Reason = request.Reason ?? string.Empty;
+        response.AdditionalInfo = request.AdditionalInfo ?? string.Empty;
 
-                var headers = new Dictionary<string, string>() {
+        // If related ISO message is not pending anymore, just mirror and return without forwarding
+        if (isoMessage.Status != TransactionStatus.Pending)
+        {
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Not Pending", "Only Pendig Transaction Can be modified", "Invalid Process", ct);
+            return AdminMessage.Generate($"No Pending Transaction Related to this TxId {request.TxId}");
+        }
+
+        // If RJCT -> persist and return without CoreBank call
+        if (request.Status == RJCT)
+        {
+            var rspRej = PaymentStatusRequestResponseBuilder.Build(response);
+            isoMessage.Status = TransactionStatus.Failed;
+            isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : "Received rejection confirmation";
+            isoMessage.AdditionalInfo = "Standard Rejection Confirmaiton Notification Received";
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, ct);
+            return _signer.SignEnvelope(rspRej);
+        }
+
+        var headers = new Dictionary<string, string>() {
                         { API_Key, _callbackLinks.Key! },
                         { API_Secret, _callbackLinks.Secret! }
                     };
 
-                    var completionDto = new CBCompletionNotification
-                    {
-                        OriginalTxId = request.TxId,
-                        OriginalEndToEndId = request.Original?.EndToEndId ?? string.Empty,
-                        Status = incomingStatus,
-                        Reason = request.Reason ?? string.Empty,
-                        AdditionalInfo = request.AdditionalInfo ?? string.Empty
-                    };
+        // Here incomingStatus must be ACSC; build CB payment request payload for CB
 
+        var dto = new CBPaymentRequestDto
+        {
+            FromBIC = transaction.FromBIC,
+            LocalInstrument = transaction.LocalInstrument,
+            CategoryPurpose = transaction.CategoryPurpose,
+            EndToEndId = transaction.EndToEndId,
+            TxId = transaction.TxId,
+            Amount = transaction.Amount,
+            Currency = transaction.Currency,
+            DebtorName = transaction.DebtorName,
+            DebtorAccount = transaction.DebtorAccount,
+            DebtorAccountType = transaction.DebtorAccountType,
+            DebtorAgentBIC = transaction.DebtorAgentBIC,
+            DebtorIssuer = transaction.DebtorIssuer,
+            CreditorName = transaction.CreditorName,
+            CreditorAccount = transaction.CreditorAccount,
+            CreditorAccountType = transaction.CreditorAccountType,
+            CreditorAgentBIC = transaction.CreditorAgentBIC,
+            CreditorIssuer = transaction.CreditorIssuer,
+            RemittanceInformation = transaction.RemittanceInformation,
+            Date = DateTime.UtcNow,
+            ToBIC = isoMessage.FromBIC ?? string.Empty,
+            SettlementMethod = "CLRG",
+            ChargeBearer = "SLEV",
+            BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
+            MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
+            ClearingSystem = string.Empty,
+            MsgId = isoMessage.MsgId ?? string.Empty
+        };
 
-                var result = await _callbacks.SendJsonAsync(
-                    _callbackLinks.CompletionNotification!,
+        var result = await _callbacks.SendJsonAsync(
+                _callbackLinks.Transfer!,
                     headers,
-                    completionDto,
-                    CB_CompletionNotification,
+                    dto,
+                    CB_PaymentRequest,
                     _jsonAdapter,
                     _correlation,
                     _jsonSerializerOptions,
@@ -163,46 +219,54 @@ public sealed class IncomingPaymentStatusReportHandler(
                     cid
                 );
 
-                _logger.LogInformation("[{CorrelationId}] Notified CoreBank completion status for TxId {TxId}, {result}", cid, request.TxId, JsonSerializer.Serialize(result, _jsonSerializerOptions));
+        _logger.LogInformation("[{CorrelationId}] Forwarded transaction to CoreBank for TxId {TxId}, {result}", cid, request.TxId, JsonSerializer.Serialize(result, _jsonSerializerOptions));
 
-                // Minimal safeguards for schema-required fields (prefer transaction, then incoming pacs.002 parsed, then defaults)
-                var incomingDebtorName = incomingParsed?.Original?.Debtor?.Name;
-                var incomingCreditorName = incomingParsed?.Original?.Creditor?.Name;
-                var incomingDebtorAccount = incomingParsed?.Original?.Debtor?.Account;
-                var incomingCreditorAccount = incomingParsed?.Original?.Creditor?.Account;
+        // Persist raw CoreBank response JSON on the parent ISOMessage for audit/operations
 
-                response.Original.Debtor.Name = transaction.DebtorName ?? request.Original?.Debtor?.Name ?? "NA";
-                response.Original.Creditor.Name = transaction.CreditorName ?? request.Original?.Creditor?.Name ?? "NA";
-                response.Original.Debtor.Account = transaction.DebtorAccount ?? request.Original?.Debtor?.Account ?? "NA";
-                response.Original.Creditor.Account = transaction.CreditorAccount ?? request.Original?.Creditor?.Account ?? "NA";
-                response.Original.Debtor.AccountType = transaction.DebtorAccountType ?? request.Original?.Debtor?.AccountType ?? "ACCT";
-                response.Original.Creditor.AccountType = transaction.CreditorAccountType ?? request.Original?.Creditor?.AccountType ?? "ACCT";
-                response.Original.From = isoMessage.ToBIC ?? _callbackLinks.BIC ?? "NA";
-                response.Original.To = isoMessage.FromBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA";
-                response.Original.EndToEndId = statusReq.OriginalEndToEnd ?? isoMessage.EndToEndId ?? "E2E";
-                response.TxId = statusReq.OrgnlTxId;
-                if (response.Original.Amount <= 0 && transaction.Amount > 0) response.Original.Amount = transaction.Amount;
-                if (string.IsNullOrWhiteSpace(response.Original.Currency)) response.Original.Currency = string.IsNullOrWhiteSpace(transaction.Currency) ? "USD" : transaction.Currency;
+        var crResponse = ParseCallbackResult(result.Data!);
+        var cbProcessed = crResponse.Status == ACSC;
 
-                // Build, persist, and sign response mirroring the final status
-                var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
-                await _isoService.PersistStatusResponseAsync(record, response.Status ?? RJCT, response.Reason ?? string.Empty, response.AdditionalInfo ?? string.Empty, rspFinal, ct);
-                return _signer.SignEnvelope(rspFinal);
-            }
-            // If we reach here without a status (unexpected), persist a rejection and return
-            response.Status = RJCT;
-            response.Reason = string.IsNullOrWhiteSpace(response.Reason) ? MISS : response.Reason;
-            var rspErr = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, response.Status, response.Reason ?? string.Empty, response.AdditionalInfo ?? string.Empty, rspErr, ct);
-            return _signer.SignEnvelope(rspErr);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "[{CorrelationId}] INCOMING pacs.002 Handler Exception for TxId {TxId}", cid, request?.TxId);
-            response.AdditionalInfo = "Failed to process pacs.002";
-            var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, response.Status ?? RJCT, response.Reason ?? string.Empty, response.AdditionalInfo ?? string.Empty, rsp, ct);
-            return _signer.SignEnvelope(rsp);
-        }
+        isoMessage.Status = cbProcessed ? TransactionStatus.Success : TransactionStatus.ReadyForReturn;
+        isoMessage.AdditionalInfo = cbProcessed ? "Processed" : "Queaed For Return!";
+        isoMessage.Reason = cbProcessed ? "Processed Transaction" : "Transaction is ready for return";
+
+        isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
+
+        response.Original.Debtor.Name = transaction.DebtorName ?? request.Original?.Debtor?.Name ?? "NA";
+        response.Original.Creditor.Name = transaction.CreditorName ?? request.Original?.Creditor?.Name ?? "NA";
+        response.Original.Debtor.Account = transaction.DebtorAccount ?? request.Original?.Debtor?.Account ?? "NA";
+        response.Original.Creditor.Account = transaction.CreditorAccount ?? request.Original?.Creditor?.Account ?? "NA";
+        response.Original.Debtor.AccountType = transaction.DebtorAccountType ?? request.Original?.Debtor?.AccountType ?? "ACCT";
+        response.Original.Creditor.AccountType = transaction.CreditorAccountType ?? request.Original?.Creditor?.AccountType ?? "ACCT";
+        response.Original.From = isoMessage.ToBIC ?? _callbackLinks.BIC ?? "NA";
+        response.Original.To = isoMessage.FromBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA";
+        response.Original.EndToEndId = statusReq.OriginalEndToEnd ?? isoMessage.EndToEndId ?? "E2E";
+        response.TxId = statusReq.OrgnlTxId;
+        response.Original.Amount = transaction.Amount;
+        response.Original.Currency = transaction.Currency;
+        response.Original.CategoryPurpose = transaction.CategoryPurpose;
+
+        var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
+
+        await _isoService.PersistStatusResponseAsync(
+            record,
+            TransactionStatus.Success,
+            isoMessage.Reason,
+            isoMessage.AdditionalInfo,
+            rspFinal,
+            ct);
+
+        return _signer.SignEnvelope(rspFinal);
+    }
+
+    // verification and parsing now delegated to shared services, record/persist via IISOMessageService
+    private PaymentResponseDto ParseCallbackResult(JsonObject data)
+    {
+        // convert the responseContent to a JsonObject
+        var js = JsonSerializer.Deserialize<JsonObject>(data, _jsonSerializerOptions);
+        var md = _jsonAdapter.Transform(js!, "CB_PaymentResponse");
+        var deserializedContent = _jsonAdapter.ToObject<PaymentResponseDto>(md);
+
+        return deserializedContent;
     }
 }
