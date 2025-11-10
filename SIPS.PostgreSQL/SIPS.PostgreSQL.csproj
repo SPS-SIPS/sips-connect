@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>SIPS.PostgreSQL</PackageId>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Authors>Abdulshakur Ahmed</Authors>
     <Product>SIPS PostgreSQL</Product>
     <Description>SIPS PostgreSQL</Description>

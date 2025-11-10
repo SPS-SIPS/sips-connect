@@ -20,6 +20,7 @@ public class ISOMessage
     public string ToBIC { get; set; } = null!;
     public byte[] Message { get; set; } = null!;
     public byte[]? Response { get; set; }
+    public string? CoreBankResponse { get; set; }
     public string? ReturnId { get; set; }
     public ICollection<Transaction> Transactions { get; set; } = [];
     public ICollection<ISOMessageStatus> Statuses { get; set; } = [];
@@ -48,6 +49,9 @@ public sealed class ISOMessageConfiguration : IEntityTypeConfiguration<ISOMessag
 
         builder.Property(e => e.Response)
             .HasColumnType("bytea");
+
+        builder.Property(e => e.CoreBankResponse)
+            .HasColumnType("jsonb");
 
     }
 }

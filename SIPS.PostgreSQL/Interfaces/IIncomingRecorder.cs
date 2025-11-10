@@ -5,6 +5,7 @@ public interface IIncomingRecorder
     Task<ISOMessage> ISOMessageAsync(ISOMessage message, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct);
+    Task<List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct);
     Task<Transaction> TransactionAsync(Transaction message, CancellationToken ct);
     Task<ISOMessage> ISOMessageResponseAsync(ISOMessage message, CancellationToken ct);
     Task<ISOMessageStatus> ISOMessageStatusAsync(ISOMessageStatus message, CancellationToken ct);

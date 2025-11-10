@@ -55,10 +55,22 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         }
 
         entity.Response = message.Response;
+        if (message.CoreBankResponse != null)
+        {
+            entity.CoreBankResponse = message.CoreBankResponse;
+        }
 
         await _storage.SaveChangesAsync(ct);
 
         return entity;
+    }
+
+    public async Task<List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct)
+    {
+        return await _storage.ISOMessages
+            .Where(x => x.Status == status && x.MessageType == ISOMessageType.TransactionRequest)
+            .Include(x => x.Transactions)
+            .ToListAsync(ct);
     }
 
     public async Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus message, CancellationToken ct)
