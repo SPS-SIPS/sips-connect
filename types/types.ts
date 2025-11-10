@@ -69,9 +69,11 @@ export interface ISOMessage {
 }
 
 export enum TransactionStatus {
-    Success = 1,
-    Failed = 2,
-    Pending = 3
+  Success = 1,
+  Failed = 2,
+  Pending = 3,
+  ReadyForReturn = 4,
+  CheckStatus = 5,
 }
 
 export enum ISOMessageType {

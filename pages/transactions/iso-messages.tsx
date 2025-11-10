@@ -87,6 +87,8 @@ const ISOMessagesList = () => {
             case TransactionStatus.Success: return styles.success;
             case TransactionStatus.Failed: return styles.error;
             case TransactionStatus.Pending: return styles.warning;
+            case TransactionStatus.ReadyForReturn: return styles.error;
+            case TransactionStatus.CheckStatus: return styles.info;
             default: return '';
         }
     };
