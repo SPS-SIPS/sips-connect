@@ -27,7 +27,6 @@ public sealed class IncomingPaymentStatusReportHandler(
     ILogger<IncomingPaymentStatusReportHandler> logger,
     INativeSigner signer,
     IJsonAdapter jsonAdapter,
-    ISignatureService signature,
     IPaymentStatusReportParser reportParser,
     ICallbackClient callback,
     IResponseFactory responseFactory,
@@ -56,25 +55,6 @@ public sealed class IncomingPaymentStatusReportHandler(
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
-
-    // Compatibility constructor
-    public IncomingPaymentStatusReportHandler(
-        ISO20022Options options,
-        ILogger<IncomingPaymentStatusReportHandler> logger,
-        INativeSigner signer,
-        IJsonAdapter jsonAdapter,
-        ISignatureService signature,
-        IPaymentStatusReportParser reportParser,
-        ICallbackClient callback,
-        IResponseFactory responseFactory,
-        IPersistenceGateway persistence,
-        ICorrelationService correlation)
-        : this(options, logger, signer, jsonAdapter, signature, reportParser, callback, responseFactory, persistence, correlation,
-              new InboundMessageService(signature),
-              new CallbackOrchestrator(),
-              new ISOMessageService(persistence))
-    { }
-
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         var cid = _correlation.Create();
@@ -182,26 +162,27 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         // Here incomingStatus must be ACSC; build CB payment request payload for CB
 
+        var tx = transaction!;
         var dto = new CBPaymentRequestDto
         {
-            FromBIC = transaction.FromBIC,
-            LocalInstrument = transaction.LocalInstrument,
-            CategoryPurpose = transaction.CategoryPurpose,
-            EndToEndId = transaction.EndToEndId,
-            TxId = transaction.TxId,
-            Amount = transaction.Amount,
-            Currency = transaction.Currency,
-            DebtorName = transaction.DebtorName,
-            DebtorAccount = transaction.DebtorAccount,
-            DebtorAccountType = transaction.DebtorAccountType,
-            DebtorAgentBIC = transaction.DebtorAgentBIC,
-            DebtorIssuer = transaction.DebtorIssuer,
-            CreditorName = transaction.CreditorName,
-            CreditorAccount = transaction.CreditorAccount,
-            CreditorAccountType = transaction.CreditorAccountType,
-            CreditorAgentBIC = transaction.CreditorAgentBIC,
-            CreditorIssuer = transaction.CreditorIssuer,
-            RemittanceInformation = transaction.RemittanceInformation,
+            FromBIC = tx.FromBIC ?? string.Empty,
+            LocalInstrument = tx.LocalInstrument ?? string.Empty,
+            CategoryPurpose = tx.CategoryPurpose ?? string.Empty,
+            EndToEndId = tx.EndToEndId ?? string.Empty,
+            TxId = tx.TxId ?? string.Empty,
+            Amount = tx.Amount,
+            Currency = tx.Currency ?? string.Empty,
+            DebtorName = tx.DebtorName ?? string.Empty,
+            DebtorAccount = tx.DebtorAccount ?? string.Empty,
+            DebtorAccountType = tx.DebtorAccountType ?? string.Empty,
+            DebtorAgentBIC = tx.DebtorAgentBIC ?? string.Empty,
+            DebtorIssuer = tx.DebtorIssuer ?? string.Empty,
+            CreditorName = tx.CreditorName ?? string.Empty,
+            CreditorAccount = tx.CreditorAccount ?? string.Empty,
+            CreditorAccountType = tx.CreditorAccountType ?? string.Empty,
+            CreditorAgentBIC = tx.CreditorAgentBIC ?? string.Empty,
+            CreditorIssuer = tx.CreditorIssuer ?? string.Empty,
+            RemittanceInformation = tx.RemittanceInformation ?? string.Empty,
             Date = DateTime.UtcNow,
             ToBIC = isoMessage.FromBIC ?? string.Empty,
             SettlementMethod = "CLRG",
@@ -238,19 +219,19 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
 
-        response.Original.Debtor.Name = transaction.DebtorName ?? request.Original?.Debtor?.Name ?? "NA";
-        response.Original.Creditor.Name = transaction.CreditorName ?? request.Original?.Creditor?.Name ?? "NA";
-        response.Original.Debtor.Account = transaction.DebtorAccount ?? request.Original?.Debtor?.Account ?? "NA";
-        response.Original.Creditor.Account = transaction.CreditorAccount ?? request.Original?.Creditor?.Account ?? "NA";
-        response.Original.Debtor.AccountType = transaction.DebtorAccountType ?? request.Original?.Debtor?.AccountType ?? "ACCT";
-        response.Original.Creditor.AccountType = transaction.CreditorAccountType ?? request.Original?.Creditor?.AccountType ?? "ACCT";
+        response.Original.Debtor.Name = tx.DebtorName ?? request.Original?.Debtor?.Name ?? "NA";
+        response.Original.Creditor.Name = tx.CreditorName ?? request.Original?.Creditor?.Name ?? "NA";
+        response.Original.Debtor.Account = tx.DebtorAccount ?? request.Original?.Debtor?.Account ?? "NA";
+        response.Original.Creditor.Account = tx.CreditorAccount ?? request.Original?.Creditor?.Account ?? "NA";
+        response.Original.Debtor.AccountType = tx.DebtorAccountType ?? request.Original?.Debtor?.AccountType ?? "ACCT";
+        response.Original.Creditor.AccountType = tx.CreditorAccountType ?? request.Original?.Creditor?.AccountType ?? "ACCT";
         response.Original.From = isoMessage.ToBIC ?? _callbackLinks.BIC ?? "NA";
         response.Original.To = isoMessage.FromBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA";
         response.Original.EndToEndId = statusReq.OriginalEndToEnd ?? isoMessage.EndToEndId ?? "E2E";
         response.TxId = statusReq.OrgnlTxId;
-        response.Original.Amount = transaction.Amount;
-        response.Original.Currency = transaction.Currency;
-        response.Original.CategoryPurpose = transaction.CategoryPurpose;
+        response.Original.Amount = tx.Amount;
+        response.Original.Currency = tx.Currency ?? string.Empty;
+        response.Original.CategoryPurpose = tx.CategoryPurpose ?? string.Empty;
 
         var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
 

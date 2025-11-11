@@ -49,6 +49,16 @@ public static class DI
         services.AddSingleton<ISipsRequestSender, SipsRequestSender>();
         services.AddScoped<IPersistenceGateway, PersistenceGateway>();
 
+        services.AddSingleton<HttpClient>(_ =>
+        {
+            var client = new HttpClient
+            {
+                Timeout = System.TimeSpan.FromSeconds(30)
+            };
+            return client;
+        });
+        services.AddSingleton<IInterfaceHttpClient, InterfaceHttpClient>();
+
         services.AddScoped<IIncomingVerificationHandler, IncomingVerificationHandler>();
         services.AddScoped<IIncomingTransactionHandler, IncomingTransactionHandler>();
         services.AddScoped<IIncomingTransactionStatusHandler, IncomingTransactionStatusHandler>();
