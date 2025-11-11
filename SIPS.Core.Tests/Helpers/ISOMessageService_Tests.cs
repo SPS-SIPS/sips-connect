@@ -36,7 +36,7 @@ public class ISOMessageService_Tests
         var parent = new ISOMessage { Status = TransactionStatus.Pending };
         var status = new ISOMessageStatus { ISOMessage = parent, Status = TransactionStatus.Pending };
 
-        await svc.PersistStatusResponseAsync(status, "ACSC", "", null, "<rsp/>", CancellationToken.None);
+        await svc.PersistStatusResponseAsync(status, TransactionStatus.Success, "", null, "<rsp/>", CancellationToken.None);
 
         Assert.Equal(TransactionStatus.Success, status.Status);
         Assert.Equal(TransactionStatus.Success, parent.Status);
@@ -64,7 +64,7 @@ public class ISOMessageService_Tests
         var parent = new ISOMessage { Status = TransactionStatus.Pending };
         var status = new ISOMessageStatus { ISOMessage = parent, Status = TransactionStatus.Pending };
 
-        await svc.PersistStatusResponseAsync(status, "RJCT", "", null, "<rsp/>", CancellationToken.None);
+        await svc.PersistStatusResponseAsync(status, TransactionStatus.Failed, "", null, "<rsp/>", CancellationToken.None);
 
         Assert.Equal(TransactionStatus.Failed, status.Status);
         Assert.Equal(TransactionStatus.Failed, parent.Status);

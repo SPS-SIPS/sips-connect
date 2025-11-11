@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,15 +12,12 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Responses;
 using SIPS.Core.Services.Verification;
 using SIPS.ISO20022.Options;
-using SIPS.ISO20022.Interfaces;
 using SIPS.Adapter;
 using SIPS.XMLDsig.Xades.Interfaces;
-using SIPS.PostgreSQL.Interfaces;
 using SIPS.PostgreSQL.Models;
 using SIPS.PostgreSQL.Enums;
 using SIPS.ISO20022.Models.DTOs.CB;
-using SIPS.Core.Interfaces;
-
+using SIPS.Core.Services.Implementations;
 namespace SIPS.Core.Tests.Tests;
 
 public class IncomingPaymentStatusReportHandler_Tests
@@ -41,8 +37,24 @@ public class IncomingPaymentStatusReportHandler_Tests
         var correlation = new CorrelationService();
         var parser = new PaymentStatusReportParser();
 
+        var inbound = new InboundMessageService(sig);
+        var callbacks = new CallbackOrchestrator();
+        var isoService = new ISOMessageService(pg);
+        var core = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
         return new IncomingPaymentStatusReportHandler(
-            options, logger, signer, jsonAdapter, sig, parser, callback, responseFactory, pg, correlation);
+            options,
+            logger,
+            signer,
+            jsonAdapter,
+            parser,
+            callback,
+            responseFactory,
+            pg,
+            correlation,
+            inbound,
+            callbacks,
+            isoService,
+            core);
     }
 
     [Fact]

@@ -7,6 +7,8 @@ using SIPS.Adapter;
 using SIPS.Core.Interfaces;
 using SIPS.Core.Services;
 using SIPS.Core.Services.Callback;
+using SIPS.Core.Services.Implementations;
+using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Persistence;
@@ -50,11 +52,15 @@ public class IncomingTransactionStatusHandlerTests
         var persistence = new PersistenceGateway(recorder);
         var cbLogger = Mock.Of<ILogger<CallbackClient>>();
         var callback = new CallbackClient(httpClient, cbLogger, correlation);
-        var signature = (signatureMock ?? new Mock<ISignatureService>()).Object;
-        var parser = (parserMock ?? new Mock<IPaymentStatusRequestParser>()).Object;
+    var callbacks = new CallbackOrchestrator();
+    var isoService = new ISOMessageService(persistence);
+    var signature = (signatureMock ?? new Mock<ISignatureService>()).Object;
+    var inbound = new InboundMessageService(signature);
+    var parser = (parserMock ?? new Mock<IPaymentStatusRequestParser>()).Object;
+        var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
 
         return new IncomingTransactionStatusHandler(options, logger, httpClient, signer, verifier, jsonAdapter, recorder,
-            signature, parser, callback, responses, persistence, correlation);
+            signature, parser, callback, responses, persistence, correlation, inbound, callbacks, isoService, coreOptions);
     }
 
     [Fact]

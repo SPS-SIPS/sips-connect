@@ -123,7 +123,7 @@ public sealed class IncomingTransactionHandler(
             response.Reason = null;
             response.AdditionalInfo = null;
 
-            // Step 5: Build, persist, and sign response
+            // Step 5: Build, persist initial ACK response and forward to CoreBank
             var rsp = PaymentRequestResponseBuilder.Build(response);
             await _isoService.PersistTransactionResponseAsync(record,
                 TransactionStatus.Pending,
@@ -133,6 +133,94 @@ public sealed class IncomingTransactionHandler(
                 request.TxId ?? string.Empty,
                 request.EndToEndId ?? string.Empty,
                 dbCt);
+
+            // Attempt to forward the transaction to CoreBank via orchestrator and persist final status
+            try
+            {
+                var transaction = record.Transactions.FirstOrDefault();
+                if (transaction != null)
+                {
+                    var headers = new Dictionary<string, string>() {
+                        { API_Key, _callbackLinks.Key! },
+                        { API_Secret, _callbackLinks.Secret! }
+                    };
+                    var idem = transaction?.TxId ?? request.TxId;
+                    if (!string.IsNullOrWhiteSpace(idem))
+                        headers["X-Idempotency-Key"] = idem!;
+                    if (!string.IsNullOrWhiteSpace(transaction?.TxId ?? request.TxId))
+                        headers["X-Transaction-Id"] = (transaction?.TxId ?? request.TxId)!;
+
+                    var dto = new CBPaymentRequestDto
+                    {
+                        FromBIC = transaction.FromBIC ?? string.Empty,
+                        LocalInstrument = transaction.LocalInstrument ?? string.Empty,
+                        CategoryPurpose = transaction.CategoryPurpose ?? string.Empty,
+                        EndToEndId = transaction.EndToEndId ?? string.Empty,
+                        TxId = transaction.TxId ?? string.Empty,
+                        Amount = transaction.Amount,
+                        Currency = transaction.Currency ?? string.Empty,
+                        DebtorName = transaction.DebtorName ?? string.Empty,
+                        DebtorAccount = transaction.DebtorAccount ?? string.Empty,
+                        DebtorAccountType = transaction.DebtorAccountType ?? string.Empty,
+                        DebtorAgentBIC = transaction.DebtorAgentBIC ?? string.Empty,
+                        DebtorIssuer = transaction.DebtorIssuer ?? string.Empty,
+                        CreditorName = transaction.CreditorName ?? string.Empty,
+                        CreditorAccount = transaction.CreditorAccount ?? string.Empty,
+                        CreditorAccountType = transaction.CreditorAccountType ?? string.Empty,
+                        CreditorAgentBIC = transaction.CreditorAgentBIC ?? string.Empty,
+                        CreditorIssuer = transaction.CreditorIssuer ?? string.Empty,
+                        RemittanceInformation = transaction.RemittanceInformation ?? string.Empty,
+                        Date = DateTime.UtcNow,
+                        ToBIC = record.FromBIC ?? string.Empty,
+                        SettlementMethod = "CLRG",
+                        ChargeBearer = "SLEV",
+                        BizMsgIdr = record.BizMsgIdr ?? string.Empty,
+                        MsgDefIdr = record.MsgDefIdr ?? string.Empty,
+                        ClearingSystem = string.Empty,
+                        MsgId = record.MsgId ?? string.Empty
+                    };
+
+                    var result = await _callbacks.SendJsonAsync(
+                        _callbackLinks.Transfer!,
+                        headers,
+                        dto,
+                        CB_PaymentRequest,
+                        _jsonAdapter,
+                        _correlation,
+                        _jsonSerializerOptions,
+                        _callback,
+                        ct,
+                        cid
+                    );
+
+                        var crResponse = ParseCallbackResult(result.Data!);
+                    var cbProcessed = crResponse.Status == ACSC;
+
+                    record.Status = cbProcessed ? TransactionStatus.Success : TransactionStatus.ReadyForReturn;
+                    record.Reason = cbProcessed ? "Processed Transaction" : "Transaction is ready for return";
+                    record.AdditionalInfo = cbProcessed ? "Processed" : "Queued For Return!";
+                    record.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
+
+                    // Persist final status to the parent message
+                    await _isoService.PersistTransactionResponseAsync(record,
+                        cbProcessed ? TransactionStatus.Success : TransactionStatus.Failed,
+                        record.Reason,
+                        record.AdditionalInfo,
+                        rsp,
+                        request.TxId ?? string.Empty,
+                        request.EndToEndId ?? string.Empty,
+                        dbCt);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[{CorrelationId}] Failed to forward transaction to CoreBank for TxId {TxId}", cid, request.TxId);
+                // best-effort: mark as failed
+                record.Status = TransactionStatus.Failed;
+                record.Reason = "Failed to forward to CoreBank";
+                await _isoService.PersistTransactionResponseAsync(record, TransactionStatus.Failed, record.Reason, null, rsp, request.TxId ?? string.Empty, request.EndToEndId ?? string.Empty, dbCt);
+            }
+
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -151,5 +239,16 @@ public sealed class IncomingTransactionHandler(
                 dbCts2.Token);
             return _signer.SignEnvelope(rsp);
         }
+    }
+
+    // convert callback result to payment response DTO (mirrors logic in PaymentStatus handler)
+    private PaymentResponseDto ParseCallbackResult(JsonObject data)
+    {
+        // convert the responseContent to a JsonObject
+        var js = JsonSerializer.Deserialize<JsonObject>(data, _jsonSerializerOptions);
+        var md = _jsonAdapter.Transform(js!, "CB_PaymentResponse");
+        var deserializedContent = _jsonAdapter.ToObject<PaymentResponseDto>(md);
+
+        return deserializedContent;
     }
 }

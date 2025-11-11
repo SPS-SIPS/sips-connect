@@ -12,7 +12,15 @@ public interface ICallbackClient
     Task<Response<JsonObject?>> SendAsync(string url, Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null);
 }
 
-public sealed class CallbackClient(IInterfaceHttpClient httpClient, ILogger<CallbackClient> logger, ICorrelationService correlation, IOptions<CoreOptions> coreOptions) : ICallbackClient
+// Backward-compatible constructor for tests and older code paths
+public sealed partial class CallbackClient
+{
+    public CallbackClient(IInterfaceHttpClient httpClient, ILogger<CallbackClient> logger, ICorrelationService correlation)
+        : this(httpClient, logger, correlation, Microsoft.Extensions.Options.Options.Create(new CoreOptions()))
+    { }
+}
+
+public sealed partial class CallbackClient(IInterfaceHttpClient httpClient, ILogger<CallbackClient> logger, ICorrelationService correlation, IOptions<CoreOptions> coreOptions) : ICallbackClient
 {
     private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ILogger<CallbackClient> _logger = logger;

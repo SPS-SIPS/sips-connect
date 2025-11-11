@@ -12,6 +12,8 @@ using SIPS.Adapter;
 using SIPS.Core.Interfaces;
 using SIPS.Core.Services;
 using SIPS.Core.Services.Callback;
+using SIPS.Core.Services.Implementations;
+using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Persistence;
@@ -71,15 +73,19 @@ public class IncomingTransactionStatusHandler_Callback_Tests
         var correlation = new CorrelationService();
         var responses = new ResponseFactory();
         var persistence = new PersistenceGateway(recorder.Object);
-        var cbLogger = Mock.Of<ILogger<CallbackClient>>();
-        var callback = new CallbackClient(http.Object, cbLogger, correlation);
+    var cbLogger = Mock.Of<ILogger<CallbackClient>>();
+    var callback = new CallbackClient(http.Object, cbLogger, correlation);
+    var callbacks = new CallbackOrchestrator();
+    var isoService = new ISOMessageService(persistence);
+    var coreOptions = Microsoft.Extensions.Options.Options.Create(new Options.CoreOptions());
         var signature = new Mock<ISignatureService>();
         signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((true, "ok"));
+        var inbound = new InboundMessageService(signature.Object);
         var parser = new SIPS.Core.Tests.Parsers.PaymentStatusRequestParserShim();
 
         var sut = new IncomingTransactionStatusHandler(options, logger, http.Object, signer, verifier.Object, adapter.Object, recorder.Object,
-            signature.Object, parser, callback, responses, persistence, correlation);
+            signature.Object, parser, callback, responses, persistence, correlation, inbound, callbacks, isoService, coreOptions);
         return (sut, recorder, http, adapter);
     }
 

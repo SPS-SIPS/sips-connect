@@ -6,8 +6,8 @@ using Moq;
 using SIPS.Adapter;
 using SIPS.Core.Interfaces;
 using SIPS.Core.Services;
+using SIPS.Core.Services.Implementations;
 using SIPS.Core.Services.Callback;
-using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Responses;
@@ -16,6 +16,9 @@ using SIPS.ISO20022.Options;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Models;
 using Xunit;
+using SIPS.Core.Services.Correlation;
+using SIPS.Core.Services.Abstractions;
+using SIPS.Core.Options;
 
 namespace SIPS.Core.Tests.Tests;
 
@@ -49,15 +52,19 @@ public class IncomingTransactionHandlerTests
         var responses = new ResponseFactory();
         var persistence = new PersistenceGateway(recorderMock.Object);
 
-        var httpClientForCb = httpClientMock ?? new Mock<IInterfaceHttpClient>();
-        var cbLogger = Mock.Of<ILogger<CallbackClient>>();
-        var callback = new CallbackClient(httpClientForCb.Object, cbLogger, correlation);
+    var httpClientForCb = httpClientMock ?? new Mock<IInterfaceHttpClient>();
+    var cbLogger = Mock.Of<ILogger<CallbackClient>>();
+    var callback = new CallbackClient(httpClientForCb.Object, cbLogger, correlation);
+    var callbacks = new CallbackOrchestrator();
 
         var signature = (signatureMock ?? new Mock<ISignatureService>()).Object;
         var parser = (parserMock ?? new Mock<IPaymentRequestParser>()).Object;
-
+        var inbound = new InboundMessageService(signature);
+    var isoMessageService = new ISOMessageService(persistence);
+        var iptions = Mock.Of<Microsoft.Extensions.Options.IOptions<CoreOptions>>();
+        // SIPS.Core.Services.Abstractions.IInboundMessageService
         return new IncomingTransactionHandler(options, logger, httpClient, signer, verifier, jsonAdapter, recorder,
-            signature, parser, callback, responses, persistence, correlation);
+            signature, parser, callback, responses, persistence, correlation, inbound, callbacks, isoMessageService, iptions);
     }
 
     [Fact]

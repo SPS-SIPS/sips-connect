@@ -12,6 +12,8 @@ using SIPS.Adapter;
 using SIPS.Core.Interfaces;
 using SIPS.Core.Services;
 using SIPS.Core.Services.ISOParsers;
+using SIPS.Core.Services.Implementations;
+using SIPS.Core.Services.Abstractions;
 using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Options;
@@ -61,13 +63,17 @@ public class IncomingReturnTransactionHandler_Tests
         var signature = new Mock<SIPS.Core.Services.Verification.ISignatureService>();
         signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((true, "ok"));
-        var correlation = new SIPS.Core.Services.Correlation.CorrelationService();
-        var cbLogger = Mock.Of<ILogger<SIPS.Core.Services.Callback.CallbackClient>>();
-        var callback = new SIPS.Core.Services.Callback.CallbackClient(http.Object, cbLogger, correlation);
-        var parser = new SIPS.Core.Tests.Parsers.ReturnPaymentRequestParserShim();
-        var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
+    var correlation = new SIPS.Core.Services.Correlation.CorrelationService();
+    var cbLogger = Mock.Of<ILogger<SIPS.Core.Services.Callback.CallbackClient>>();
+    var callback = new SIPS.Core.Services.Callback.CallbackClient(http.Object, cbLogger, correlation);
+    var callbacks = new CallbackOrchestrator();
+    var parser = new SIPS.Core.Tests.Parsers.ReturnPaymentRequestParserShim();
+    var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
+    var inbound = new InboundMessageService(signature.Object);
+    var isoService = new ISOMessageService(persistence);
+    var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
 
-        var sut = new IncomingReturnTransactionHandler(options, logger, signer, adapter.Object, recorder.Object, signature.Object, persistence, correlation, callback, parser);
+    var sut = new IncomingReturnTransactionHandler(options, logger, signer, adapter.Object, recorder.Object, signature.Object, persistence, correlation, callback, parser, inbound, callbacks, isoService, coreOptions);
         return (sut, recorder, http, adapter);
     }
 

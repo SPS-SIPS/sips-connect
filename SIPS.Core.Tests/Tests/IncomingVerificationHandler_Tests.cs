@@ -17,6 +17,8 @@ using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Options;
 using SIPS.PostgreSQL.Enums;
+using SIPS.Core.Services.Implementations;
+using SIPS.Core.Services.Abstractions;
 using SIPS.PostgreSQL.Interfaces;
 using SIPS.PostgreSQL.Models;
 using SIPS.XMLDsig.Xades.Interfaces;
@@ -81,8 +83,12 @@ public class IncomingVerificationHandler_Tests
         var cbLogger = Mock.Of<ILogger<SIPS.Core.Services.Callback.CallbackClient>>();
         var callback = new SIPS.Core.Services.Callback.CallbackClient(http.Object, cbLogger, correlation);
 
-        var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
-        var sut = new IncomingVerificationHandler(options, logger, signer, adapter.Object, persistence, parser, signature.Object, correlation, callback);
+    var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
+    var inbound = new SIPS.Core.Services.Implementations.InboundMessageService(signature.Object);
+    var callbacks = Mock.Of<SIPS.Core.Services.Abstractions.ICallbackOrchestrator>();
+    var isoService = new SIPS.Core.Services.Implementations.ISOMessageService(persistence);
+    var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
+    var sut = new IncomingVerificationHandler(options, logger, signer, adapter.Object, persistence, parser, signature.Object, correlation, callback, inbound, callbacks, isoService, coreOptions);
         return (sut, recorder, http, adapter);
     }
 
@@ -170,9 +176,11 @@ public class IncomingVerificationHandler_Tests
                 return new SIPS.ISO20022.Models.DTOs.Response<JsonObject?>(new JsonObject { ["ok"] = true }) { StatusCode = HttpStatusCode.OK };
             });
 
-        var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
-        var inbound = new SIPS.Core.Services.Implementations.InboundMessageService(signature.Object);
-        var sut = new IncomingVerificationHandler(options, logger, signer, adapter.Object, persistence, parser.Object, signature.Object, correlation, callback, inbound, callbacks.Object, new SIPS.Core.Services.Implementations.ISOMessageService(persistence));
+    var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
+    var inbound = new SIPS.Core.Services.Implementations.InboundMessageService(signature.Object);
+    var isoService = new SIPS.Core.Services.Implementations.ISOMessageService(persistence);
+    var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
+    var sut = new IncomingVerificationHandler(options, logger, signer, adapter.Object, persistence, parser.Object, signature.Object, correlation, callback, inbound, callbacks.Object, isoService, coreOptions);
         return (sut, recorder, http);
     }
 

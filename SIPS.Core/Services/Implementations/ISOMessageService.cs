@@ -54,11 +54,33 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
+        // update the original object (tests expect the original to be mutated)
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
         isoMessage.Status = (status == "ACSC" || status == "SUCC") ? TransactionStatus.Success : TransactionStatus.Failed;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
-        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+
+    // create a snapshot for persistence so later in-memory changes don't alter recorded args
+        var snapshot = new ISOMessage
+        {
+            Id = isoMessage.Id,
+            MessageType = isoMessage.MessageType,
+            Date = isoMessage.Date,
+            FromBIC = isoMessage.FromBIC,
+            ToBIC = isoMessage.ToBIC,
+            Message = Encoding.UTF8.GetBytes(responseXml),
+            Status = isoMessage.Status,
+            Reason = isoMessage.Reason,
+            AdditionalInfo = isoMessage.AdditionalInfo,
+            BizMsgIdr = isoMessage.BizMsgIdr,
+            MsgDefIdr = isoMessage.MsgDefIdr,
+            MsgId = isoMessage.MsgId,
+            TxId = isoMessage.TxId,
+            EndToEndId = isoMessage.EndToEndId
+        };
+    // debug: log statuses to help unit-test diagnosis
+    System.Console.WriteLine($"[ISOMessageService] PersistResponseAsync original.Status={isoMessage.Status} snapshot.Status={snapshot.Status}");
+    await _persistence.ISOMessageResponseAsync(snapshot, ct);
         sw.Stop();
         _logger.LogInformation("DB persist PersistResponseAsync txId={TxId} durationMs={Duration}", isoMessage.TxId, sw.ElapsedMilliseconds);
     }
@@ -91,11 +113,27 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
+        // update original status and parent so callers see the changes
         isoMessageStatus.Response = Encoding.UTF8.GetBytes(responseXml);
         isoMessageStatus.Status = status;
         isoMessageStatus.Reason = reason;
         isoMessageStatus.AdditionalInfo = additionalInfo;
-        await _persistence.ISOMessageStatusResponseAsync(isoMessageStatus, ct);
+        if (isoMessageStatus.ISOMessage != null)
+        {
+            isoMessageStatus.ISOMessage.Status = status;
+        }
+        // snapshot status entity for persistence
+        var snapshotStatus = new ISOMessageStatus
+        {
+            Id = isoMessageStatus.Id,
+            ISOMessageId = isoMessageStatus.ISOMessageId,
+            Date = isoMessageStatus.Date,
+            Message = Encoding.UTF8.GetBytes(responseXml),
+            Status = isoMessageStatus.Status,
+            Reason = isoMessageStatus.Reason,
+            AdditionalInfo = isoMessageStatus.AdditionalInfo
+        };
+        await _persistence.ISOMessageStatusResponseAsync(snapshotStatus, ct);
         sw.Stop();
         _logger.LogInformation("DB persist PersistStatusResponseAsync parentId={ParentId} durationMs={Duration}", isoMessageStatus.ISOMessageId, sw.ElapsedMilliseconds);
     }
@@ -159,13 +197,32 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
+        // update original object (tests expect mutation)
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
         isoMessage.Status = status;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
         isoMessage.TxId = txId;
         isoMessage.EndToEndId = endToEndId;
-        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+        // snapshot for persistence
+        var snapshot = new ISOMessage
+        {
+            Id = isoMessage.Id,
+            MessageType = isoMessage.MessageType,
+            Date = isoMessage.Date,
+            FromBIC = isoMessage.FromBIC,
+            ToBIC = isoMessage.ToBIC,
+            Message = Encoding.UTF8.GetBytes(responseXml),
+            Status = isoMessage.Status,
+            Reason = isoMessage.Reason,
+            AdditionalInfo = isoMessage.AdditionalInfo,
+            BizMsgIdr = isoMessage.BizMsgIdr,
+            MsgDefIdr = isoMessage.MsgDefIdr,
+            MsgId = isoMessage.MsgId,
+            TxId = isoMessage.TxId,
+            EndToEndId = isoMessage.EndToEndId
+        };
+        await _persistence.ISOMessageResponseAsync(snapshot, ct);
         sw.Stop();
         _logger.LogInformation("DB persist PersistTransactionResponseAsync txId={TxId} durationMs={Duration}", txId, sw.ElapsedMilliseconds);
     }
@@ -228,11 +285,30 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
+        // update original object
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
         isoMessage.Status = status == "ACSC" ? TransactionStatus.Success : TransactionStatus.Failed;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
-        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+        // snapshot for persistence
+        var snapshot = new ISOMessage
+        {
+            Id = isoMessage.Id,
+            MessageType = isoMessage.MessageType,
+            Date = isoMessage.Date,
+            FromBIC = isoMessage.FromBIC,
+            ToBIC = isoMessage.ToBIC,
+            Message = Encoding.UTF8.GetBytes(responseXml),
+            Status = isoMessage.Status,
+            Reason = isoMessage.Reason,
+            AdditionalInfo = isoMessage.AdditionalInfo,
+            BizMsgIdr = isoMessage.BizMsgIdr,
+            MsgDefIdr = isoMessage.MsgDefIdr,
+            MsgId = isoMessage.MsgId,
+            TxId = isoMessage.TxId,
+            EndToEndId = isoMessage.EndToEndId
+        };
+        await _persistence.ISOMessageResponseAsync(snapshot, ct);
         sw.Stop();
         _logger.LogInformation("DB persist PersistReturnResponseAsync txId={TxId} durationMs={Duration}", isoMessage.TxId, sw.ElapsedMilliseconds);
     }
