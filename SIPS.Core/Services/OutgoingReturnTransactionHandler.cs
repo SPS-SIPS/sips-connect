@@ -11,6 +11,8 @@ using System.Text.Json;
 using SIPS.Core.Services.Verification;
 using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 namespace SIPS.Core.Services;
 public sealed class OutgoingReturnTransactionHandler(
     ISO20022Options options,
@@ -21,7 +23,8 @@ public sealed class OutgoingReturnTransactionHandler(
     IIncomingRecorder record,
     ISignatureService signature,
     IPersistenceGateway persistence,
-    ICorrelationService correlation
+    ICorrelationService correlation,
+    IOptions<CoreOptions> coreOptions
     ) : IOutgoingReturnTransactionHandler
 {
     private readonly IInterfaceHttpClient _httpClient = httpClient;
@@ -33,6 +36,7 @@ public sealed class OutgoingReturnTransactionHandler(
     private readonly ISignatureService _signature = signature;
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
+    private readonly CoreOptions _core = coreOptions.Value;
     public async Task<Response<ReturnPaymentResponseDto>> HandleAsync(ReturnPaymentRequestDto message, CancellationToken ct)
     {
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
@@ -42,8 +46,10 @@ public sealed class OutgoingReturnTransactionHandler(
 
         try
         {
+            using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            var dbCt = dbCts.Token;
             // Step 1: Retrieve original message and transaction
-            var (isValid, originalMessage, transaction) = await GetOriginalTransactionAsync(message.OriginalTxId, ct);
+            var (isValid, originalMessage, transaction) = await GetOriginalTransactionAsync(message.OriginalTxId, dbCt);
             if (!isValid || originalMessage == null || transaction == null)
                 return Response<ReturnPaymentResponseDto>.Fail("Transaction not found: " + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
 
@@ -52,11 +58,11 @@ public sealed class OutgoingReturnTransactionHandler(
             var (document, bizMsgIdr, type, msgId) = BuildRequest(transaction, fromBIC, message.ReturnId, reason: message.Reason, additionalInfo: message.AdditionalInfo);
             var signed = _signer.SignEnvelope(document);
             var entity = CreateISOMessage(message, transaction, fromBIC, txId, signed, msgId, type, bizMsgIdr);
-            var record = await _persistence.RecordISOMessageAsync(entity, ct);
+            var record = await _persistence.RecordISOMessageAsync(entity, dbCt);
 
             // Step 3: Call SIPS and handle response
             var responseMessage = await CallSIPSAsync(url, signed, ct, cid);
-            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
+            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, dbCt);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
 
@@ -65,7 +71,7 @@ public sealed class OutgoingReturnTransactionHandler(
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse the message: {message}", cid, responseMessage.Data);
-                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, ct);
+                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, dbCt);
                 return Response<ReturnPaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
             _logger.LogInformation("[{CorrelationId}] Parsed response from SIPS: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
@@ -73,7 +79,7 @@ public sealed class OutgoingReturnTransactionHandler(
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true
             }));
-            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, ct, rs.TxId ?? string.Empty, rs.Original?.OriginalEndToEnd ?? string.Empty);
+            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, dbCt, rs.TxId ?? string.Empty, rs.Original?.OriginalEndToEnd ?? string.Empty);
 
             // Step 5: Return success response
             return Response<ReturnPaymentResponseDto>.Success(new ReturnPaymentResponseDto

@@ -11,6 +11,8 @@ using Microsoft.Extensions.Logging;
 using SIPS.Core.Services.Verification;
 using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 
 namespace SIPS.Core.Services;
 
@@ -21,7 +23,8 @@ public sealed class OutgoingVerificationHandler(
     ISignatureService signature,
     IPersistenceGateway persistence,
     ICorrelationService correlation,
-    SIPS.Core.Services.Abstractions.ISipsRequestSender sips
+    SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
+    IOptions<CoreOptions> coreOptions
     ) : IOutgoingVerificationHandler
 {
     private readonly ISO20022Options _configuration = options;
@@ -31,6 +34,7 @@ public sealed class OutgoingVerificationHandler(
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
     private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
+    private readonly CoreOptions _core = coreOptions.Value;
 
     public async Task<Response<VerificationResponseDto>> HandleAsync(VerificationRequestDto message, CancellationToken ct)
     {
@@ -66,7 +70,9 @@ public sealed class OutgoingVerificationHandler(
                 BizMsgIdr = bizMsgIdr,
                 MsgDefIdr = type,
             };
-            var record = await _persistence.RecordISOMessageAsync(isoMessage, ct);
+            using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            var dbCt = dbCts.Token;
+            var record = await _persistence.RecordISOMessageAsync(isoMessage, dbCt);
 
             // Step 4: Send the verification request to SIPS
             var responseMessage = await _sips.SendAsync(url, signedRequest, ct, cid);
@@ -75,7 +81,7 @@ public sealed class OutgoingVerificationHandler(
             // Step 5: Validate the SIPS response
             if (!responseMessage.IsSuccess || string.IsNullOrEmpty(responseMessage.Data))
             {
-                await PersistISOMessageAsync(record, false, "Failed to receive valid response from SIPS", responseMessage.Message, responseMessage.Data ?? string.Empty, string.Empty, ct);
+                await PersistISOMessageAsync(record, false, "Failed to receive valid response from SIPS", responseMessage.Message, responseMessage.Data ?? string.Empty, string.Empty, dbCt);
                 return Response<VerificationResponseDto>.Fail(Transformers.TransformSIPSHttpError(responseMessage.StatusCode), responseMessage.StatusCode);
             }
 
@@ -83,14 +89,14 @@ public sealed class OutgoingVerificationHandler(
             var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
             if (!ok)
             {
-                await PersistISOMessageAsync(record, false, "Failed to verify the signature from SIPS", "Signature verification failed", responseMessage.Data, string.Empty, ct);
+                await PersistISOMessageAsync(record, false, "Failed to verify the signature from SIPS", "Signature verification failed", responseMessage.Data, string.Empty, dbCt);
                 _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {Verbose}", cid, verbose);
                 return Response<VerificationResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
             }
 
             // Step 7: Parse and persist the SIPS response
             var parsedResponse = PayeeVerificationResponseBuilder.Parse(responseMessage.Data);
-            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason ?? string.Empty, string.Empty, responseMessage.Data, parsedResponse.VerificationId ?? string.Empty, ct);
+            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason ?? string.Empty, string.Empty, responseMessage.Data, parsedResponse.VerificationId ?? string.Empty, dbCt);
 
             // Step 8: Return success response
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto

@@ -15,6 +15,8 @@ using System.Text.Json;
 using SIPS.Core.Services.Verification;
 using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionStatusHandler(
     ISO20022Options options,
@@ -23,7 +25,8 @@ public sealed class OutgoingTransactionStatusHandler(
     ISignatureService signature,
     IPersistenceGateway persistence,
     ICorrelationService correlation,
-    SIPS.Core.Services.Abstractions.ISipsRequestSender sips
+    SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
+    IOptions<CoreOptions> coreOptions
     ) : IOutgoingTransactionStatusHandler
 {
     private readonly ISO20022Options _configuration = options;
@@ -33,6 +36,7 @@ public sealed class OutgoingTransactionStatusHandler(
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
     private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
+    private readonly CoreOptions _core = coreOptions.Value;
     public async Task<Response<PaymentResponseDto>> HandleAsync(StatusRequestDto message, CancellationToken ct)
     {
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
@@ -41,8 +45,10 @@ public sealed class OutgoingTransactionStatusHandler(
 
         try
         {
+            using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            var dbCt = dbCts.Token;
             // Step 1: Retrieve ISO message by TxId
-            var isoMessage = await _persistence.GetISOMessageByTxIdAsync(message.TxId, ct);
+            var isoMessage = await _persistence.GetISOMessageByTxIdAsync(message.TxId, dbCt);
             _logger.LogInformation("[{CorrelationId}] Retrieved ISO message: {ISOMessage}", cid, JsonSerializer.Serialize(isoMessage, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -56,11 +62,11 @@ public sealed class OutgoingTransactionStatusHandler(
                 return Response<PaymentResponseDto>.Fail("Failed to build the request.", System.Net.HttpStatusCode.BadRequest);
             var signed = _signer.SignEnvelope(request);
             isoMessage.Round++;
-            var record = await CreateISOMessageAsync(signed, isoMessage, ct);
+            var record = await CreateISOMessageAsync(signed, isoMessage, dbCt);
 
             // Step 3: Call SIPS and handle response
             var responseMessage = await _sips.SendAsync(url, signed, ct, cid);
-            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
+            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, dbCt);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
 
@@ -68,10 +74,10 @@ public sealed class OutgoingTransactionStatusHandler(
             if (!TryParse(responseMessage?.Data!, out var rs) || rs == null)
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse the message: {message}", cid, responseMessage?.Data ?? "");
-                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage?.Data!, ct);
+                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage?.Data!, dbCt);
                 return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
-            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage!.Data!, ct);
+            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage!.Data!, dbCt);
 
             // Step 5: Return success response
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto

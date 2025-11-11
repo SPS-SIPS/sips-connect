@@ -11,6 +11,8 @@ using System.Text.Json;
 using SIPS.Core.Services.Verification;
 using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionHandler(
     ISO20022Options options,
@@ -19,7 +21,8 @@ public sealed class OutgoingTransactionHandler(
     ISignatureService signature,
     IPersistenceGateway persistence,
     ICorrelationService correlation,
-    SIPS.Core.Services.Abstractions.ISipsRequestSender sips
+    SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
+    IOptions<CoreOptions> coreOptions
     ) : IOutgoingTransactionHandler
 {
     private readonly ISO20022Options _configuration = options;
@@ -29,6 +32,7 @@ public sealed class OutgoingTransactionHandler(
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
     private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
+    private readonly CoreOptions _core = coreOptions.Value;
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
         _logger.LogInformation("Processing Outgoing Transaction Request");
@@ -44,7 +48,9 @@ public sealed class OutgoingTransactionHandler(
             var (document, bizMsgIdr, type, msgId) = BuildRequest(message, fromBIC, ourAgentBic, txId);
             var signed = _signer.SignEnvelope(document);
             var entity = CreateISOMessage(message, fromBIC, ourAgentBic, txId, signed, bizMsgIdr, type, msgId);
-            var record = await _persistence.RecordISOMessageAsync(entity, ct);
+            using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            var dbCt = dbCts.Token;
+            var record = await _persistence.RecordISOMessageAsync(entity, dbCt);
 
             // Step 2: Call SIPS and handle response
             var responseMessage = await _sips.SendAsync(url, signed, ct, cid);
@@ -56,7 +62,7 @@ public sealed class OutgoingTransactionHandler(
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse the message: {message}", cid, responseMessage.Data);
-                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, ct);
+                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, dbCt);
                 return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
             _logger.LogInformation("[{CorrelationId}] Original Response from SIPS: {message}", cid, responseMessage.Data!);
@@ -66,7 +72,7 @@ public sealed class OutgoingTransactionHandler(
                 WriteIndented = true,
             }));
 
-            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? string.Empty, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, ct);
+            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? string.Empty, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, dbCt);
 
             // Step 4: Return success response
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
