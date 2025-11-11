@@ -22,6 +22,8 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 
 namespace SIPS.Core.Services;
 
@@ -41,7 +43,8 @@ public sealed class IncomingTransactionStatusHandler(
     ICorrelationService correlation,
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
-    IISOMessageService isoService
+    IISOMessageService isoService,
+    IOptions<CoreOptions> coreOptions
 ) : IIncomingTransactionStatusHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -60,6 +63,7 @@ public sealed class IncomingTransactionStatusHandler(
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
+    private readonly CoreOptions _core = coreOptions.Value;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -81,11 +85,13 @@ public sealed class IncomingTransactionStatusHandler(
         ICallbackClient callback,
         IResponseFactory responseFactory,
         IPersistenceGateway persistence,
-        ICorrelationService correlation)
+        ICorrelationService correlation,
+        IOptions<CoreOptions> coreOptions)
         : this(options, logger, httpClient, signer, verifier, jsonAdapter, record, signature, parser, callback, responseFactory, persistence, correlation,
               new InboundMessageService(signature),
               new CallbackOrchestrator(),
-              new ISOMessageService(persistence))
+              new ISOMessageService(persistence),
+              coreOptions)
     {
     }
 
@@ -122,7 +128,7 @@ public sealed class IncomingTransactionStatusHandler(
 
         try
         {
-            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
             // Step 5: Send callback and parse result
             var headers = new Dictionary<string, string>() {
@@ -167,7 +173,8 @@ public sealed class IncomingTransactionStatusHandler(
 
             // Step 6: Build, persist, and sign response
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            var finalStatus = (response.Status == ACSC) ? TransactionStatus.Success : TransactionStatus.Failed;
+            await _isoService.PersistStatusResponseAsync(record, finalStatus, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -175,7 +182,7 @@ public sealed class IncomingTransactionStatusHandler(
             _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request.OrgnlTxId);
             response.AdditionalInfo = "Failed to transfer: " + ex.Message;
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            using var dbCts2 = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+            using var dbCts2 = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCts2.Token);
             return _signer.SignEnvelope(rsp);
         }

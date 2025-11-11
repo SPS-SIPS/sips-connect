@@ -11,4 +11,7 @@ public class CoreOptions
     public int SAFPage { get; set; } = 40;
     public string SAFTimeZoneInfo { get; set; } = "";
     public int SAFMaxRetries { get; set; } = 10;
+    public bool IncludeIdempotencyHeaders { get; set; } = false;
+    public int HttpTimeoutSeconds { get; set; } = 15;
+    public int DbPersistTimeoutSeconds { get; set; } = 10;
 }

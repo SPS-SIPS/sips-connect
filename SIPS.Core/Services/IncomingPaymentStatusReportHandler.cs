@@ -19,6 +19,8 @@ using SIPS.XMLDsig.Xades.Services;
 using SIPS.Core.Services.ISOParsers;
 using SIPS.PostgreSQL.Enums;
 using SIPS.ISO20022.Models.DTOs;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 
 namespace SIPS.Core.Services;
 
@@ -34,7 +36,8 @@ public sealed class IncomingPaymentStatusReportHandler(
     ICorrelationService correlation,
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
-    IISOMessageService isoService
+    IISOMessageService isoService,
+    IOptions<CoreOptions> coreOptions
 ) : IIncomingPaymentStatusReportHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -48,6 +51,7 @@ public sealed class IncomingPaymentStatusReportHandler(
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
+    private readonly CoreOptions _core = coreOptions.Value;
     private readonly IPaymentStatusReportParser _reportParser = reportParser;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
@@ -58,7 +62,7 @@ public sealed class IncomingPaymentStatusReportHandler(
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         var cid = _correlation.Create();
-        using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+        using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
         var dbCt = dbCts.Token;
         // Step 1: Verify signature and parse via parser
         var (isValid, request) = await _inbound.VerifyAndParseAsync<PaymentRequestResponseBuilder.Response>(

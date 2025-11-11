@@ -6,12 +6,15 @@ using System.Text.Json.Nodes;
 using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Models.DTOs;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 namespace SIPS.Core.Services;
 
-public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient httpClient) : IInterfaceHttpClient
+public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient httpClient, IOptions<CoreOptions> coreOptions) : IInterfaceHttpClient
 {
     private readonly ILogger<InterfaceHttpClient> _logger = logger;
     private readonly HttpClient _httpClient = httpClient;
+    private readonly CoreOptions _core = coreOptions.Value;
     private readonly JsonSerializerOptions serializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -50,7 +53,7 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
             }
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            linkedCts.CancelAfter(TimeSpan.FromSeconds(15));
+            linkedCts.CancelAfter(TimeSpan.FromSeconds(_core.HttpTimeoutSeconds > 0 ? _core.HttpTimeoutSeconds : 15));
 
             var response = await _httpClient.SendAsync(message, linkedCts.Token);
             var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
@@ -98,7 +101,7 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
             requestContent.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            linkedCts.CancelAfter(TimeSpan.FromSeconds(15));
+            linkedCts.CancelAfter(TimeSpan.FromSeconds(_core.HttpTimeoutSeconds > 0 ? _core.HttpTimeoutSeconds : 15));
 
             var response = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
             var content = await response.Content.ReadAsStringAsync(linkedCts.Token);

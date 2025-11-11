@@ -21,6 +21,8 @@ using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
 using SIPS.PostgreSQL.Enums;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 namespace SIPS.Core.Services;
 public sealed class IncomingReturnTransactionHandler(
     ISO20022Options options,
@@ -35,7 +37,8 @@ public sealed class IncomingReturnTransactionHandler(
     IReturnPaymentRequestParser parser,
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
-    IISOMessageService isoService
+    IISOMessageService isoService,
+    IOptions<CoreOptions> coreOptions
     ) : IIncomingReturnTransactionHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -51,6 +54,7 @@ public sealed class IncomingReturnTransactionHandler(
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
+    private readonly CoreOptions _core = coreOptions.Value;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -68,18 +72,20 @@ public sealed class IncomingReturnTransactionHandler(
         IPersistenceGateway persistence,
         ICorrelationService correlation,
         ICallbackClient callback,
-        IReturnPaymentRequestParser parser)
+        IReturnPaymentRequestParser parser,
+        IOptions<CoreOptions> coreOptions)
         : this(options, logger, signer, jsonAdapter, record, signature, persistence, correlation, callback, parser,
               new InboundMessageService(signature),
               new CallbackOrchestrator(),
-              new ISOMessageService(persistence))
+              new ISOMessageService(persistence),
+              coreOptions)
     {
     }
 
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         var cid = _correlation.Create();
-        using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+        using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
         var dbCt = dbCts.Token;
         // Step 1: Verify signature and parse message via helper
         var (isValid, request) = await _inbound.VerifyAndParseAsync(

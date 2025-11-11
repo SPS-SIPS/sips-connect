@@ -21,6 +21,8 @@ using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
 using SIPS.PostgreSQL.Enums;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
 namespace SIPS.Core.Services;
 public sealed class IncomingTransactionHandler(
     ISO20022Options options,
@@ -38,7 +40,8 @@ public sealed class IncomingTransactionHandler(
     ICorrelationService correlation,
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
-    IISOMessageService isoService
+    IISOMessageService isoService,
+    IOptions<CoreOptions> coreOptions
     ) : IIncomingTransactionHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -57,6 +60,7 @@ public sealed class IncomingTransactionHandler(
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
+    private readonly CoreOptions _core = coreOptions.Value;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -78,11 +82,13 @@ public sealed class IncomingTransactionHandler(
         ICallbackClient callback,
         IResponseFactory responseFactory,
         IPersistenceGateway persistence,
-        ICorrelationService correlation)
+        ICorrelationService correlation,
+        IOptions<CoreOptions> coreOptions)
         : this(options, logger, httpClient, signer, verifier, jsonAdapter, record, signature, parser, callback, responseFactory, persistence, correlation,
               new InboundMessageService(signature),
               new CallbackOrchestrator(),
-              new ISOMessageService(persistence))
+              new ISOMessageService(persistence),
+              coreOptions)
     {
     }
     public async Task<string> HandleAsync(string message, CancellationToken ct)
@@ -110,7 +116,7 @@ public sealed class IncomingTransactionHandler(
 
         try
         {
-            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
             // Step 4: Immediately acknowledge with ACSC to the sender; CoreBank processing will occur upon status report
             response.Status = ACSC;
@@ -134,7 +140,7 @@ public sealed class IncomingTransactionHandler(
             _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request?.TxId);
             response.AdditionalInfo = "Failed to process Transaction";
             var rsp = PaymentRequestResponseBuilder.Build(response);
-            using var dbCts2 = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+            using var dbCts2 = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             await _isoService.PersistTransactionResponseAsync(record,
                 TransactionStatus.Failed,
                 "Failed to process Transaction",

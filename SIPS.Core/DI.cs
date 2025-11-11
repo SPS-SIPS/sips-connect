@@ -21,12 +21,14 @@ using SIPS.Core.Workers;
 using SIPS.Core.Models;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
+using SIPS.Core.Options;
 namespace SIPS.Core;
 public static class DI
 {
     public static IServiceCollection AddCore(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<IAuthService, AuthService>();
+        services.Configure<CoreOptions>(configuration.GetSection("Core"));
         services.AddSingleton<ICacheService, CacheService>();
         services.AddSingleton<ICertificateDownloadService, CertificateDownloadService>();
         services.AddScoped<IIncoming, Incoming>();
