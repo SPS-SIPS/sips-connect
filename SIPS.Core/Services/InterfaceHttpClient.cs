@@ -26,9 +26,11 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
                 Content = requestContent,
                 Headers =
                 {
-                    { HttpRequestHeader.ContentType.ToString(), "application/json" }
                 }
             };
+
+            // ensure content-type is correctly set on the content
+            requestContent.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
             if (headers != null)
             {
@@ -38,21 +40,29 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
                 }
             }
 
-            var response = await _httpClient.SendAsync(message, cancellationToken);
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            linkedCts.CancelAfter(TimeSpan.FromSeconds(15));
+
+            var response = await _httpClient.SendAsync(message, linkedCts.Token);
+            var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
             var data = JsonSerializer.Deserialize<JsonObject>(content, serializerOptions);
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("GET request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, completeUrl, data);
+                _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, completeUrl, data);
                 return Response<JsonObject?>.Fail("Request Failed with Error", response.StatusCode, data);
             }
 
             return Response<JsonObject?>.Success(data);
         }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "POST request to {Url} timed out.", completeUrl);
+            return Response<JsonObject?>.Fail("Request timed out", HttpStatusCode.RequestTimeout);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GET request to {Url} failed.", completeUrl);
+            _logger.LogError(ex, "POST request to {Url} failed.", completeUrl);
             return Response<JsonObject?>.Fail(ex.Message, HttpStatusCode.InternalServerError);
         }
     }
@@ -67,22 +77,26 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
                 Content = requestContent,
                 Headers =
                 {
-                    { HttpRequestHeader.ContentType.ToString(), "application/xml" }
                 }
             };
 
-            var response = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            requestContent.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            linkedCts.CancelAfter(TimeSpan.FromSeconds(15));
+
+            var response = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+            var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("GET request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, url, content);
+                _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, url, content);
                 return Response<string>.Fail("Failed To Get Valid Response From SIPS", response.StatusCode, content);
             }
 
             if (response.StatusCode == HttpStatusCode.BadRequest)
             {
-                _logger.LogWarning("GET request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, url, content);
+                _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, url, content);
                 return Response<string>.Fail("SIPS Responded with Bad Request - Check your ", response.StatusCode);
             }
 
@@ -90,12 +104,12 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError(ex, "GET request to {Url} timed out.", url);
+            _logger.LogError(ex, "POST request to {Url} timed out.", url);
             return Response<string>.Fail("Request timed out", HttpStatusCode.RequestTimeout, "Request timed out");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GET request to {Url} failed.", url);
+            _logger.LogError(ex, "POST request to {Url} failed.", url);
             return Response<string>.Fail(ex.Message, HttpStatusCode.InternalServerError);
         }
     }

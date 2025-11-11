@@ -79,6 +79,8 @@ public sealed class IncomingReturnTransactionHandler(
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         var cid = _correlation.Create();
+        using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+        var dbCt = dbCts.Token;
         // Step 1: Verify signature and parse message via helper
         var (isValid, request) = await _inbound.VerifyAndParseAsync(
             message,
@@ -107,7 +109,7 @@ public sealed class IncomingReturnTransactionHandler(
             response.Reason = MISS;
             response.Status = RJCT;
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            await _isoService.PersistTransactionResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, response.TxId ?? string.Empty, request.OriginalEndToEnd ?? string.Empty, ct);
+            await _isoService.PersistTransactionResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, response.TxId ?? string.Empty, request.OriginalEndToEnd ?? string.Empty, dbCt);
             return _signer.SignEnvelope(rsp);
         }
 
@@ -118,6 +120,8 @@ public sealed class IncomingReturnTransactionHandler(
                 { API_Key, _callbackLinks.Key! },
                 { API_Secret, _callbackLinks.Secret! }
             };
+            var idem = string.IsNullOrWhiteSpace(request.ReturnId) ? request.OrgnlTxId : $"{request.OrgnlTxId}-{request.ReturnId}";
+            headers["X-Idempotency-Key"] = idem;
             var dto = new CBReturnRequestDto
             {
                 FromBIC = request.From,
@@ -149,7 +153,7 @@ public sealed class IncomingReturnTransactionHandler(
             // Step 6: Build, persist, and sign response
             var rsp = ReturnPaymentResponseBuilder.Build(response);
             _logger.LogInformation("[{CorrelationId}] Built response (IRTH): {Response}", cid, rsp);
-            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
+            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -157,7 +161,7 @@ public sealed class IncomingReturnTransactionHandler(
             _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request.OrgnlTxId);
             response.AdditionalInfo = "Failed to transfer: " + ex.Message;
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
+            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
         }
     }

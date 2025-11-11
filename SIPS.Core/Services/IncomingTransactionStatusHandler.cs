@@ -109,7 +109,8 @@ public sealed class IncomingTransactionStatusHandler(
         var isoMessage = await _persistence.GetISOMessageByTxIdAsync(request.OrgnlTxId, ct);
         if (isoMessage == null)
         {
-            await CreateISOMessage(request, message, ct);
+            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+            await CreateISOMessage(request, message, dbCts.Token);
             return AdminMessage.Generate("Failed to get the Message.");
         }
 
@@ -121,11 +122,18 @@ public sealed class IncomingTransactionStatusHandler(
 
         try
         {
+            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+            var dbCt = dbCts.Token;
             // Step 5: Send callback and parse result
             var headers = new Dictionary<string, string>() {
                 { API_Key, _callbackLinks.Key! },
                 { API_Secret, _callbackLinks.Secret! }
             };
+            // Idempotency key for safe retries downstream
+            var idem = string.IsNullOrWhiteSpace(request.OriginalEndToEnd)
+                ? request.OrgnlTxId
+                : $"{request.OrgnlTxId}-{request.OriginalEndToEnd}";
+            headers["X-Idempotency-Key"] = idem;
             var dto = new CBStatusRequestDto
             {
                 FromBIC = request.From,
@@ -149,14 +157,14 @@ public sealed class IncomingTransactionStatusHandler(
             }
             else
             {
-                await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Failed to parse the message", "Failed to parse the message", string.Empty, ct);
+                await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Failed to parse the message", "Failed to parse the message", string.Empty, dbCt);
                 _logger.LogWarning("[{CorrelationId}] Failed to get response from CB. Status: {Status}", cid, responseMessage.StatusCode);
                 response.AdditionalInfo = "Failed to get response from CB.";
             }
 
             // Step 6: Build, persist, and sign response
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -164,7 +172,8 @@ public sealed class IncomingTransactionStatusHandler(
             _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request.OrgnlTxId);
             response.AdditionalInfo = "Failed to transfer: " + ex.Message;
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, ct);
+            using var dbCts2 = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCts2.Token);
             return _signer.SignEnvelope(rsp);
         }
     }

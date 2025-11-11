@@ -78,6 +78,8 @@ public sealed class IncomingPaymentStatusReportHandler(
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         var cid = _correlation.Create();
+        using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+        var dbCt = dbCts.Token;
         // Step 1: Verify signature and parse via parser
         var (isValid, request) = await _inbound.VerifyAndParseAsync<PaymentRequestResponseBuilder.Response>(
             message,
@@ -108,25 +110,25 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         if (transaction == null)
         {
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Failed To locate", "Not found", "No Message Found", ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Failed To locate", "Not found", "No Message Found", dbCt);
             return AdminMessage.Generate("Failed to get the Transaction.");
         }
 
         if (transaction.Amount != request.Original?.Amount)
         {
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Amount", "Invalid Amount", "Invalid Amount", ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Amount", "Invalid Amount", "Invalid Amount", dbCt);
             return AdminMessage.Generate("Invalid Transaction Amount!");
         }
 
         if (transaction.Currency != request.Original?.Currency)
         {
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Currency", "Invalid Currency", "Invalid Currency", ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Currency", "Invalid Currency", "Invalid Currency", dbCt);
             return AdminMessage.Generate("Invalid Transaction Currency!");
         }
 
         if ((transaction.DebtorAccount != request.Original?.Debtor?.Account) || (transaction.CreditorAccount != request.Original?.Creditor?.Account))
         {
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Debtor or Creditor", "Invalid Debtor or Creditor", "Invalid Debtor or Creditor", ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Debtor or Creditor", "Invalid Debtor or Creditor", "Invalid Debtor or Creditor", dbCt);
             return AdminMessage.Generate("Invalid Transaction Accounts");
         }
 
@@ -154,7 +156,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         // If related ISO message is not pending anymore, just mirror and return without forwarding
         if (isoMessage.Status != TransactionStatus.Pending)
         {
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Not Pending", "Only Pendig Transaction Can be modified", "Invalid Process", ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Not Pending", "Only Pendig Transaction Can be modified", "Invalid Process", dbCt);
             return AdminMessage.Generate($"No Pending Transaction Related to this TxId {request.TxId}");
         }
 
@@ -165,7 +167,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             isoMessage.Status = TransactionStatus.Failed;
             isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : "Received rejection confirmation";
             isoMessage.AdditionalInfo = "Standard Rejection Confirmaiton Notification Received";
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, ct);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, dbCt);
             return _signer.SignEnvelope(rspRej);
         }
 
@@ -173,6 +175,10 @@ public sealed class IncomingPaymentStatusReportHandler(
                         { API_Key, _callbackLinks.Key! },
                         { API_Secret, _callbackLinks.Secret! }
                     };
+        // Idempotency key for safe retries downstream
+        var idem = transaction?.TxId ?? request.TxId;
+        if (!string.IsNullOrWhiteSpace(idem))
+            headers["X-Idempotency-Key"] = idem!;
 
         // Here incomingStatus must be ACSC; build CB payment request payload for CB
 
@@ -254,7 +260,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             isoMessage.Reason,
             isoMessage.AdditionalInfo,
             rspFinal,
-            ct);
+            dbCt);
 
         return _signer.SignEnvelope(rspFinal);
     }

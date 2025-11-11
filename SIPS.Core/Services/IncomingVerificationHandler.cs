@@ -78,6 +78,8 @@ public sealed class IncomingVerificationHandler(
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
         var cid = _correlation.Create();
+        using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+        var dbCt = dbCts.Token;
         // Step 1: Verify signature and parse message via helper
         var (isValid, request) = await _inbound.VerifyAndParseAsync(
             message,
@@ -104,6 +106,8 @@ public sealed class IncomingVerificationHandler(
                 { API_Key, _callbackLinks.Key! },
                 { API_Secret, _callbackLinks.Secret! }
             };
+            if (!string.IsNullOrWhiteSpace(request.SIPSRequestId))
+                headers["X-Idempotency-Key"] = request.SIPSRequestId!;
             // Normalize alias and type prior to CoreBank matching
             var normalizedAlias = (request.Alias ?? string.Empty).Trim();
             if (normalizedAlias.StartsWith("USD:", StringComparison.OrdinalIgnoreCase))
@@ -141,14 +145,14 @@ public sealed class IncomingVerificationHandler(
 
             // Step 5: Build, persist, and sign response via helper
             var rsp = PayeeVerificationResponseBuilder.Build(response);
-            await _isoService.PersistResponseAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
+            await _isoService.PersistResponseAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[{CorrelationId}] Failed to verify payee", cid);
             var rsp = PayeeVerificationResponseBuilder.Build(response);
-            await _isoService.PersistResponseAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, ct);
+            await _isoService.PersistResponseAsync(isoMessage, response.Verified ? SUCC : MISS, response.Reason, response.AdditionalInfo, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
         }
     }

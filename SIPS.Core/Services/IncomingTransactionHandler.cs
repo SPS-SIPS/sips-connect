@@ -110,6 +110,8 @@ public sealed class IncomingTransactionHandler(
 
         try
         {
+            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
+            var dbCt = dbCts.Token;
             // Step 4: Immediately acknowledge with ACSC to the sender; CoreBank processing will occur upon status report
             response.Status = ACSC;
             response.Reason = null;
@@ -124,7 +126,7 @@ public sealed class IncomingTransactionHandler(
                 rsp,
                 request.TxId ?? string.Empty,
                 request.EndToEndId ?? string.Empty,
-                ct);
+                dbCt);
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
@@ -132,6 +134,7 @@ public sealed class IncomingTransactionHandler(
             _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request?.TxId);
             response.AdditionalInfo = "Failed to process Transaction";
             var rsp = PaymentRequestResponseBuilder.Build(response);
+            using var dbCts2 = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
             await _isoService.PersistTransactionResponseAsync(record,
                 TransactionStatus.Failed,
                 "Failed to process Transaction",
@@ -139,7 +142,7 @@ public sealed class IncomingTransactionHandler(
                 rsp,
                 request?.TxId ?? string.Empty,
                 request?.EndToEndId ?? string.Empty,
-                ct);
+                dbCts2.Token);
             return _signer.SignEnvelope(rsp);
         }
     }
