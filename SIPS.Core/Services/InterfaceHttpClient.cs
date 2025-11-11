@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SIPS.Core.Interfaces;
@@ -20,6 +21,10 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
     {
         try
         {
+            var sw = Stopwatch.StartNew();
+            string? idemKey = null;
+            headers?.TryGetValue("X-Idempotency-Key", out idemKey);
+            _logger.LogInformation("HTTP POST start: {Url} idem={Idempotency}", completeUrl, string.IsNullOrWhiteSpace(idemKey) ? "none" : idemKey);
             HttpRequestMessage message = new(HttpMethod.Post, completeUrl)
             {
                 RequestUri = new Uri(completeUrl),
@@ -49,20 +54,23 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, completeUrl, data);
+                sw.Stop();
+                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} idem={Idempotency} data={data}", completeUrl, (int)response.StatusCode, sw.ElapsedMilliseconds, string.IsNullOrWhiteSpace(idemKey) ? "none" : idemKey, data);
                 return Response<JsonObject?>.Fail("Request Failed with Error", response.StatusCode, data);
             }
 
+            sw.Stop();
+            _logger.LogInformation("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} idem={Idempotency}", completeUrl, (int)response.StatusCode, sw.ElapsedMilliseconds, string.IsNullOrWhiteSpace(idemKey) ? "none" : idemKey);
             return Response<JsonObject?>.Success(data);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError(ex, "POST request to {Url} timed out.", completeUrl);
+            _logger.LogError(ex, "HTTP POST timeout: {Url}", completeUrl);
             return Response<JsonObject?>.Fail("Request timed out", HttpStatusCode.RequestTimeout);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "POST request to {Url} failed.", completeUrl);
+            _logger.LogError(ex, "HTTP POST failed: {Url}", completeUrl);
             return Response<JsonObject?>.Fail(ex.Message, HttpStatusCode.InternalServerError);
         }
     }
@@ -71,6 +79,7 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
     {
         try
         {
+            var sw = Stopwatch.StartNew();
             HttpRequestMessage message = new(HttpMethod.Post, url)
             {
                 RequestUri = new Uri(url),
@@ -90,26 +99,30 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, url, content);
+                sw.Stop();
+                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} data={data}", url, (int)response.StatusCode, sw.ElapsedMilliseconds, content);
                 return Response<string>.Fail("Failed To Get Valid Response From SIPS", response.StatusCode, content);
             }
 
             if (response.StatusCode == HttpStatusCode.BadRequest)
             {
-                _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url} data: {data}", response.StatusCode, url, content);
+                sw.Stop();
+                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} data={data}", url, (int)response.StatusCode, sw.ElapsedMilliseconds, content);
                 return Response<string>.Fail("SIPS Responded with Bad Request - Check your ", response.StatusCode);
             }
 
+            sw.Stop();
+            _logger.LogInformation("HTTP POST end: {Url} status={StatusCode} durationMs={Duration}", url, (int)response.StatusCode, sw.ElapsedMilliseconds);
             return Response<string>.Success(content);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError(ex, "POST request to {Url} timed out.", url);
+            _logger.LogError(ex, "HTTP POST timeout: {Url}", url);
             return Response<string>.Fail("Request timed out", HttpStatusCode.RequestTimeout, "Request timed out");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "POST request to {Url} failed.", url);
+            _logger.LogError(ex, "HTTP POST failed: {Url}", url);
             return Response<string>.Fail(ex.Message, HttpStatusCode.InternalServerError);
         }
     }
