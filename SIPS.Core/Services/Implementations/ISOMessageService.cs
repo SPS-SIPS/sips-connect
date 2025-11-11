@@ -79,7 +79,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             EndToEndId = isoMessage.EndToEndId
         };
     // debug: log statuses to help unit-test diagnosis
-    System.Console.WriteLine($"[ISOMessageService] PersistResponseAsync original.Status={isoMessage.Status} snapshot.Status={snapshot.Status}");
+    _logger.LogDebug("[ISOMessageService] PersistResponseAsync original.Status={OriginalStatus} snapshot.Status={SnapshotStatus}", isoMessage.Status, snapshot.Status);
     await _persistence.ISOMessageResponseAsync(snapshot, ct);
         sw.Stop();
         _logger.LogInformation("DB persist PersistResponseAsync txId={TxId} durationMs={Duration}", isoMessage.TxId, sw.ElapsedMilliseconds);

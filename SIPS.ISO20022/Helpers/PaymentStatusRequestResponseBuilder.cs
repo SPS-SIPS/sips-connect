@@ -84,9 +84,9 @@ public static class PaymentStatusRequestResponseBuilder
                         }
                     }
                 },
-                BizMsgIdr = model.Original.BizMsgIdr,
-                MsgDefIdr = model.Original.MsgDefIdr,
-                CreDt = model.Original.CreDt
+                BizMsgIdr = model.Original?.BizMsgIdr ?? string.Empty,
+                MsgDefIdr = model.Original?.MsgDefIdr ?? string.Empty,
+                CreDt = model.Original?.CreDt ?? DateTime.UtcNow
             }
             ]
         };
@@ -96,6 +96,13 @@ public static class PaymentStatusRequestResponseBuilder
     public static string Build(Response request)
     {
         var messageType = SupportedMessageTypes.CreditTransferResponse;
+
+    // Ensure original message parts have safe defaults to satisfy schema minLength constraints
+    if (request.Original == null) request.Original = new PaymentRequestBuilder.Request();
+    Defaults.EnsureOriginalDefaults(request.Original);
+        if (string.IsNullOrWhiteSpace(request.From)) request.From = request.Original?.To ?? "FROM";
+        if (string.IsNullOrWhiteSpace(request.To)) request.To = request.Original?.From ?? "TO";
+        if (request.CreDt == default) request.CreDt = DateTime.UtcNow;
 
         var appHdr = AppHeader(request, messageType);
         var isReject = request.Status == "RJCT";
@@ -117,7 +124,7 @@ public static class PaymentStatusRequestResponseBuilder
             }
         }
 
-        var document = new Document
+    var document = new Document
         {
             FIToFIPmtStsRpt = new FIToFIPaymentStatusReportV12
             {
@@ -149,53 +156,53 @@ public static class PaymentStatusRequestResponseBuilder
                 TxInfAndSts = [
                     new PaymentTransaction130 {
                         OrgnlGrpInf = new OriginalGroupInformation29 {
-                            OrgnlMsgId = request.Original.BizMsgIdr,
-                            OrgnlMsgNmId = request.Original.MsgDefIdr,
-                            OrgnlCreDtTm = request.Original.CreDt
+                            OrgnlMsgId = request.Original?.BizMsgIdr ?? string.Empty,
+                            OrgnlMsgNmId = request.Original?.MsgDefIdr ?? string.Empty,
+                            OrgnlCreDtTm = request.Original?.CreDt ?? DateTime.UtcNow
                         },
-                        OrgnlEndToEndId = request.Original.EndToEndId,
-                        OrgnlTxId = request.Original.TxId,
+                        OrgnlEndToEndId = request.Original?.EndToEndId ?? string.Empty,
+                        OrgnlTxId = request.Original?.TxId ?? string.Empty,
                         TxSts = request.Status,
                         StsRsnInf = statusReasonInfo != null ? [statusReasonInfo] : null,
                         AccptncDtTm = !isReject ? request.AcceptanceDate : null,
                         OrgnlTxRef =!isReject ? new OriginalTransactionReference35 {
                             IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {
-                                Ccy = request.Original.Currency,
-                                TypedValue = request.Original.Amount
+                                Ccy = request.Original?.Currency ?? "USD",
+                                TypedValue = request.Original?.Amount ?? 0
                             },
                             Amt = new AmountType4Choice {
                                 InstdAmt = new ActiveOrHistoricCurrencyAndAmount {
-                                    Ccy = request.Original.Currency,
-                                    TypedValue = request.Original.Amount
+                                    Ccy = request.Original?.Currency ?? "USD",
+                                    TypedValue = request.Original?.Amount ?? 0
                                 }
                             },
                             Dbtr = new Party40Choice {
                                 Pty = new Schemas.PSRDocument.PartyIdentification135 {
-                                    Nm = request.Original.Debtor.Name,
+                                    Nm = request.Original?.Debtor?.Name ?? string.Empty,
                                     PstlAdr = new Schemas.PSRDocument.PostalAddress24 {
-                                        AdrLine = [request.Original.Debtor.Address]
+                                        AdrLine = new[] { request.Original?.Debtor?.Address ?? string.Empty }
                                     }
                                 }
                             },
                             DbtrAcct = new CashAccount40 {
                                 Id = new AccountIdentification4Choice {
                                     Othr = new GenericAccountIdentification1 {
-                                        Id = request.Original.Debtor.Account,
+                                        Id = request.Original?.Debtor?.Account ?? string.Empty,
                                         SchmeNm = new AccountSchemeName1Choice {
-                                            Prtry = request.Original.Debtor.AccountType
+                                            Prtry = request.Original?.Debtor?.AccountType ?? string.Empty
                                         },
-                                        Issr = request.Original.Debtor.Issuer
+                                        Issr = request.Original?.Debtor?.Issuer ?? string.Empty
                                     }
                                 }
                             },
                             CdtrAcct = new CashAccount40 {
                                 Id = new AccountIdentification4Choice {
                                     Othr = new GenericAccountIdentification1 {
-                                        Id = request.Original.Creditor.Account,
+                                        Id = request.Original?.Creditor?.Account ?? string.Empty,
                                         SchmeNm = new AccountSchemeName1Choice {
-                                            Prtry = request.Original.Creditor.AccountType
+                                            Prtry = request.Original?.Creditor?.AccountType ?? string.Empty
                                         },
-                                        Issr = request.Original.Creditor.Issuer
+                                        Issr = request.Original?.Creditor?.Issuer ?? string.Empty
                                     }
                                 }
                             },

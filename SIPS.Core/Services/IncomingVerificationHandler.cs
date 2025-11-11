@@ -158,7 +158,7 @@ public sealed class IncomingVerificationHandler(
                     ct,
                     cid);
             }
-            Console.WriteLine($"[IncomingVerificationHandler] callback status={responseMessage?.StatusCode} dataNull={responseMessage?.Data == null}");
+            _logger.LogDebug("[IncomingVerificationHandler] callback status={StatusCode} dataNull={IsNull}", responseMessage?.StatusCode, responseMessage?.Data == null);
             if (responseMessage != null && responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
             {
                 ParseCallbackResult(responseMessage.Data, response);
@@ -204,7 +204,7 @@ public sealed class IncomingVerificationHandler(
         _logger.LogInformation("Callback Response: {Response}", data.ToJsonString(_jsonSerializerOptions));
         // Prefer direct deserialization via the adapter ToObject in tests (adapter is usually mocked)
     var deserializedContent = _jsonAdapter.ToObject<VerificationResponseDto>(data!);
-    System.Console.WriteLine($"[IncomingVerificationHandler] deserialized.IsVerified={(deserializedContent?.IsVerified.ToString() ?? "null")}");
+    _logger.LogDebug("[IncomingVerificationHandler] deserialized.IsVerified={IsVerified}", (deserializedContent == null) ? "null" : deserializedContent.IsVerified.ToString());
 
     response.Verified = deserializedContent?.IsVerified ?? false;
         response.Reason = response.Verified ? SUCC : MISS;

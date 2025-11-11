@@ -69,6 +69,12 @@ public static class PaymentRequestBuilder
     public static (string document, string bizMsgIdr, string type, string msgId) Build(Request request)
     {
         var messageType = SupportedMessageTypes.CreditTransferRequest;
+        // Ensure debtor/creditor have safe defaults
+        Defaults.EnsurePersonDefaults(request.Debtor);
+        Defaults.EnsurePersonDefaults(request.Creditor);
+        if (string.IsNullOrWhiteSpace(request.From)) request.From = "FROM";
+        if (string.IsNullOrWhiteSpace(request.To)) request.To = "TO";
+        if (request.CreDt == default) request.CreDt = DateTime.UtcNow;
         var bizMsgIdr = Transformers.GenerateId(request.From);
         var msgId = Transformers.GenerateId(request.From);
         var appHdr = AppHeader(request.From, request.To, messageType, bizMsgIdr);

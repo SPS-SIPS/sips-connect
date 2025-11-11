@@ -96,6 +96,15 @@ public static class ReturnPaymentResponseBuilder
     {
         var messageType = SupportedMessageTypes.CreditTransferResponse;
 
+        // ensure minimal defaults so XML builders do not hit minLength validation
+        if (request.Original == null) request.Original = new ReturnPaymentRequestBuilder.Request();
+        if (string.IsNullOrWhiteSpace(request.From)) request.From = request.Original.From ?? "NA";
+        if (string.IsNullOrWhiteSpace(request.To)) request.To = request.Original.To ?? "NA";
+        if (request.CreDt == default) request.CreDt = DateTime.UtcNow;
+        if (string.IsNullOrWhiteSpace(request.Original.OriginalEndToEnd))
+            request.Original.OriginalEndToEnd = string.IsNullOrWhiteSpace(request.Original.OrgnlTxId) ? "E2E" : request.Original.OrgnlTxId;
+        if (string.IsNullOrWhiteSpace(request.Original.OriginalCurrency)) request.Original.OriginalCurrency = "USD";
+
         var appHdr = AppHeader(request, messageType);
 
         var document = new Document

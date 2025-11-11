@@ -36,7 +36,7 @@ public sealed class OutgoingTransactionHandler(
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
         _logger.LogInformation("Processing Outgoing Transaction Request");
-        System.Console.WriteLine("[OutgoingTransactionHandler] HandleAsync start");
+    _logger.LogDebug("[OutgoingTransactionHandler] HandleAsync start");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var ourAgentBic = _configuration.Agent ?? throw new InvalidOperationException("Agent BIC not found in configuration.");
@@ -49,18 +49,17 @@ public sealed class OutgoingTransactionHandler(
             var (document, bizMsgIdr, type, msgId) = BuildRequest(message, fromBIC, ourAgentBic, txId);
             // Ensure optional fields required by ISO builders are not null
             // (e.g., remittance information) — BuildRequest will handle empty strings safely
-            System.Console.WriteLine("[OutgoingTransactionHandler] after BuildRequest");
+            _logger.LogDebug("[OutgoingTransactionHandler] after BuildRequest");
             var signed = _signer.SignEnvelope(document);
-            System.Console.WriteLine("[OutgoingTransactionHandler] after SignEnvelope");
+            _logger.LogDebug("[OutgoingTransactionHandler] after SignEnvelope");
             var entity = CreateISOMessage(message, fromBIC, ourAgentBic, txId, signed, bizMsgIdr, type, msgId);
-            System.Console.WriteLine("[OutgoingTransactionHandler] after CreateISOMessage");
+            _logger.LogDebug("[OutgoingTransactionHandler] after CreateISOMessage");
             using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
             // debug: log db token cancellation state so unit tests can be diagnosed when LastToken is null
-            System.Console.WriteLine($"[OutgoingTransactionHandler] before persist");
-            System.Console.WriteLine($"[OutgoingTransactionHandler] persisting with dbCt.CanBeCanceled={dbCt.CanBeCanceled} IsCancellationRequested={dbCt.IsCancellationRequested}");
+            _logger.LogDebug("[OutgoingTransactionHandler] before persist - dbCt.CanBeCanceled={CanBeCanceled} IsCancellationRequested={IsCanceled}", dbCt.CanBeCanceled, dbCt.IsCancellationRequested);
             var record = await _persistence.RecordISOMessageAsync(entity, dbCt);
-            System.Console.WriteLine($"[OutgoingTransactionHandler] after persist");
+            _logger.LogDebug("[OutgoingTransactionHandler] after persist");
 
             // Step 2: Call SIPS and handle response
             var responseMessage = await _sips.SendAsync(url, signed, ct, cid);
@@ -98,7 +97,7 @@ public sealed class OutgoingTransactionHandler(
         catch (Exception ex)
         {
             _logger.LogError("[{CorrelationId}] Failed to Send Request To SIPS Error: {Error}", cid, ex);
-            System.Console.WriteLine($"[OutgoingTransactionHandler] Exception: {ex}");
+            _logger.LogDebug(ex, "[OutgoingTransactionHandler] Exception: {Exception}", ex.Message);
             return Response<PaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
         }
     }

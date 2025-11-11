@@ -103,7 +103,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         _logger.LogInformation("INCOMING pacs.002 Handler for data {Data}",
             JsonSerializer.Serialize(request, _jsonSerializerOptions));
 
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] parsed request TxId={request.TxId} Status={request.Status}");
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] parsed request TxId={TxId} Status={Status}", request.TxId, request.Status);
 
         // Step 2: Retrieve ISO message by TxId (try both variants for compatibility with tests)
         var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.TxId, ct);
@@ -112,7 +112,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             isoMessage = await _persistence.GetISOMessageByTxIdAsync(request.TxId, ct);
         }
 
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] located isoMessage TxId={isoMessage?.TxId} Status={(isoMessage != null ? isoMessage.Status.ToString() : "null")}");
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] located isoMessage TxId={IsoTxId} Status={IsoStatus}", isoMessage?.TxId, isoMessage != null ? isoMessage.Status.ToString() : "null");
 
         if (isoMessage == null)
         {
@@ -220,9 +220,9 @@ public sealed class IncomingPaymentStatusReportHandler(
             isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : "Mirror DB Status";
             isoMessage.AdditionalInfo = response.AdditionalInfo ?? string.Empty;
             await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Success, isoMessage.Reason, isoMessage.AdditionalInfo, rspMirror, dbCt);
-            Console.WriteLine($"[IncomingPaymentStatusReportHandler] NonPending response: {rspMirror}");
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] NonPending response: {Response}", rspMirror);
             var signedMirror = _signer.SignEnvelope(rspMirror);
-            Console.WriteLine($"[IncomingPaymentStatusReportHandler] Returning NonPending signed response: {signedMirror}");
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning NonPending signed response: {Signed}", signedMirror);
             return signedMirror;
         }
 
@@ -237,7 +237,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             isoMessage.AdditionalInfo = "Standard Rejection Confirmaiton Notification Received";
             await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, dbCt);
             var signedRej = _signer.SignEnvelope(rspRej);
-            Console.WriteLine($"[IncomingPaymentStatusReportHandler] Returning RJCT signed response: {signedRej}");
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning RJCT signed response: {Signed}", signedRej);
             return signedRej;
         }
 
@@ -300,14 +300,14 @@ public sealed class IncomingPaymentStatusReportHandler(
             _logger.LogInformation("[{CorrelationId}] Forwarded transaction to CoreBank for TxId {TxId}, {result}", cid, request.TxId, JsonSerializer.Serialize(result, _jsonSerializerOptions));
 
         // Persist raw CoreBank response JSON on the parent ISOMessage for audit/operations
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] Callback result.Data is null? {result.Data == null}");
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] Callback result.Data is null? {IsNull}", result.Data == null);
             if (result.Data == null)
             {
-            Console.WriteLine($"[IncomingPaymentStatusReportHandler] Callback returned null data, skipping parse.");
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Callback returned null data, skipping parse.");
             }
 
         var crResponse = result.Data != null ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] crResponse.Status={crResponse?.Status} TxId={crResponse?.TxId}");
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] crResponse.Status={Status} TxId={TxId}", crResponse?.Status, crResponse?.TxId);
         var cbProcessed = (crResponse!.Status ?? string.Empty) == ACSC;
     // ensure response mirrors the CoreBank status so the built XML contains the expected status
     response.Status = crResponse.Status ?? response.Status;
@@ -318,9 +318,9 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
 
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] tx is null? {tx == null}");
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] tx is null? {IsNull}", tx == null);
     tx ??= new SIPS.PostgreSQL.Models.Transaction();
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] tx.TxId={tx.TxId} DebtorName={tx.DebtorName} CreditorName={tx.CreditorName}");
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] tx.TxId={TxId} DebtorName={Debtor} CreditorName={Creditor}", tx.TxId, tx.DebtorName, tx.CreditorName);
     response.Original.Debtor.Name = !string.IsNullOrWhiteSpace(tx.DebtorName)
         ? tx.DebtorName!
         : (!string.IsNullOrWhiteSpace(request.Original?.Debtor?.Name) ? request.Original!.Debtor!.Name : "NA");
@@ -356,7 +356,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             // Ensure final response includes TxId and Status from CoreBank result
             response.TxId = statusReq.OrgnlTxId ?? response.TxId;
             response.Original.TxId = statusReq.OrgnlTxId ?? response.Original.TxId;
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] response.Original.EndToEndId='{response.Original.EndToEndId}'");
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] response.Original.EndToEndId='{EndToEndId}'", response.Original.EndToEndId);
             var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
 
             await _isoService.PersistStatusResponseAsync(
@@ -366,9 +366,9 @@ public sealed class IncomingPaymentStatusReportHandler(
                 isoMessage.AdditionalInfo,
                 rspFinal,
                 dbCt);
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] Final response: {rspFinal}");
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Final response: {Response}", rspFinal);
             var signedFinal = _signer.SignEnvelope(rspFinal);
-        Console.WriteLine($"[IncomingPaymentStatusReportHandler] Returning Final signed response: {signedFinal}");
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning Final signed response: {Signed}", signedFinal);
 
         return signedFinal;
     }

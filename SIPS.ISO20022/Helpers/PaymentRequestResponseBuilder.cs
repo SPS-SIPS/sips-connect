@@ -97,7 +97,15 @@ public static class PaymentRequestResponseBuilder
     {
         var messageType = SupportedMessageTypes.CreditTransferResponse;
 
+        if (request.Original == null) request.Original = new PaymentRequestBuilder.Request();
+        Defaults.EnsureOriginalDefaults(request.Original);
+        if (string.IsNullOrWhiteSpace(request.From)) request.From = request.Original?.To ?? "FROM";
+        if (string.IsNullOrWhiteSpace(request.To)) request.To = request.Original?.From ?? "TO";
+        if (request.CreDt == default) request.CreDt = DateTime.UtcNow;
+
         var appHdr = AppHeader(request, messageType);
+
+        var orig = request.Original ?? new PaymentRequestBuilder.Request();
 
         var document = new Document
         {
@@ -131,12 +139,12 @@ public static class PaymentRequestResponseBuilder
                 TxInfAndSts = [
                     new PaymentTransaction130 {
                         OrgnlGrpInf = new OriginalGroupInformation29 {
-                            OrgnlMsgId = request.Original.BizMsgIdr,
-                            OrgnlMsgNmId = request.Original.MsgDefIdr,
-                            OrgnlCreDtTm = request.Original.CreDt
+                            OrgnlMsgId = orig.BizMsgIdr,
+                            OrgnlMsgNmId = orig.MsgDefIdr,
+                            OrgnlCreDtTm = orig.CreDt
                         },
-                        OrgnlEndToEndId = request.Original.EndToEndId,
-                        OrgnlTxId = request.Original.TxId,
+                        OrgnlEndToEndId = orig.EndToEndId,
+                        OrgnlTxId = orig.TxId,
                         TxSts = request.Status,
                         StsRsnInf = request.Status != "ACSC"? [
                             new StatusReasonInformation12 {
@@ -149,42 +157,42 @@ public static class PaymentRequestResponseBuilder
                         AccptncDtTm = DateTime.UtcNow,
                         OrgnlTxRef = new OriginalTransactionReference35 {
                             IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {
-                                Ccy = request.Original.Currency,
-                                TypedValue = request.Original.Amount
+                                Ccy = orig.Currency,
+                                TypedValue = orig.Amount
                             },
                             Amt = new AmountType4Choice {
                                 InstdAmt = new ActiveOrHistoricCurrencyAndAmount {
-                                    Ccy = request.Original.Currency,
-                                    TypedValue = request.Original.Amount
+                                    Ccy = orig.Currency,
+                                    TypedValue = orig.Amount
                                 }
                             },
                             Dbtr = new Party40Choice {
                                 Pty = new Schemas.PRRDocument.PartyIdentification135 {
-                                    Nm = request.Original.Debtor.Name,
+                                    Nm = orig.Debtor.Name,
                                     PstlAdr = new Schemas.PRRDocument.PostalAddress24 {
-                                        AdrLine = [request.Original.Debtor.Address]
+                                        AdrLine = [orig.Debtor.Address]
                                     }
                                 }
                             },
                             DbtrAcct = new CashAccount40 {
                                 Id = new AccountIdentification4Choice {
                                     Othr = new GenericAccountIdentification1 {
-                                        Id = request.Original.Debtor.Account,
+                                        Id = orig.Debtor.Account,
                                         SchmeNm = new AccountSchemeName1Choice {
-                                            Prtry = request.Original.Debtor.AccountType
+                                            Prtry = orig.Debtor.AccountType
                                         },
-                                        Issr = request.Original.Debtor.Issuer
+                                        Issr = orig.Debtor.Issuer
                                     }
                                 }
                             },
                             CdtrAcct = new CashAccount40 {
                                 Id = new AccountIdentification4Choice {
                                     Othr = new GenericAccountIdentification1 {
-                                        Id = request.Original.Creditor.Account,
+                                        Id = orig.Creditor.Account,
                                         SchmeNm = new AccountSchemeName1Choice {
-                                            Prtry = request.Original.Creditor.AccountType
+                                            Prtry = orig.Creditor.AccountType
                                         },
-                                        Issr = request.Original.Creditor.Issuer
+                                        Issr = orig.Creditor.Issuer
                                     }
                                 }
                             },

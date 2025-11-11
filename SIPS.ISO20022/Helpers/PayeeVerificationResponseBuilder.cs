@@ -101,6 +101,12 @@ public static class PayeeVerificationResponseBuilder
     {
         var messageType = SupportedMessageTypes.VerificationResponse;
 
+        // ensure minimal defaults so XML builders do not hit minLength validation
+        request.Original ??= new PayeeVerificationBuilder.Request();
+        if (string.IsNullOrWhiteSpace(request.From)) request.From = request.Original.From ?? "NA";
+        if (string.IsNullOrWhiteSpace(request.To)) request.To = request.Original.To ?? "NA";
+        if (request.CreDt == default) request.CreDt = DateTime.UtcNow;
+
         var appHdr = AppHeader(request, messageType);
 
         var document = new Document
