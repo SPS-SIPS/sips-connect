@@ -16,6 +16,7 @@ using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SIPS.Core.Extensions;
+using Microsoft.Extensions.Logging;
 using SIPS.Core.Workers;
 using SIPS.Core.Models;
 using SIPS.Core.Services.Abstractions;
@@ -45,15 +46,20 @@ public static class DI
         // new helper services
         services.AddSingleton<IInboundMessageService, InboundMessageService>();
         services.AddSingleton<ICallbackOrchestrator, CallbackOrchestrator>();
-        services.AddScoped<IISOMessageService, ISOMessageService>();
+        services.AddScoped<IISOMessageService>(sp =>
+        {
+            var persistence = sp.GetRequiredService<IPersistenceGateway>();
+            var logger = sp.GetRequiredService<ILogger<ISOMessageService>>();
+            return new ISOMessageService(persistence, logger);
+        });
         services.AddSingleton<ISipsRequestSender, SipsRequestSender>();
         services.AddScoped<IPersistenceGateway, PersistenceGateway>();
 
-        services.AddSingleton<HttpClient>(_ =>
+        services.AddSingleton(_ =>
         {
             var client = new HttpClient
             {
-                Timeout = System.TimeSpan.FromSeconds(30)
+                Timeout = TimeSpan.FromSeconds(30)
             };
             return client;
         });

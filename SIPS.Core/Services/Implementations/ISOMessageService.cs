@@ -8,19 +8,25 @@ using SIPS.ISO20022.Models.DTOs;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Models;
 using SIPS.PostgreSQL.Interfaces;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.Diagnostics;
 
 namespace SIPS.Core.Services.Implementations;
 
-public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMessageService
+public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<ISOMessageService> logger) : IISOMessageService
 {
     private readonly IPersistenceGateway _persistence = persistence;
+    private readonly ILogger<ISOMessageService> _logger = logger;
+    public ISOMessageService(IPersistenceGateway persistence) : this(persistence, NullLogger<ISOMessageService>.Instance) { }
 
     public async Task<ISOMessage> RecordIncomingVerificationAsync(
         PayeeVerificationBuilder.Request request,
         string rawXml,
         CancellationToken ct)
     {
-        return await _persistence.RecordISOMessageAsync(
+        var sw = Stopwatch.StartNew();
+        var result = await _persistence.RecordISOMessageAsync(
             new ISOMessage
             {
                 MessageType = ISOMessageType.VerificationRequest,
@@ -34,6 +40,9 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
                 MsgId = request.MsgId,
                 TxId = request.SIPSRequestId,
             }, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist RecordIncomingVerificationAsync txId={TxId} durationMs={Duration}", request.SIPSRequestId, sw.ElapsedMilliseconds);
+        return result;
     }
 
     public async Task PersistResponseAsync(
@@ -44,11 +53,14 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         string responseXml,
         CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
         isoMessage.Status = (status == "ACSC" || status == "SUCC") ? TransactionStatus.Success : TransactionStatus.Failed;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
         await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist PersistResponseAsync txId={TxId} durationMs={Duration}", isoMessage.TxId, sw.ElapsedMilliseconds);
     }
 
     public async Task<ISOMessageStatus> RecordIncomingStatusAsync(
@@ -56,6 +68,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         string rawXml,
         CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         var entity = new ISOMessageStatus
         {
             ISOMessageId = isoMessage.Id,
@@ -63,7 +76,10 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
             Message = Encoding.UTF8.GetBytes(rawXml),
             Status = TransactionStatus.Pending,
         };
-        return await _persistence.RecordISOMessageStatusAsync(entity, ct);
+        var result = await _persistence.RecordISOMessageStatusAsync(entity, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist RecordIncomingStatusAsync parentId={ParentId} durationMs={Duration}", isoMessage.Id, sw.ElapsedMilliseconds);
+        return result;
     }
 
     public async Task PersistStatusResponseAsync(
@@ -74,11 +90,14 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         string responseXml,
         CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         isoMessageStatus.Response = Encoding.UTF8.GetBytes(responseXml);
         isoMessageStatus.Status = status;
         isoMessageStatus.Reason = reason;
         isoMessageStatus.AdditionalInfo = additionalInfo;
         await _persistence.ISOMessageStatusResponseAsync(isoMessageStatus, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist PersistStatusResponseAsync parentId={ParentId} durationMs={Duration}", isoMessageStatus.ISOMessageId, sw.ElapsedMilliseconds);
     }
 
     public async Task<ISOMessage> RecordIncomingTransactionAsync(
@@ -86,6 +105,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         string rawXml,
         CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         var entity = new ISOMessage
         {
             MessageType = ISOMessageType.TransactionRequest,
@@ -122,7 +142,10 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
             CreditorIssuer = request.Creditor.Issuer ?? "C",
             RemittanceInformation = request.Ustrd ?? string.Empty
         });
-        return await _persistence.RecordISOMessageAsync(entity, ct);
+        var result = await _persistence.RecordISOMessageAsync(entity, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist RecordIncomingTransactionAsync txId={TxId} durationMs={Duration}", request.TxId, sw.ElapsedMilliseconds);
+        return result;
     }
 
     public async Task PersistTransactionResponseAsync(
@@ -135,6 +158,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         string endToEndId,
         CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
         isoMessage.Status = status;
         isoMessage.Reason = reason;
@@ -142,6 +166,8 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         isoMessage.TxId = txId;
         isoMessage.EndToEndId = endToEndId;
         await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist PersistTransactionResponseAsync txId={TxId} durationMs={Duration}", txId, sw.ElapsedMilliseconds);
     }
 
     public async Task<ISOMessage> RecordIncomingReturnAsync(
@@ -149,6 +175,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         string rawXml,
         CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         var entity = new ISOMessage
         {
             MessageType = ISOMessageType.ReturnRequest,
@@ -186,7 +213,10 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
             CreditorName = string.Empty,
             RemittanceInformation = request.ReturnReason + " " + request.AdditionalInfo
         });
-        return await _persistence.RecordISOMessageAsync(entity, ct);
+        var result = await _persistence.RecordISOMessageAsync(entity, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist RecordIncomingReturnAsync txId={TxId} durationMs={Duration}", request.OrgnlTxId, sw.ElapsedMilliseconds);
+        return result;
     }
 
     public async Task PersistReturnResponseAsync(
@@ -197,10 +227,13 @@ public sealed class ISOMessageService(IPersistenceGateway persistence) : IISOMes
         string responseXml,
         CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
         isoMessage.Status = status == "ACSC" ? TransactionStatus.Success : TransactionStatus.Failed;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
         await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist PersistReturnResponseAsync txId={TxId} durationMs={Duration}", isoMessage.TxId, sw.ElapsedMilliseconds);
     }
 }
