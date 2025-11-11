@@ -122,6 +122,11 @@ public sealed class IncomingReturnTransactionHandler(
             };
             var idem = string.IsNullOrWhiteSpace(request.ReturnId) ? request.OrgnlTxId : $"{request.OrgnlTxId}-{request.ReturnId}";
             headers["X-Idempotency-Key"] = idem;
+            headers["X-Transaction-Id"] = request.OrgnlTxId;
+            if (!string.IsNullOrWhiteSpace(request.ReturnId))
+                headers["X-Return-Id"] = request.ReturnId;
+            if (!string.IsNullOrWhiteSpace(request.OriginalEndToEnd))
+                headers["X-EndToEnd-Id"] = request.OriginalEndToEnd;
             var dto = new CBReturnRequestDto
             {
                 FromBIC = request.From,

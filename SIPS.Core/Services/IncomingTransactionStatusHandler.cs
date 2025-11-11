@@ -134,6 +134,9 @@ public sealed class IncomingTransactionStatusHandler(
                 ? request.OrgnlTxId
                 : $"{request.OrgnlTxId}-{request.OriginalEndToEnd}";
             headers["X-Idempotency-Key"] = idem;
+            headers["X-Transaction-Id"] = request.OrgnlTxId;
+            if (!string.IsNullOrWhiteSpace(request.OriginalEndToEnd))
+                headers["X-EndToEnd-Id"] = request.OriginalEndToEnd;
             var dto = new CBStatusRequestDto
             {
                 FromBIC = request.From,

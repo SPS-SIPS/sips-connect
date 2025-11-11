@@ -159,6 +159,8 @@ public sealed class IncomingPaymentStatusReportHandler(
         var idem = transaction?.TxId ?? request.TxId;
         if (!string.IsNullOrWhiteSpace(idem))
             headers["X-Idempotency-Key"] = idem!;
+        if (!string.IsNullOrWhiteSpace(transaction?.TxId ?? request.TxId))
+            headers["X-Transaction-Id"] = (transaction?.TxId ?? request.TxId)!;
 
         // Here incomingStatus must be ACSC; build CB payment request payload for CB
 
