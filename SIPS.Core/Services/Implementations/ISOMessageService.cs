@@ -60,7 +60,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
 
-    // create a snapshot for persistence so later in-memory changes don't alter recorded args
+        // create a snapshot for persistence so later in-memory changes don't alter recorded args
         var snapshot = new ISOMessage
         {
             Id = isoMessage.Id,
@@ -68,7 +68,8 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             Date = isoMessage.Date,
             FromBIC = isoMessage.FromBIC,
             ToBIC = isoMessage.ToBIC,
-            Message = Encoding.UTF8.GetBytes(responseXml),
+            // Response should contain the persisted response payload. Use Response (not Message)
+            Response = Encoding.UTF8.GetBytes(responseXml),
             Status = isoMessage.Status,
             Reason = isoMessage.Reason,
             AdditionalInfo = isoMessage.AdditionalInfo,
@@ -78,9 +79,9 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             TxId = isoMessage.TxId,
             EndToEndId = isoMessage.EndToEndId
         };
-    // debug: log statuses to help unit-test diagnosis
-    _logger.LogDebug("[ISOMessageService] PersistResponseAsync original.Status={OriginalStatus} snapshot.Status={SnapshotStatus}", isoMessage.Status, snapshot.Status);
-    await _persistence.ISOMessageResponseAsync(snapshot, ct);
+        // debug: log statuses to help unit-test diagnosis
+        _logger.LogDebug("[ISOMessageService] PersistResponseAsync original.Status={OriginalStatus} snapshot.Status={SnapshotStatus}", isoMessage.Status, snapshot.Status);
+        await _persistence.ISOMessageResponseAsync(snapshot, ct);
         sw.Stop();
         _logger.LogInformation("DB persist PersistResponseAsync txId={TxId} durationMs={Duration}", isoMessage.TxId, sw.ElapsedMilliseconds);
     }
@@ -128,7 +129,8 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             Id = isoMessageStatus.Id,
             ISOMessageId = isoMessageStatus.ISOMessageId,
             Date = isoMessageStatus.Date,
-            Message = Encoding.UTF8.GetBytes(responseXml),
+            // Status response should be in Response property
+            Response = Encoding.UTF8.GetBytes(responseXml),
             Status = isoMessageStatus.Status,
             Reason = isoMessageStatus.Reason,
             AdditionalInfo = isoMessageStatus.AdditionalInfo
@@ -212,7 +214,8 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             Date = isoMessage.Date,
             FromBIC = isoMessage.FromBIC,
             ToBIC = isoMessage.ToBIC,
-            Message = Encoding.UTF8.GetBytes(responseXml),
+            // Persist response payload in Response
+            Response = Encoding.UTF8.GetBytes(responseXml),
             Status = isoMessage.Status,
             Reason = isoMessage.Reason,
             AdditionalInfo = isoMessage.AdditionalInfo,
@@ -298,7 +301,8 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             Date = isoMessage.Date,
             FromBIC = isoMessage.FromBIC,
             ToBIC = isoMessage.ToBIC,
-            Message = Encoding.UTF8.GetBytes(responseXml),
+            // Persist the response payload
+            Response = Encoding.UTF8.GetBytes(responseXml),
             Status = isoMessage.Status,
             Reason = isoMessage.Reason,
             AdditionalInfo = isoMessage.AdditionalInfo,
