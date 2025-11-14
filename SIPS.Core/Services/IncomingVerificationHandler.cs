@@ -45,9 +45,7 @@ public sealed class IncomingVerificationHandler(
     private readonly ILogger<IncomingVerificationHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
-    private readonly IPersistenceGateway _persistence = persistence;
     private readonly IPayeeVerificationRequestParser _parser = parser;
-    private readonly ISignatureService _signature = signature;
     private readonly ICorrelationService _correlation = correlation;
     private readonly ICallbackClient _callback = callback;
     private readonly IInboundMessageService _inbound = inbound;
@@ -117,7 +115,7 @@ public sealed class IncomingVerificationHandler(
             // Normalize alias and type prior to CoreBank matching
             var normalizedAlias = (request.Alias ?? string.Empty).Trim();
             if (normalizedAlias.StartsWith("USD:", StringComparison.OrdinalIgnoreCase))
-                normalizedAlias = normalizedAlias.Substring(4).TrimStart();
+                normalizedAlias = normalizedAlias[4..].TrimStart();
             var normalizedType = request.Type;
             if (normalizedAlias.StartsWith("SO", StringComparison.OrdinalIgnoreCase))
                 normalizedType = IBAN;
@@ -140,24 +138,7 @@ public sealed class IncomingVerificationHandler(
                 _callback,
                 ct,
                 cid);
-            // Fallback: some tests inject a Mock<ICallbackOrchestrator> without a SendJsonAsync setup
-            // which results in a null response. In that case call a real orchestrator so the
-            // CallbackClient + Http mock chain is exercised and tests get the expected Response.
-            if (responseMessage == null)
-            {
-                var fallbackOrch = new CallbackOrchestrator();
-                responseMessage = await fallbackOrch.SendJsonAsync(
-                    _callbackLinks.Verification!,
-                    headers,
-                    dto,
-                    CB_VerificationRequest,
-                    _jsonAdapter,
-                    _correlation,
-                    _jsonSerializerOptions,
-                    _callback,
-                    ct,
-                    cid);
-            }
+
             _logger.LogDebug("[IncomingVerificationHandler] callback status={StatusCode} dataNull={IsNull}", responseMessage?.StatusCode, responseMessage?.Data == null);
             if (responseMessage != null && responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
             {
@@ -182,7 +163,7 @@ public sealed class IncomingVerificationHandler(
         }
     }
 
-    private PayeeVerificationResponseBuilder.Request BuildInitialResponse(PayeeVerificationBuilder.Request request)
+    private static PayeeVerificationResponseBuilder.Request BuildInitialResponse(PayeeVerificationBuilder.Request request)
     {
         return new PayeeVerificationResponseBuilder.Request
         {
@@ -202,11 +183,25 @@ public sealed class IncomingVerificationHandler(
     private void ParseCallbackResult(JsonObject data, PayeeVerificationResponseBuilder.Request response)
     {
         _logger.LogInformation("Callback Response: {Response}", data.ToJsonString(_jsonSerializerOptions));
-        // Prefer direct deserialization via the adapter ToObject in tests (adapter is usually mocked)
-    var deserializedContent = _jsonAdapter.ToObject<VerificationResponseDto>(data!);
-    _logger.LogDebug("[IncomingVerificationHandler] deserialized.IsVerified={IsVerified}", (deserializedContent == null) ? "null" : deserializedContent.IsVerified.ToString());
 
-    response.Verified = deserializedContent?.IsVerified ?? false;
+        // First, transform the raw callback payload using our configured mapping
+        // so fields like accountNo/accountType map to Id/Type regardless of casing.
+        JsonObject mapped;
+        try
+        {
+            mapped = _jsonAdapter.Transform(data, CB_VerificationResponse);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to transform callback payload using mapping '{MappingKey}'. Falling back to raw payload.", CB_VerificationResponse);
+            mapped = data;
+        }
+
+        // Deserialize into our DTO with case-insensitive property matching
+        var deserializedContent = _jsonAdapter.ToObject<VerificationResponseDto>(mapped);
+        _logger.LogInformation("[ParseCallbackResult] Yasalaam {DeserializedContent}", JsonSerializer.Serialize(deserializedContent, _jsonSerializerOptions));
+
+        response.Verified = deserializedContent?.IsVerified ?? false;
         response.Reason = response.Verified ? SUCC : MISS;
         response.Id = deserializedContent?.Id ?? string.Empty;
         response.Type = IBAN;
@@ -215,7 +210,7 @@ public sealed class IncomingVerificationHandler(
         response.Currency = deserializedContent?.Currency ?? string.Empty;
     }
 
-    private string ErrorResponse(string message)
+    private static string ErrorResponse(string message)
     {
         return AdminMessage.Generate(message);
     }

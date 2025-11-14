@@ -191,9 +191,18 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
 
             if (!string.IsNullOrEmpty(name))
             {
-                if (current is JsonObject obj && obj.TryGetPropertyValue(name, out var next))
+                if (current is JsonObject obj)
                 {
-                    current = next;
+                    // Case-insensitive property search
+                    var property = obj.FirstOrDefault(p => p.Key.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    if (property.Value != null)
+                    {
+                        current = property.Value;
+                    }
+                    else
+                    {
+                        return null;
+                    }
                 }
                 else
                 {
