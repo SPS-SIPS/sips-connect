@@ -64,4 +64,22 @@ public interface IISOMessageService
         string? additionalInfo,
         string responseXml,
         CancellationToken ct);
+
+    /// <summary>
+    /// Marks an ISOMessage as CheckStatus for SAF processing.
+    /// Used when pacs.002 is not received within SLA or CoreBank callback fails.
+    /// </summary>
+    Task MarkForCheckStatusAsync(
+        ISOMessage isoMessage,
+        string reason,
+        CancellationToken ct);
+
+    /// <summary>
+    /// Finalizes an ISOMessage that has exceeded max SAF retries.
+    /// Marks it as Failed with appropriate reason.
+    /// </summary>
+    Task FinalizeAfterMaxRetriesAsync(
+        ISOMessage isoMessage,
+        string reason,
+        CancellationToken ct);
 }

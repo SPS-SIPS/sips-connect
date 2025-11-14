@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SIPS.Core.Options;
 using SIPS.Core.Services;
+using SIPS.Core.Services.Abstractions;
 using SIPS.ISO20022.Interfaces;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
@@ -26,6 +27,7 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
         var storage = scope.ServiceProvider.GetRequiredService<IStorageBroker>() ?? throw new ArgumentNullException(nameof(IStorageBroker));
         var options = scope.ServiceProvider.GetRequiredService<CoreOptions>() ?? throw new ArgumentNullException(nameof(CoreOptions));
         var outgoing = scope.ServiceProvider.GetRequiredService<IOutgoingTransactionStatusHandler>() ?? throw new ArgumentNullException(nameof(IOutgoingTransactionStatusHandler));
+        var isoService = scope.ServiceProvider.GetRequiredService<IISOMessageService>() ?? throw new ArgumentNullException(nameof(IISOMessageService));
 
         var bic = options.BIC;
 
@@ -53,12 +55,26 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
 
             foreach (var transaction in transactions)
             {
+                // Check if this transaction has exceeded max retries
+                if (transaction.Round >= options.SAFMaxRetries)
+                {
+                    _logger.LogWarning("SAF Job: Transaction {txId} exceeded max retries ({maxRetries}). Finalizing as Failed.",
+                        transaction.TxId, options.SAFMaxRetries);
+                    await isoService.FinalizeAfterMaxRetriesAsync(
+                        transaction,
+                        "No response from IPS after max SAF retries",
+                        cancellationToken);
+                    continue;
+                }
+
+                // Send pacs.028 status request to IPS
                 var response = await outgoing.HandleAsync(new ISO20022.Models.DTOs.CB.StatusRequestDto
                 {
                     TxId = transaction.TxId!
                 }, cancellationToken);
 
-                _logger.LogInformation("SAF Job processed transaction {txId} with status {status}...", transaction.TxId, response.Data?.Status);
+                _logger.LogInformation("SAF Job processed transaction {txId} with status {status}, round {round}...",
+                    transaction.TxId, response.Data?.Status, transaction.Round);
             }
             await storage.SaveChangesAsync(cancellationToken);
         }

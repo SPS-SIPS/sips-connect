@@ -316,4 +316,34 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         sw.Stop();
         _logger.LogInformation("DB persist PersistReturnResponseAsync txId={TxId} durationMs={Duration}", isoMessage.TxId, sw.ElapsedMilliseconds);
     }
+
+    public async Task MarkForCheckStatusAsync(
+        ISOMessage isoMessage,
+        string reason,
+        CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        isoMessage.Status = TransactionStatus.CheckStatus;
+        isoMessage.Reason = reason;
+        isoMessage.Round += 1; // Increment retry counter
+        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist MarkForCheckStatusAsync txId={TxId} round={Round} durationMs={Duration}",
+            isoMessage.TxId, isoMessage.Round, sw.ElapsedMilliseconds);
+    }
+
+    public async Task FinalizeAfterMaxRetriesAsync(
+        ISOMessage isoMessage,
+        string reason,
+        CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        isoMessage.Status = TransactionStatus.Failed;
+        isoMessage.Reason = reason;
+        isoMessage.AdditionalInfo = $"Exceeded max SAF retries ({isoMessage.Round})";
+        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
+        sw.Stop();
+        _logger.LogInformation("DB persist FinalizeAfterMaxRetriesAsync txId={TxId} round={Round} durationMs={Duration}",
+            isoMessage.TxId, isoMessage.Round, sw.ElapsedMilliseconds);
+    }
 }
