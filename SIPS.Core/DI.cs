@@ -48,6 +48,7 @@ public static class DI
         // new helper services
         services.AddSingleton<IInboundMessageService, InboundMessageService>();
         services.AddSingleton<ICallbackOrchestrator, CallbackOrchestrator>();
+        services.AddSingleton<IStatusOrchestrator, StatusOrchestrator>();
         services.AddScoped<IISOMessageService>(sp =>
         {
             var persistence = sp.GetRequiredService<IPersistenceGateway>();
