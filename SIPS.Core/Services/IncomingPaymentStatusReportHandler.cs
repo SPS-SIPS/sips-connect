@@ -202,8 +202,11 @@ public sealed class IncomingPaymentStatusReportHandler(
         response.AdditionalInfo = request.AdditionalInfo ?? string.Empty;
 
         // If related ISO message is not pending anymore, mirror DB status and return without forwarding
+        // This handles idempotent retries or duplicate pacs.002 messages
         if (isoMessage.Status != TransactionStatus.Pending)
         {
+            _logger.LogInformation("[{CorrelationId}] ISO message TxId {TxId} already processed with status {Status}. Returning mirrored response.", cid, request.TxId, isoMessage.Status);
+
             // Ensure TxId and Original.TxId are populated so the built XML contains the TxId
             response.TxId = statusReq.OrgnlTxId ?? response.TxId;
             response.Original.TxId = statusReq.OrgnlTxId ?? response.Original.TxId;
@@ -211,15 +214,17 @@ public sealed class IncomingPaymentStatusReportHandler(
             response.Original.EndToEndId = string.IsNullOrWhiteSpace(statusReq.OriginalEndToEnd) ? (isoMessage.EndToEndId ?? "E2E") : statusReq.OriginalEndToEnd;
             if (response.Original.Debtor == null) response.Original.Debtor = new PaymentRequestBuilder.Request().Debtor;
             if (response.Original.Creditor == null) response.Original.Creditor = new PaymentRequestBuilder.Request().Creditor;
-            // mirror DB state as an ACSC success status in the response
-            response.Status = ACSC;
-            // Build the status response XML and persist a mapping to ACSC (success) to mirror the current DB state
+
+            // Mirror DB state: map TransactionStatus to ISO status code
+            // Success/ReadyForReturn → ACSC (transaction was accepted by IPS, even if CB failed)
+            // Failed → RJCT
+            response.Status = (isoMessage.Status == TransactionStatus.Failed) ? RJCT : ACSC;
+            response.Reason = isoMessage.Reason ?? "Mirror DB Status";
+            response.AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty;
+
             var rspMirror = PaymentStatusRequestResponseBuilder.Build(response);
-            // mark parent as success (no callback forwarded)
-            isoMessage.Status = TransactionStatus.Success;
-            isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : "Mirror DB Status";
-            isoMessage.AdditionalInfo = response.AdditionalInfo ?? string.Empty;
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Success, isoMessage.Reason, isoMessage.AdditionalInfo, rspMirror, dbCt);
+            // Persist status record to maintain audit trail (idempotent)
+            await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, response.Reason, response.AdditionalInfo, rspMirror, dbCt);
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] NonPending response: {Response}", rspMirror);
             var signedMirror = _signer.SignEnvelope(rspMirror);
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning NonPending signed response: {Signed}", signedMirror);
@@ -234,7 +239,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             var rspRej = PaymentStatusRequestResponseBuilder.Build(response);
             isoMessage.Status = TransactionStatus.Failed;
             isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : "Received rejection confirmation";
-            isoMessage.AdditionalInfo = "Standard Rejection Confirmaiton Notification Received";
+            isoMessage.AdditionalInfo = "Standard Rejection Confirmation Notification Received";
             await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, dbCt);
             var signedRej = _signer.SignEnvelope(rspRej);
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning RJCT signed response: {Signed}", signedRej);
@@ -297,14 +302,30 @@ public sealed class IncomingPaymentStatusReportHandler(
                     ct,
                     cid
                 );
-            _logger.LogInformation("[{CorrelationId}] Forwarded transaction to CoreBank for TxId {TxId}, {result}", cid, request.TxId, JsonSerializer.Serialize(result, _jsonSerializerOptions));
+
+        // Guard against null callback result
+        if (result == null)
+        {
+            _logger.LogError("[{CorrelationId}] CoreBank callback returned null for TxId {TxId}", cid, request.TxId);
+            isoMessage.Status = TransactionStatus.ReadyForReturn;
+            isoMessage.Reason = "CoreBank callback failed";
+            isoMessage.AdditionalInfo = "Null response from CoreBank";
+            response.Status = RJCT;
+            response.Reason = "CoreBank callback failed";
+            response.AdditionalInfo = "Null response from CoreBank";
+            var rspError = PaymentStatusRequestResponseBuilder.Build(response);
+            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.ReadyForReturn, isoMessage.Reason, isoMessage.AdditionalInfo, rspError, dbCt);
+            return _signer.SignEnvelope(rspError);
+        }
+
+        _logger.LogInformation("[{CorrelationId}] Forwarded transaction to CoreBank for TxId {TxId}, StatusCode={StatusCode}", cid, request.TxId, result.StatusCode);
 
         // Persist raw CoreBank response JSON on the parent ISOMessage for audit/operations
-    _logger.LogDebug("[IncomingPaymentStatusReportHandler] Callback result.Data is null? {IsNull}", result.Data == null);
-            if (result.Data == null)
-            {
-            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Callback returned null data, skipping parse.");
-            }
+        _logger.LogDebug("[IncomingPaymentStatusReportHandler] Callback result.Data is null? {IsNull}", result.Data == null);
+        if (result.Data == null)
+        {
+            _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null data for TxId {TxId}", cid, request.TxId);
+        }
 
         var crResponse = result.Data != null ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] crResponse.Status={Status} TxId={TxId}", crResponse?.Status, crResponse?.TxId);
@@ -312,8 +333,11 @@ public sealed class IncomingPaymentStatusReportHandler(
     // ensure response mirrors the CoreBank status so the built XML contains the expected status
     response.Status = crResponse.Status ?? response.Status;
 
-        isoMessage.Status = cbProcessed ? TransactionStatus.Success : TransactionStatus.ReadyForReturn;
-        isoMessage.AdditionalInfo = cbProcessed ? "Processed" : "Queaed For Return!";
+        // Determine final status based on CoreBank result
+        // ACSC from CB → Success; otherwise → ReadyForReturn (ACSC from IPS but CB failed)
+        var finalStatus = cbProcessed ? TransactionStatus.Success : TransactionStatus.ReadyForReturn;
+        isoMessage.Status = finalStatus;
+        isoMessage.AdditionalInfo = cbProcessed ? "Processed" : "Queued For Return!";
         isoMessage.Reason = cbProcessed ? "Processed Transaction" : "Transaction is ready for return";
 
         isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
@@ -359,9 +383,10 @@ public sealed class IncomingPaymentStatusReportHandler(
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] response.Original.EndToEndId='{EndToEndId}'", response.Original.EndToEndId);
             var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
 
-            await _isoService.PersistStatusResponseAsync(
+        // Persist with consistent status: both parent and child reflect the same finalStatus
+        await _isoService.PersistStatusResponseAsync(
                 record,
-                TransactionStatus.Success,
+                finalStatus,
                 isoMessage.Reason,
                 isoMessage.AdditionalInfo,
                 rspFinal,
