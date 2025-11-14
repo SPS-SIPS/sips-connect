@@ -177,10 +177,15 @@ public static class PayeeVerificationResponseBuilder
 
         if (request.Verified)
         {
-            document.IdVrfctnRpt.Rpt[0].Rsn = new VerificationReason1Choice
+            // Only set Reason if it's not empty (MinLength=1 constraint)
+            if (!string.IsNullOrEmpty(request.Reason))
             {
-                Prtry = request.Reason
-            };
+                document.IdVrfctnRpt.Rpt[0].Rsn = new VerificationReason1Choice
+                {
+                    Prtry = request.Reason
+                };
+            }
+
             document.IdVrfctnRpt.Rpt[0].UpdtdPtyAndAcctId = new IdentificationInformation4
             {
                 Pty = new Schemas.VRDocument.PartyIdentification135
@@ -193,7 +198,7 @@ public static class PayeeVerificationResponseBuilder
                     {
                         Othr = new GenericAccountIdentification1
                         {
-                            Id = request.Id,
+                            Id = string.IsNullOrEmpty(request.Id) ? request.Original.Alias : request.Id,
                             SchmeNm = new AccountSchemeName1Choice
                             {
                                 Prtry = request.Type,

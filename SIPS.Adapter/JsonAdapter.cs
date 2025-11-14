@@ -82,7 +82,21 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
 
                 // Validate and convert the value to the expected type
                 object? convertedValue = value != null ? ConvertToType(value.ToString() ?? string.Empty, expectedType) : null;
-                outputJson[userField] = JsonValue.Create(convertedValue);
+
+                // Use the userField for the output JSON property name
+                var segments = userField.Split('.');
+                JsonObject currentObject = outputJson;
+
+                for (int i = 0; i < segments.Length - 1; i++)
+                {
+                    if (!currentObject.ContainsKey(segments[i]))
+                    {
+                        currentObject[segments[i]] = new JsonObject();
+                    }
+                    currentObject = currentObject[segments[i]]!.AsObject();
+                }
+
+                currentObject[segments.Last()] = JsonValue.Create(convertedValue);
             }
             catch (Exception ex)
             {
