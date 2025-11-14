@@ -24,7 +24,7 @@ public static class DI
             var options = new JsonAdapterOptions();
             configuration.GetSection("Endpoints").Bind(options.Endpoints);
             var dateFormats = configuration.GetSection("DateFormats").Get<string[]>();
-            options.DateFormats = dateFormats ?? ["yyyy-MM-dd"];
+                options.DateFormats = dateFormats ?? new[] { "yyyy-MM-dd" };
             return options;
         });
 
@@ -112,13 +112,15 @@ public static class DI
             var clientFactory = sp.GetRequiredService<IHttpClientFactory>();
             var logger = sp.GetRequiredService<ILogger<InterfaceHttpClient>>();
             var client = clientFactory.CreateClient();
-            return new InterfaceHttpClient(logger, client);
+            var coreOptions = sp.GetRequiredService<CoreOptions>();
+            var coreOptionsAccessor = Microsoft.Extensions.Options.Options.Create(coreOptions);
+            return new InterfaceHttpClient(logger, client, coreOptionsAccessor);
         });
 
         var corsPolicy = new CorsPolicies();
         configuration.Bind(nameof(CorsPolicies), corsPolicy);
 
-        var apiKeys = configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? [];
+    var apiKeys = configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? new List<ApiKey>();
         services.AddSingleton(new ApiKeys(apiKeys));
 
         services.AddCors(options =>
@@ -147,17 +149,9 @@ public static class DI
             });
         });
 
-        services.AddSingleton<IInterfaceHttpClient, InterfaceHttpClient>(sp =>
-{
-    var clientFactory = sp.GetRequiredService<IHttpClientFactory>();
-    var logger = sp.GetRequiredService<ILogger<InterfaceHttpClient>>();
-    var client = clientFactory.CreateClient();
-    return new InterfaceHttpClient(logger, client);
-});
-
-    services.AddAuthentication(options =>
+        services.AddAuthentication(options =>
         {
-            options.DefaultScheme         = "MultiAuth";
+            options.DefaultScheme = "MultiAuth";
             options.DefaultChallengeScheme = "MultiAuth";
         })
         .AddPolicyScheme("MultiAuth", "JWT or API Key", options =>
@@ -182,7 +176,7 @@ public static class DI
            var realm = configuration["Keycloak:Realm:Name"];
            var audience = configuration["Keycloak:Realm:Audience"] ?? throw new ArgumentNullException("Keycloak:Realm:Audience is required in appSettings.json");
            var validateIssuer = bool.Parse(configuration["Keycloak:Realm:ValidateIssuer"] ?? "true");
-           string[] validIssuers = configuration.GetSection("Keycloak:Realm:ValidIssuers").Get<string[]>() ?? [];
+           string[] validIssuers = configuration.GetSection("Keycloak:Realm:ValidIssuers").Get<string[]>() ?? Array.Empty<string>();
 
            var authority = $"{protocol}://{host}/realms/{realm}";
 
