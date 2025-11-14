@@ -24,6 +24,8 @@ public sealed class OutgoingReturnTransactionHandler(
     ISignatureService signature,
     IPersistenceGateway persistence,
     ICorrelationService correlation,
+    SIPS.Core.Services.Abstractions.IISOMessageService isoService,
+    SIPS.Core.Services.Abstractions.IStatusOrchestrator statusOrchestrator,
     IOptions<CoreOptions> coreOptions
     ) : IOutgoingReturnTransactionHandler
 {
@@ -36,6 +38,8 @@ public sealed class OutgoingReturnTransactionHandler(
     private readonly ISignatureService _signature = signature;
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
+    private readonly SIPS.Core.Services.Abstractions.IISOMessageService _isoService = isoService;
+    private readonly SIPS.Core.Services.Abstractions.IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
     public async Task<Response<ReturnPaymentResponseDto>> HandleAsync(ReturnPaymentRequestDto message, CancellationToken ct)
     {
@@ -51,37 +55,76 @@ public sealed class OutgoingReturnTransactionHandler(
             // Step 1: Retrieve original message and transaction
             var (isValid, originalMessage, transaction) = await GetOriginalTransactionAsync(message.OriginalTxId, dbCt);
             if (!isValid || originalMessage == null || transaction == null)
+            {
+                _logger.LogWarning("[{CorrelationId}] Return rejected: Original transaction {TxId} not found", cid, message.OriginalTxId);
                 return Response<ReturnPaymentResponseDto>.Fail("Transaction not found: " + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
+            }
 
-            // Step 2: Build, sign, and persist outgoing return request
+            // Step 2: Validate original transaction was successfully completed (ACSC)
+            // Only allow returns for transactions that were accepted and settled
+            if (originalMessage.Status != PostgreSQL.Enums.TransactionStatus.Success &&
+                originalMessage.Status != PostgreSQL.Enums.TransactionStatus.ReadyForReturn)
+            {
+                _logger.LogWarning("[{CorrelationId}] Return rejected: Original transaction {TxId} status is {Status}, not Success or ReadyForReturn",
+                    cid, message.OriginalTxId, originalMessage.Status);
+                return Response<ReturnPaymentResponseDto>.Fail(
+                    $"Cannot return transaction with status {originalMessage.Status}. Only successful transactions can be returned.",
+                    System.Net.HttpStatusCode.BadRequest);
+            }
+
+            // Step 3: Validate return request fields against original transaction
+            // Validate OriginalEndToEndId matches the transaction's EndToEndId
+            if (!string.IsNullOrWhiteSpace(message.OriginalEndToEndId) &&
+                !string.Equals(message.OriginalEndToEndId, transaction.EndToEndId, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("[{CorrelationId}] Return rejected: OriginalEndToEndId mismatch for {TxId}. Return={ReturnEndToEnd}, Original={OriginalEndToEnd}",
+                    cid, message.OriginalTxId, message.OriginalEndToEndId, transaction.EndToEndId);
+                return Response<ReturnPaymentResponseDto>.Fail(
+                    $"OriginalEndToEndId mismatch: return={message.OriginalEndToEndId}, original={transaction.EndToEndId}",
+                    System.Net.HttpStatusCode.BadRequest);
+            }
+
+            // Step 4: Build, sign, and persist outgoing return request
             originalMessage.ReturnId = message.ReturnId;
             var (document, bizMsgIdr, type, msgId) = BuildRequest(transaction, fromBIC, message.ReturnId, reason: message.Reason, additionalInfo: message.AdditionalInfo);
             var signed = _signer.SignEnvelope(document);
             var entity = CreateISOMessage(message, transaction, fromBIC, txId, signed, msgId, type, bizMsgIdr);
             var record = await _persistence.RecordISOMessageAsync(entity, dbCt);
 
-            // Step 3: Call SIPS and handle response
+            // Step 5: Call IPS and handle response
             var responseMessage = await CallSIPSAsync(url, signed, ct, cid);
-            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, dbCt);
+            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, originalMessage, responseMessage, dbCt, cid);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
 
-            // Step 4: Parse and persist SIPS response
-            _logger.LogInformation("[{CorrelationId}] Received response from SIPS: {Response}", cid, responseMessage.Data);
+            // Step 6: Parse and persist IPS response
+            _logger.LogInformation("[{CorrelationId}] Received response from IPS: {Response}", cid, responseMessage.Data);
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
-                _logger.LogError("[{CorrelationId}] Failed to parse the message: {message}", cid, responseMessage.Data);
-                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, dbCt);
+                _logger.LogError("[{CorrelationId}] Failed to parse IPS return response: {message}", cid, responseMessage.Data);
+                await _isoService.MarkForCheckStatusAsync(originalMessage, "Failed to parse IPS return response", dbCt);
                 return Response<ReturnPaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
-            _logger.LogInformation("[{CorrelationId}] Parsed response from SIPS: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
+            _logger.LogDebug("[{CorrelationId}] Parsed response from IPS: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true
             }));
-            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? MISS, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, dbCt, rs.TxId ?? string.Empty, rs.Original?.OriginalEndToEnd ?? string.Empty);
 
-            // Step 5: Return success response
+            // Use StatusOrchestrator to map IPS status code consistently
+            var finalStatus = _statusOrchestrator.MapSingleStatus(rs.Status ?? RJCT, "IPS");
+
+            // Persist with mapped status
+            record.Response = Encoding.UTF8.GetBytes(responseMessage.Data!);
+            record.Status = finalStatus;
+            record.Reason = rs.Reason ?? MISS;
+            record.AdditionalInfo = rs.AdditionalInfo ?? string.Empty;
+            record.TxId = rs.TxId ?? string.Empty;
+            record.EndToEndId = rs.Original?.OriginalEndToEnd ?? string.Empty;
+
+            await _persistence.ISOMessageResponseAsync(record, dbCt);
+
+            // Step 7: Return success response
             return Response<ReturnPaymentResponseDto>.Success(new ReturnPaymentResponseDto
             {
                 Status = rs.Status ?? RJCT,
@@ -176,8 +219,10 @@ public sealed class OutgoingReturnTransactionHandler(
     }
     private async Task<Response<ReturnPaymentResponseDto>> HandleSIPSCallExceptionAsync(
     PostgreSQL.Models.ISOMessage record,
+    PostgreSQL.Models.ISOMessage originalMessage,
     Response<string>? responseMessage,
-    CancellationToken ct)
+    CancellationToken ct,
+    string correlationId)
     {
         // Check for null or missing data
         if (responseMessage == null || responseMessage.Data == null)
@@ -192,18 +237,19 @@ public sealed class OutgoingReturnTransactionHandler(
                 ct: ct);
         }
 
-        // Handle timeout or bad gateway responses
+        // Handle timeout or bad gateway responses - mark for SAF retry
         if (responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
             responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway)
         {
-            return await LogPersistAndReturnAsync(
-                record,
-                logMessage: responseMessage.Message,
-                persistMessage: "Request to SIPS timed out!",
-                data: responseMessage.Data,
-                failMessage: "Request to SIPS timed out!",
-                statusCode: responseMessage.StatusCode,
-                ct: ct);
+            _logger.LogWarning("[{CorrelationId}] IPS return request timeout/gateway error - marking for SAF retry. Status: {Status}",
+                correlationId, responseMessage.StatusCode);
+            await _isoService.MarkForCheckStatusAsync(
+                originalMessage,
+                $"IPS return request timeout: {responseMessage.StatusCode}",
+                ct);
+            return Response<ReturnPaymentResponseDto>.Fail(
+                "Request to IPS timed out - transaction marked for retry",
+                responseMessage.StatusCode);
         }
 
         // Handle bad request or unauthorized responses
@@ -224,9 +270,12 @@ public sealed class OutgoingReturnTransactionHandler(
         var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
         if (!ok)
         {
-            _logger.LogError("Failed to verify the signature: {Verbose}", responseMessage.Data);
-            await PersistISOMessageAsync(record, RJCT, "Failed to verify the signature", "Failed to verify the signature", responseMessage.Data, ct);
-            return Response<ReturnPaymentResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
+            _logger.LogError("[{CorrelationId}] Failed to verify IPS signature: {Verbose}", correlationId, verbose);
+            await _isoService.MarkForCheckStatusAsync(
+                originalMessage,
+                "Failed to verify IPS signature on return response",
+                ct);
+            return Response<ReturnPaymentResponseDto>.Fail("Failed to verify the signature from IPS.", System.Net.HttpStatusCode.BadRequest);
         }
 
         // If all checks pass, return a successful response.
@@ -244,8 +293,8 @@ public sealed class OutgoingReturnTransactionHandler(
         System.Net.HttpStatusCode statusCode,
         CancellationToken ct)
     {
-        _logger.LogError("Failed to receive valid response from SIPS: {Message}", logMessage);
-        await PersistISOMessageAsync(record, RJCT, persistMessage, persistMessage, data, ct);
+        _logger.LogError("Failed to receive valid response from IPS: {Message}", logMessage);
+        // Note: SAF marking handled in HandleSIPSCallExceptionAsync
         return Response<ReturnPaymentResponseDto>.Fail(failMessage, statusCode);
     }
     private static bool TryParse(string message, out ReturnPaymentResponseBuilder.Response? response)
@@ -259,21 +308,6 @@ public sealed class OutgoingReturnTransactionHandler(
 
         return true;
     }
-    // verification delegated to shared signature service
-    private async Task PersistISOMessageAsync(PostgreSQL.Models.ISOMessage isoMessage, string status, string reason, string? additionalInfo, string rsp, CancellationToken ct, string txId = "", string endToEndId = "")
-    {
-        isoMessage.Response = Encoding.UTF8.GetBytes(rsp);
-        isoMessage.Status = status == ACSC ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
-        isoMessage.Reason = reason;
-        isoMessage.AdditionalInfo = additionalInfo;
-        if (txId != "")
-        {
-            isoMessage.TxId = txId;
-        }
-        if (endToEndId != "")
-        {
-            isoMessage.EndToEndId = endToEndId;
-        }
-        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
-    }
+    // Note: PersistISOMessageAsync removed - we now use inline persist with StatusOrchestrator
+    // Status mapping handled by StatusOrchestrator.MapSingleStatus
 }

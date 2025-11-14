@@ -22,6 +22,7 @@ public sealed class OutgoingTransactionHandler(
     IPersistenceGateway persistence,
     ICorrelationService correlation,
     SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
+    SIPS.Core.Services.Abstractions.IISOMessageService isoService,
     IOptions<CoreOptions> coreOptions
     ) : IOutgoingTransactionHandler
 {
@@ -32,6 +33,7 @@ public sealed class OutgoingTransactionHandler(
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
     private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
+    private readonly SIPS.Core.Services.Abstractions.IISOMessageService _isoService = isoService;
     private readonly CoreOptions _core = coreOptions.Value;
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
@@ -45,53 +47,57 @@ public sealed class OutgoingTransactionHandler(
 
         try
         {
-            // Step 1: Build, sign, and persist outgoing transaction request
+            // Step 1: Build, sign, and persist outgoing transaction request as Pending
             var (document, bizMsgIdr, type, msgId) = BuildRequest(message, fromBIC, ourAgentBic, txId);
-            // Ensure optional fields required by ISO builders are not null
-            // (e.g., remittance information) — BuildRequest will handle empty strings safely
             _logger.LogDebug("[OutgoingTransactionHandler] after BuildRequest");
             var signed = _signer.SignEnvelope(document);
             _logger.LogDebug("[OutgoingTransactionHandler] after SignEnvelope");
             var entity = CreateISOMessage(message, fromBIC, ourAgentBic, txId, signed, bizMsgIdr, type, msgId);
+            // Set initial status as Pending - completion will be determined by pacs.002
+            entity.Status = PostgreSQL.Enums.TransactionStatus.Pending;
             _logger.LogDebug("[OutgoingTransactionHandler] after CreateISOMessage");
             using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
-            // debug: log db token cancellation state so unit tests can be diagnosed when LastToken is null
             _logger.LogDebug("[OutgoingTransactionHandler] before persist - dbCt.CanBeCanceled={CanBeCanceled} IsCancellationRequested={IsCanceled}", dbCt.CanBeCanceled, dbCt.IsCancellationRequested);
             var record = await _persistence.RecordISOMessageAsync(entity, dbCt);
             _logger.LogDebug("[OutgoingTransactionHandler] after persist");
 
             // Step 2: Call SIPS and handle response
             var responseMessage = await _sips.SendAsync(url, signed, ct, cid);
-            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, ct);
+            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, dbCt, cid);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
 
-            // Step 3: Parse and persist SIPS response
+            // Step 3: Parse ACSC acknowledgment from IPS
+            // Note: This is just an acknowledgment that IPS received the pacs.008
+            // Final status will be determined when we receive pacs.002 (handled by IncomingPaymentStatusReportHandler)
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
-                _logger.LogError("[{CorrelationId}] Failed to parse the message: {message}", cid, responseMessage.Data);
-                await PersistISOMessageAsync(record, RJCT, "Failed to parse the message", "Failed to parse the message", responseMessage.Data!, dbCt);
+                _logger.LogError("[{CorrelationId}] Failed to parse ACSC acknowledgment: {message}", cid, responseMessage.Data);
+                await _isoService.MarkForCheckStatusAsync(record, "Failed to parse IPS acknowledgment", dbCt);
                 return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
-            _logger.LogInformation("[{CorrelationId}] Original Response from SIPS: {message}", cid, responseMessage.Data!);
-            _logger.LogInformation("[{CorrelationId}] Parsed Response from SIPS: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
+            _logger.LogInformation("[{CorrelationId}] Received ACSC acknowledgment from IPS for TxId {TxId}", cid, txId);
+            _logger.LogDebug("[{CorrelationId}] IPS Response: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true,
             }));
 
-            await PersistISOMessageAsync(record, rs.Status ?? RJCT, rs.Reason ?? string.Empty, rs.AdditionalInfo ?? string.Empty, responseMessage.Data!, dbCt);
+            // Store the IPS acknowledgment response but keep status as Pending
+            record.Response = Encoding.UTF8.GetBytes(responseMessage.Data!);
+            await _persistence.ISOMessageResponseAsync(record, dbCt);
 
-            // Step 4: Return success response
+            // Step 4: Return ACSC acknowledgment to caller
+            // Transaction remains Pending until pacs.002 is received
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
             {
-                Status = rs.Status ?? RJCT,
+                Status = rs.Status ?? ACSC,
                 AcceptanceDate = rs.AcceptanceDate,
-                TxId = rs.TxId ?? string.Empty,
+                TxId = txId,
                 EndToEndId = message.EndToEndId,
-                Reason = rs.Reason ?? string.Empty,
-                AdditionalInfo = rs.AdditionalInfo ?? string.Empty
+                Reason = "Transaction sent to IPS - awaiting pacs.002 confirmation",
+                AdditionalInfo = "Status: Pending"
             });
         }
         catch (Exception ex)
@@ -178,7 +184,8 @@ public sealed class OutgoingTransactionHandler(
     private async Task<Response<PaymentResponseDto>> HandleSIPSCallExceptionAsync(
     PostgreSQL.Models.ISOMessage record,
     Response<string>? responseMessage,
-    CancellationToken ct)
+    CancellationToken ct,
+    string correlationId)
     {
         // Check for null or missing data
         if (responseMessage == null || responseMessage.Data == null)
@@ -193,18 +200,19 @@ public sealed class OutgoingTransactionHandler(
                 ct: ct);
         }
 
-        // Handle timeout or bad gateway responses
+        // Handle timeout or bad gateway responses - mark for SAF retry
         if (responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
             responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway)
         {
-            return await LogPersistAndReturnAsync(
+            _logger.LogWarning("[{CorrelationId}] IPS send timeout/gateway error - marking for SAF retry. Status: {Status}",
+                correlationId, responseMessage.StatusCode);
+            await _isoService.MarkForCheckStatusAsync(
                 record,
-                logMessage: responseMessage.Message,
-                persistMessage: "Request to SIPS timed out!",
-                data: responseMessage.Data,
-                failMessage: "Request to SIPS timed out!",
-                statusCode: responseMessage.StatusCode,
-                ct: ct);
+                $"IPS send timeout: {responseMessage.StatusCode}",
+                ct);
+            return Response<PaymentResponseDto>.Fail(
+                "Request to IPS timed out - transaction marked for retry",
+                responseMessage.StatusCode);
         }
 
         // Handle bad request or unauthorized responses
@@ -225,9 +233,12 @@ public sealed class OutgoingTransactionHandler(
         var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
         if (!ok)
         {
-            _logger.LogError("Failed to verify the signature: {Verbose}", responseMessage.Data);
-            await PersistISOMessageAsync(record, RJCT, "Failed to verify the signature", "Failed to verify the signature", responseMessage.Data, ct);
-            return Response<PaymentResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
+            _logger.LogError("[{CorrelationId}] Failed to verify IPS signature: {Verbose}", correlationId, verbose);
+            await _isoService.MarkForCheckStatusAsync(
+                record,
+                "Failed to verify IPS signature",
+                ct);
+            return Response<PaymentResponseDto>.Fail("Failed to verify the signature from IPS.", System.Net.HttpStatusCode.BadRequest);
         }
 
         // If all checks pass, return a successful response.
@@ -245,8 +256,8 @@ public sealed class OutgoingTransactionHandler(
         System.Net.HttpStatusCode statusCode,
         CancellationToken ct)
     {
-        _logger.LogError("Failed to receive valid response from SIPS: {Message}", logMessage);
-        await PersistISOMessageAsync(record, RJCT, persistMessage, persistMessage, data, ct);
+        _logger.LogError("Failed to receive valid response from IPS: {Message}", logMessage);
+        await _isoService.MarkForCheckStatusAsync(record, persistMessage, ct);
         return Response<PaymentResponseDto>.Fail(failMessage, statusCode);
     }
     private static bool TryParse(string message, out PaymentRequestResponseBuilder.Response? response)
@@ -260,21 +271,7 @@ public sealed class OutgoingTransactionHandler(
 
         return true;
     }
-    // verification delegated to shared signature service
-    private async Task PersistISOMessageAsync(PostgreSQL.Models.ISOMessage isoMessage, string status, string reason, string? additionalInfo, string rsp, CancellationToken ct, string txId = "", string endToEndId = "")
-    {
-        isoMessage.Response = Encoding.UTF8.GetBytes(rsp);
-        isoMessage.Status = status == ACSC ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
-        isoMessage.Reason = reason;
-        isoMessage.AdditionalInfo = additionalInfo;
-        if (txId != "")
-        {
-            isoMessage.TxId = txId;
-        }
-        if (endToEndId != "")
-        {
-            isoMessage.EndToEndId = endToEndId;
-        }
-        await _persistence.ISOMessageResponseAsync(isoMessage, ct);
-    }
+    // Note: PersistISOMessageAsync removed - we no longer finalize status here
+    // Status is kept as Pending until pacs.002 is received
+    // Completion is handled by IncomingPaymentStatusReportHandler
 }
