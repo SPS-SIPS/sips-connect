@@ -44,6 +44,7 @@ public sealed class IncomingTransactionStatusHandler(
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
     IISOMessageService isoService,
+    IStatusOrchestrator statusOrchestrator,
     IOptions<CoreOptions> coreOptions
 ) : IIncomingTransactionStatusHandler
 {
@@ -63,6 +64,7 @@ public sealed class IncomingTransactionStatusHandler(
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
+    private readonly IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
@@ -91,6 +93,7 @@ public sealed class IncomingTransactionStatusHandler(
               new InboundMessageService(signature),
               new CallbackOrchestrator(),
               new ISOMessageService(persistence),
+              new StatusOrchestrator(logger as ILogger<StatusOrchestrator> ?? throw new ArgumentNullException("StatusOrchestrator logger")),
               coreOptions)
     {
     }
@@ -111,10 +114,11 @@ public sealed class IncomingTransactionStatusHandler(
         if (!isValid || request == null)
             return AdminMessage.Generate("Failed to verify the signature or parse the message.");
 
-        // Step 2: Retrieve ISO message by TxId
-        var isoMessage = await _persistence.GetISOMessageByTxIdAsync(request.OrgnlTxId, ct);
+        // Step 2: Retrieve ISO message by TxId (with transactions for richer context)
+        var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.OrgnlTxId, ct);
         if (isoMessage == null)
         {
+            _logger.LogWarning("[{CorrelationId}] Status request for non-existent transaction {TxId}", cid, request.OrgnlTxId);
             using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
             await CreateISOMessage(request, message, dbCts.Token);
             return AdminMessage.Generate("Failed to get the Message.");
@@ -160,20 +164,31 @@ public sealed class IncomingTransactionStatusHandler(
                 _callback,
                 ct,
                 cid);
-            if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
+
+            // Guard against null callback result
+            if (responseMessage == null)
+            {
+                _logger.LogError("[{CorrelationId}] CoreBank status callback returned null for TxId {TxId}", cid, request.OrgnlTxId);
+                response.Status = RJCT;
+                response.Reason = "CoreBank callback failed";
+                response.AdditionalInfo = "Null response from CoreBank";
+            }
+            else if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
             {
                 ParseCallbackResult(responseMessage.Data, response);
             }
             else
             {
-                await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Failed to parse the message", "Failed to parse the message", string.Empty, dbCt);
                 _logger.LogWarning("[{CorrelationId}] Failed to get response from CB. Status: {Status}", cid, responseMessage.StatusCode);
-                response.AdditionalInfo = "Failed to get response from CB.";
+                response.Status = RJCT;
+                response.Reason = "CoreBank callback failed";
+                response.AdditionalInfo = $"Failed to get response from CB. Status: {responseMessage.StatusCode}";
             }
 
-            // Step 6: Build, persist, and sign response
+            // Step 6: Build, persist, and sign response (single persist)
+            // Use StatusOrchestrator to map status consistently
+            var finalStatus = _statusOrchestrator.MapSingleStatus(response.Status ?? RJCT, "CoreBank");
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            var finalStatus = (response.Status == ACSC) ? TransactionStatus.Success : TransactionStatus.Failed;
             await _isoService.PersistStatusResponseAsync(record, finalStatus, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
         }
