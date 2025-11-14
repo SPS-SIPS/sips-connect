@@ -38,6 +38,7 @@ public sealed class IncomingReturnTransactionHandler(
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
     IISOMessageService isoService,
+    IStatusOrchestrator statusOrchestrator,
     IOptions<CoreOptions> coreOptions
     ) : IIncomingReturnTransactionHandler
 {
@@ -54,6 +55,7 @@ public sealed class IncomingReturnTransactionHandler(
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
+    private readonly IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
@@ -78,6 +80,7 @@ public sealed class IncomingReturnTransactionHandler(
               new InboundMessageService(signature),
               new CallbackOrchestrator(),
               new ISOMessageService(persistence),
+              new StatusOrchestrator(logger as ILogger<StatusOrchestrator> ?? throw new ArgumentNullException("StatusOrchestrator logger")),
               coreOptions)
     {
     }
@@ -108,20 +111,87 @@ public sealed class IncomingReturnTransactionHandler(
         var response = BuildInitialResponse(request);
         _logger.LogInformation("[{CorrelationId}] Retrieved original message response (IRTH): {response}", cid, JsonSerializer.Serialize(response, _jsonSerializerOptions));
 
-        // Step 4: Check if the message is a transaction request message and if it is not null
-        if (originalMessage == null || originalMessage.MessageType != PostgreSQL.Enums.ISOMessageType.TransactionRequest)
+        // Step 4: Validate original message exists and is a transaction request
+        if (originalMessage == null)
         {
-            response.AdditionalInfo = "Failed to get the Message.";
+            _logger.LogWarning("[{CorrelationId}] Return rejected: Original transaction {TxId} not found", cid, request.OrgnlTxId);
+            response.AdditionalInfo = "Original transaction not found.";
             response.Reason = MISS;
             response.Status = RJCT;
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            await _isoService.PersistTransactionResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, response.TxId ?? string.Empty, request.OriginalEndToEnd ?? string.Empty, dbCt);
+            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
+        }
+
+        if (originalMessage.MessageType != PostgreSQL.Enums.ISOMessageType.TransactionRequest)
+        {
+            _logger.LogWarning("[{CorrelationId}] Return rejected: Original message {TxId} is not a TransactionRequest (type={Type})",
+                cid, request.OrgnlTxId, originalMessage.MessageType);
+            response.AdditionalInfo = "Original message is not a transaction request.";
+            response.Reason = MISS;
+            response.Status = RJCT;
+            var rsp = ReturnPaymentResponseBuilder.Build(response);
+            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            return _signer.SignEnvelope(rsp);
+        }
+
+        // Step 5: Validate original transaction was successfully completed (ACSC)
+        // Only allow returns for transactions that were accepted by IPS
+        if (originalMessage.Status != TransactionStatus.Success && originalMessage.Status != TransactionStatus.ReadyForReturn)
+        {
+            _logger.LogWarning("[{CorrelationId}] Return rejected: Original transaction {TxId} status is {Status}, not Success or ReadyForReturn",
+                cid, request.OrgnlTxId, originalMessage.Status);
+            response.AdditionalInfo = $"Cannot return transaction with status {originalMessage.Status}. Only successful transactions can be returned.";
+            response.Reason = "NOAS"; // No Original Transaction
+            response.Status = RJCT;
+            var rsp = ReturnPaymentResponseBuilder.Build(response);
+            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? "NOAS", response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            return _signer.SignEnvelope(rsp);
+        }
+
+        // Step 6: Validate return request fields against original transaction
+        var originalTransaction = originalMessage.Transactions.FirstOrDefault();
+        if (originalTransaction != null)
+        {
+            var validationErrors = new List<string>();
+
+            // Validate amount (if provided in return request)
+            if (request.OriginalAmount > 0 && request.OriginalAmount != originalTransaction.Amount)
+            {
+                validationErrors.Add($"Amount mismatch: return={request.OriginalAmount}, original={originalTransaction.Amount}");
+            }
+
+            // Validate currency
+            if (!string.IsNullOrWhiteSpace(request.OriginalCurrency) &&
+                !string.Equals(request.OriginalCurrency, originalTransaction.Currency, StringComparison.OrdinalIgnoreCase))
+            {
+                validationErrors.Add($"Currency mismatch: return={request.OriginalCurrency}, original={originalTransaction.Currency}");
+            }
+
+            // Validate EndToEndId
+            if (!string.IsNullOrWhiteSpace(request.OriginalEndToEnd) &&
+                !string.Equals(request.OriginalEndToEnd, originalTransaction.EndToEndId, StringComparison.OrdinalIgnoreCase))
+            {
+                validationErrors.Add($"EndToEndId mismatch: return={request.OriginalEndToEnd}, original={originalTransaction.EndToEndId}");
+            }
+
+            if (validationErrors.Any())
+            {
+                var errorMessage = string.Join("; ", validationErrors);
+                _logger.LogWarning("[{CorrelationId}] Return rejected: Validation failed for {TxId}: {Errors}",
+                    cid, request.OrgnlTxId, errorMessage);
+                response.AdditionalInfo = $"Return validation failed: {errorMessage}";
+                response.Reason = "NARR"; // Narrative Reason
+                response.Status = RJCT;
+                var rsp = ReturnPaymentResponseBuilder.Build(response);
+                await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? "NARR", response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+                return _signer.SignEnvelope(rsp);
+            }
         }
 
         try
         {
-            // Step 5: Send callback and parse result via orchestrator
+            // Step 7: Send callback and parse result via orchestrator
             var headers = new Dictionary<string, string>() {
                 { API_Key, _callbackLinks.Key! },
                 { API_Secret, _callbackLinks.Secret! }
