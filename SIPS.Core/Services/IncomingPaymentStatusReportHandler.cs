@@ -37,6 +37,7 @@ public sealed class IncomingPaymentStatusReportHandler(
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
     IISOMessageService isoService,
+    IStatusOrchestrator statusOrchestrator,
     IOptions<CoreOptions> coreOptions
 ) : IIncomingPaymentStatusReportHandler
 {
@@ -51,6 +52,7 @@ public sealed class IncomingPaymentStatusReportHandler(
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
+    private readonly IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
     private readonly IPaymentStatusReportParser _reportParser = reportParser;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
@@ -232,15 +234,19 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
 
         // If RJCT -> persist and return without CoreBank call
-        if (request.Status == RJCT)
+        if (_statusOrchestrator.IsRejectionStatus(request.Status))
         {
+            var (rjctParentStatus, rjctChildStatus, rjctReason, rjctAdditionalInfo) = _statusOrchestrator.MapCompletionStatus(request.Status ?? string.Empty, null, false);
+
             response.TxId = statusReq.OrgnlTxId ?? response.TxId;
             response.Original.TxId = statusReq.OrgnlTxId ?? response.Original.TxId;
             var rspRej = PaymentStatusRequestResponseBuilder.Build(response);
-            isoMessage.Status = TransactionStatus.Failed;
-            isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : "Received rejection confirmation";
-            isoMessage.AdditionalInfo = "Standard Rejection Confirmation Notification Received";
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, dbCt);
+
+            isoMessage.Status = rjctParentStatus;
+            isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : rjctReason;
+            isoMessage.AdditionalInfo = rjctAdditionalInfo;
+
+            await _isoService.PersistStatusResponseAsync(record, rjctChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, dbCt);
             var signedRej = _signer.SignEnvelope(rspRej);
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning RJCT signed response: {Signed}", signedRej);
             return signedRej;
@@ -307,14 +313,19 @@ public sealed class IncomingPaymentStatusReportHandler(
         if (result == null)
         {
             _logger.LogError("[{CorrelationId}] CoreBank callback returned null for TxId {TxId}", cid, request.TxId);
-            isoMessage.Status = TransactionStatus.ReadyForReturn;
-            isoMessage.Reason = "CoreBank callback failed";
-            isoMessage.AdditionalInfo = "Null response from CoreBank";
+
+            // Map ACSC from IPS + null from CB → ReadyForReturn
+            var (nullParentStatus, nullChildStatus, nullReason, nullAdditionalInfo) = _statusOrchestrator.MapCompletionStatus(request.Status ?? string.Empty, null, false);
+
+            isoMessage.Status = nullParentStatus;
+            isoMessage.Reason = nullReason;
+            isoMessage.AdditionalInfo = nullAdditionalInfo;
             response.Status = RJCT;
-            response.Reason = "CoreBank callback failed";
-            response.AdditionalInfo = "Null response from CoreBank";
+            response.Reason = nullReason;
+            response.AdditionalInfo = nullAdditionalInfo;
+
             var rspError = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.ReadyForReturn, isoMessage.Reason, isoMessage.AdditionalInfo, rspError, dbCt);
+            await _isoService.PersistStatusResponseAsync(record, nullChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspError, dbCt);
             return _signer.SignEnvelope(rspError);
         }
 
@@ -328,18 +339,21 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
 
         var crResponse = result.Data != null ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
-    _logger.LogDebug("[IncomingPaymentStatusReportHandler] crResponse.Status={Status} TxId={TxId}", crResponse?.Status, crResponse?.TxId);
-        var cbProcessed = (crResponse!.Status ?? string.Empty) == ACSC;
-    // ensure response mirrors the CoreBank status so the built XML contains the expected status
-    response.Status = crResponse.Status ?? response.Status;
+        _logger.LogDebug("[IncomingPaymentStatusReportHandler] crResponse.Status={Status} TxId={TxId}", crResponse?.Status, crResponse?.TxId);
 
-        // Determine final status based on CoreBank result
-        // ACSC from CB → Success; otherwise → ReadyForReturn (ACSC from IPS but CB failed)
-        var finalStatus = cbProcessed ? TransactionStatus.Success : TransactionStatus.ReadyForReturn;
-        isoMessage.Status = finalStatus;
-        isoMessage.AdditionalInfo = cbProcessed ? "Processed" : "Queued For Return!";
-        isoMessage.Reason = cbProcessed ? "Processed Transaction" : "Transaction is ready for return";
+        // Use StatusOrchestrator to map IPS + CoreBank statuses to final status
+        var (parentStatus, childStatus, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
+            request.Status ?? string.Empty,
+            crResponse?.Status,
+            false);
 
+        // Ensure response mirrors the CoreBank status so the built XML contains the expected status
+        response.Status = crResponse?.Status ?? response.Status;
+
+        // Apply mapped status to parent ISOMessage
+        isoMessage.Status = parentStatus;
+        isoMessage.Reason = reason;
+        isoMessage.AdditionalInfo = additionalInfo;
         isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
 
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] tx is null? {IsNull}", tx == null);
@@ -383,10 +397,10 @@ public sealed class IncomingPaymentStatusReportHandler(
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] response.Original.EndToEndId='{EndToEndId}'", response.Original.EndToEndId);
             var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
 
-        // Persist with consistent status: both parent and child reflect the same finalStatus
+        // Persist with consistent status: both parent and child reflect the same status
         await _isoService.PersistStatusResponseAsync(
-                record,
-                finalStatus,
+            record,
+                childStatus,
                 isoMessage.Reason,
                 isoMessage.AdditionalInfo,
                 rspFinal,
