@@ -24,6 +24,7 @@ public sealed class OutgoingVerificationHandler(
     IPersistenceGateway persistence,
     ICorrelationService correlation,
     SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
+    SIPS.Core.Services.Abstractions.IStatusOrchestrator statusOrchestrator,
     IOptions<CoreOptions> coreOptions
     ) : IOutgoingVerificationHandler
 {
@@ -34,6 +35,7 @@ public sealed class OutgoingVerificationHandler(
     private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
     private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
+    private readonly SIPS.Core.Services.Abstractions.IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
 
     public async Task<Response<VerificationResponseDto>> HandleAsync(VerificationRequestDto message, CancellationToken ct)
@@ -78,25 +80,33 @@ public sealed class OutgoingVerificationHandler(
             var responseMessage = await _sips.SendAsync(url, signedRequest, ct, cid);
             record.Response = Encoding.UTF8.GetBytes(responseMessage.Data ?? "");
 
-            // Step 5: Validate the SIPS response
+            // Step 5: Validate the IPS response
             if (!responseMessage.IsSuccess || string.IsNullOrEmpty(responseMessage.Data))
             {
-                await PersistISOMessageAsync(record, false, "Failed to receive valid response from SIPS", responseMessage.Message, responseMessage.Data ?? string.Empty, string.Empty, dbCt);
+                var failedStatus = _statusOrchestrator.MapSingleStatus("RJCT", "IPS");
+                await PersistISOMessageAsync(record, failedStatus, "Failed to receive valid response from IPS", responseMessage.Message, responseMessage.Data ?? string.Empty, string.Empty, dbCt);
                 return Response<VerificationResponseDto>.Fail(Transformers.TransformSIPSHttpError(responseMessage.StatusCode), responseMessage.StatusCode);
             }
 
-            // Step 6: Verify the signature on the SIPS response
+            // Step 6: Verify the signature on the IPS response
             var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
             if (!ok)
             {
-                await PersistISOMessageAsync(record, false, "Failed to verify the signature from SIPS", "Signature verification failed", responseMessage.Data, string.Empty, dbCt);
+                var failedStatus = _statusOrchestrator.MapSingleStatus("RJCT", "IPS");
+                await PersistISOMessageAsync(record, failedStatus, "Failed to verify the signature from IPS", "Signature verification failed", responseMessage.Data, string.Empty, dbCt);
                 _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {Verbose}", cid, verbose);
-                return Response<VerificationResponseDto>.Fail("Failed to verify the signature from SIPS.", System.Net.HttpStatusCode.BadRequest);
+                return Response<VerificationResponseDto>.Fail("Failed to verify the signature from IPS.", System.Net.HttpStatusCode.BadRequest);
             }
 
-            // Step 7: Parse and persist the SIPS response
+            // Step 7: Parse and persist the IPS response
             var parsedResponse = PayeeVerificationResponseBuilder.Parse(responseMessage.Data);
-            await PersistISOMessageAsync(record, parsedResponse.Verified, parsedResponse.Reason ?? string.Empty, string.Empty, responseMessage.Data, parsedResponse.VerificationId ?? string.Empty, dbCt);
+
+            // Use StatusOrchestrator to map verification result consistently
+            // Verified=true → SUCC, Verified=false → MISS
+            var statusCode = parsedResponse.Verified ? "SUCC" : "MISS";
+            var finalStatus = _statusOrchestrator.MapSingleStatus(statusCode, "IPS");
+
+            await PersistISOMessageAsync(record, finalStatus, parsedResponse.Reason ?? string.Empty, string.Empty, responseMessage.Data, parsedResponse.VerificationId ?? string.Empty, dbCt);
 
             // Step 8: Return success response
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto
@@ -141,9 +151,9 @@ public sealed class OutgoingVerificationHandler(
 
 
 
-    private async Task PersistISOMessageAsync(ISOMessage isoMessage, bool isVerified, string reason, string additionalInfo, string response, string originalId, CancellationToken ct)
+    private async Task PersistISOMessageAsync(ISOMessage isoMessage, PostgreSQL.Enums.TransactionStatus status, string reason, string additionalInfo, string response, string originalId, CancellationToken ct)
     {
-        isoMessage.Status = isVerified ? PostgreSQL.Enums.TransactionStatus.Success : PostgreSQL.Enums.TransactionStatus.Failed;
+        isoMessage.Status = status;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
         isoMessage.Response = Encoding.UTF8.GetBytes(response);
