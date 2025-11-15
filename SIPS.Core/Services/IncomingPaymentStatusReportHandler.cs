@@ -109,12 +109,9 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         // Step 2: Retrieve ISO message by TxId (try both variants for compatibility with tests)
         var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.TxId, ct);
-        if (isoMessage == null)
-        {
-            isoMessage = await _persistence.GetISOMessageByTxIdAsync(request.TxId, ct);
-        }
+        isoMessage ??= await _persistence.GetISOMessageByTxIdAsync(request.TxId, ct);
 
-    _logger.LogDebug("[IncomingPaymentStatusReportHandler] located isoMessage TxId={IsoTxId} Status={IsoStatus}", isoMessage?.TxId, isoMessage != null ? isoMessage.Status.ToString() : "null");
+        _logger.LogDebug("[IncomingPaymentStatusReportHandler] located isoMessage TxId={IsoTxId} Status={IsoStatus}", isoMessage?.TxId, isoMessage != null ? isoMessage.Status.ToString() : "null");
 
         if (isoMessage == null)
         {
