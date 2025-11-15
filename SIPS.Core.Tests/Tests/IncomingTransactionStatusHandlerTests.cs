@@ -57,10 +57,11 @@ public class IncomingTransactionStatusHandlerTests
     var signature = (signatureMock ?? new Mock<ISignatureService>()).Object;
     var inbound = new InboundMessageService(signature);
     var parser = (parserMock ?? new Mock<IPaymentStatusRequestParser>()).Object;
+        var statusOrchestrator = new Mock<IStatusOrchestrator>().Object;
         var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
 
         return new IncomingTransactionStatusHandler(options, logger, httpClient, signer, verifier, jsonAdapter, recorder,
-            signature, parser, callback, responses, persistence, correlation, inbound, callbacks, isoService, coreOptions);
+            signature, parser, callback, responses, persistence, correlation, inbound, callbacks, isoService, statusOrchestrator, coreOptions);
     }
 
     [Fact]

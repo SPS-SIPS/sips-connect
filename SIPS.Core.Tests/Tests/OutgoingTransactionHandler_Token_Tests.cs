@@ -5,10 +5,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Moq;
 using SIPS.Core.Options;
 using SIPS.Core.Services;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Abstractions;
+using SIPS.Core.Services.Implementations;
 using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Options;
 using SIPS.Core.Services.Persistence;
@@ -64,9 +66,11 @@ namespace SIPS.Core.Tests.Tests
             var persistence = new FakePersistence();
             var correlation = new CorrelationService();
             var sips = new FakeSipsSender();
+            var isoService = new ISOMessageService(persistence);
+            var statusOrchestrator = new Mock<IStatusOrchestrator>().Object;
             var core = Microsoft.Extensions.Options.Options.Create(new CoreOptions { DbPersistTimeoutSeconds = 1 });
 
-            var handler = new OutgoingTransactionHandler(options, logger, signer, sig, persistence, correlation, sips, core);
+            var handler = new OutgoingTransactionHandler(options, logger, signer, sig, persistence, correlation, sips, isoService, statusOrchestrator, core);
 
             var req = new PaymentRequestDto
             {

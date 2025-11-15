@@ -77,7 +77,8 @@ public class IncomingTransactionStatusHandler_Callback_Tests
     var callback = new CallbackClient(http.Object, cbLogger, correlation);
     var callbacks = new CallbackOrchestrator();
     var isoService = new ISOMessageService(persistence);
-    var coreOptions = Microsoft.Extensions.Options.Options.Create(new Options.CoreOptions());
+        var statusOrchestrator = new Mock<IStatusOrchestrator>().Object;
+        var coreOptions = Microsoft.Extensions.Options.Options.Create(new Options.CoreOptions());
         var signature = new Mock<ISignatureService>();
         signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((true, "ok"));
@@ -85,7 +86,7 @@ public class IncomingTransactionStatusHandler_Callback_Tests
         var parser = new SIPS.Core.Tests.Parsers.PaymentStatusRequestParserShim();
 
         var sut = new IncomingTransactionStatusHandler(options, logger, http.Object, signer, verifier.Object, adapter.Object, recorder.Object,
-            signature.Object, parser, callback, responses, persistence, correlation, inbound, callbacks, isoService, coreOptions);
+            signature.Object, parser, callback, responses, persistence, correlation, inbound, callbacks, isoService, statusOrchestrator, coreOptions);
         return (sut, recorder, http, adapter);
     }
 

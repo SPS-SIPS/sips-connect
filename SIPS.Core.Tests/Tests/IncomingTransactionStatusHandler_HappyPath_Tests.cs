@@ -115,10 +115,10 @@ public class IncomingTransactionStatusHandler_HappyPath_Tests
                  .ReturnsAsync((true, "ok"));
         var inbound = new InboundMessageService(signature.Object);
         var parser = new SIPS.Core.Tests.Parsers.PaymentStatusRequestParserShim();
-
+        var statusOrchestrator = new Mock<IStatusOrchestrator>().Object;
         var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
         var sut = new IncomingTransactionStatusHandler(options, logger, http.Object, signer.Object, verifier.Object, adapter.Object, recorder.Object,
-            signature.Object, parser, callback, responses, persistence, correlation, inbound, callbacks, isoService, coreOptions);
+            signature.Object, parser, callback, responses, persistence, correlation, inbound, callbacks, isoService, statusOrchestrator, coreOptions);
         return (sut, recorder, http, adapter, signer);
     }
 

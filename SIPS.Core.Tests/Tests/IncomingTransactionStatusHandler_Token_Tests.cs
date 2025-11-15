@@ -112,9 +112,10 @@ public sealed class IncomingTransactionStatusHandler_Token_Tests
         var inbound = new FakeInbound();
     var callbacks = new CallbackOrchestrator();
     var isoService = new ISOMessageService(persistence);
-    var core = Microsoft.Extensions.Options.Options.Create(new CoreOptions { DbPersistTimeoutSeconds = 1 });
+        var statusOrchestrator = new Mock<IStatusOrchestrator>().Object;
+        var core = Microsoft.Extensions.Options.Options.Create(new CoreOptions { DbPersistTimeoutSeconds = 1 });
 
-    var handler = new IncomingTransactionStatusHandler(options, logger, httpClient, signer, verifier, jsonAdapter, recorder, signature, parser, callback, responseFactory, persistence, correlation, inbound, callbacks, isoService, core);
+        var handler = new IncomingTransactionStatusHandler(options, logger, httpClient, signer, verifier, jsonAdapter, recorder, signature, parser, callback, responseFactory, persistence, correlation, inbound, callbacks, isoService, statusOrchestrator, core);
 
         using var userCts = new CancellationTokenSource();
         userCts.Cancel();
