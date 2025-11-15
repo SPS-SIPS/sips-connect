@@ -252,6 +252,23 @@ public sealed class IncomingPaymentStatusReportHandler(
             return signedRej;
         }
 
+        // Check if this pacs.002 is confirming an incoming return (original transaction is ReadyForReturn)
+        // If so, call CoreBank to reverse the credit instead of crediting
+        if (isoMessage.Status == TransactionStatus.ReadyForReturn)
+        {
+            _logger.LogInformation("[{CorrelationId}] pacs.002 confirms incoming return for TxId {TxId}. Calling CoreBank to reverse credit.", cid, request.TxId);
+            response = await CallCoreBankReturnAsync(isoMessage, transaction, statusReq, response, ct, cid, dbCt);
+
+            // Build and persist final response
+            response.TxId = statusReq.OrgnlTxId ?? response.TxId;
+            response.Original.TxId = statusReq.OrgnlTxId ?? response.Original.TxId;
+            var rspReturn = PaymentStatusRequestResponseBuilder.Build(response);
+
+            // Status already set by CallCoreBankReturnAsync
+            await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return completed", isoMessage.AdditionalInfo, rspReturn, dbCt);
+            return _signer.SignEnvelope(rspReturn);
+        }
+
         var headers = new Dictionary<string, string>() {
                         { API_Key, _callbackLinks.Key! },
                         { API_Secret, _callbackLinks.Secret! }
@@ -428,6 +445,97 @@ public sealed class IncomingPaymentStatusReportHandler(
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning Final signed response: {Signed}", signedFinal);
 
         return signedFinal;
+    }
+
+    /// <summary>
+    /// Calls CoreBank to reverse a credit for an incoming return transaction.
+    /// This is triggered when pacs.002 confirms a return and the original transaction is ReadyForReturn.
+    /// </summary>
+    private async Task<PaymentStatusRequestResponseBuilder.Response> CallCoreBankReturnAsync(
+        PostgreSQL.Models.ISOMessage isoMessage,
+        PostgreSQL.Models.Transaction? transaction,
+        PaymentStatusRequestBuilder.Request statusReq,
+        PaymentStatusRequestResponseBuilder.Response response,
+        CancellationToken ct,
+        string cid,
+        CancellationToken dbCt)
+    {
+        var headers = new Dictionary<string, string>() {
+            { API_Key, _callbackLinks.Key! },
+            { API_Secret, _callbackLinks.Secret! }
+        };
+
+        var idem = transaction?.TxId;
+        if (!string.IsNullOrWhiteSpace(idem))
+            headers["X-Idempotency-Key"] = idem!;
+        if (!string.IsNullOrWhiteSpace(transaction?.TxId))
+            headers["X-Transaction-Id"] = transaction.TxId!;
+        if (!string.IsNullOrWhiteSpace(isoMessage.ReturnId))
+            headers["X-Return-Id"] = isoMessage.ReturnId;
+
+        // Build return request payload for CoreBank
+        var returnDto = new CBReturnRequestDto
+        {
+            FromBIC = isoMessage.FromBIC ?? string.Empty,
+            OriginalEndToEnd = transaction?.EndToEndId ?? string.Empty,
+            OrgnlTxId = transaction?.TxId ?? string.Empty,
+            ReturnId = isoMessage.ReturnId ?? string.Empty,
+            Reason = isoMessage.Reason ?? "Return confirmed by IPS",
+            AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty
+        };
+
+        var result = await _callbacks.SendJsonAsync(
+            _callbackLinks.Return!,
+            headers,
+            returnDto,
+            CB_ReturnRequest,
+            _jsonAdapter,
+            _correlation,
+            _jsonSerializerOptions,
+            _callback,
+            ct,
+            cid
+        );
+
+        // Guard against null callback result
+        if (result == null)
+        {
+            _logger.LogError("[{CorrelationId}] CoreBank return callback returned null for TxId {TxId}", cid, transaction?.TxId);
+
+            // Map failure - return reversal failed, keep as ReadyForReturn for manual intervention
+            isoMessage.Status = TransactionStatus.ReadyForReturn;
+            isoMessage.Reason = "CoreBank return callback failed";
+            isoMessage.AdditionalInfo = "Manual intervention required to complete return";
+            response.Status = RJCT;
+            response.Reason = isoMessage.Reason;
+            response.AdditionalInfo = isoMessage.AdditionalInfo;
+
+            return response;
+        }
+
+        _logger.LogInformation("[{CorrelationId}] Forwarded return to CoreBank for TxId {TxId}, StatusCode={StatusCode}", cid, transaction?.TxId, result.StatusCode);
+
+        // Parse CoreBank response
+        var cbResponse = result.Data != null ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+
+        // Map CoreBank return response to final status
+        // If CBS successfully reversed the credit, mark as Success (return completed)
+        // If CBS failed to reverse, keep as ReadyForReturn for manual intervention
+        var (parentStatus, childStatus, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
+            ACSC,  // IPS confirmed the return
+            cbResponse?.Status,  // CBS return result
+            false);
+
+        isoMessage.Status = parentStatus;
+        isoMessage.Reason = reason;
+        isoMessage.AdditionalInfo = additionalInfo;
+
+        // Update response to reflect return completion
+        response.Status = cbResponse?.Status ?? RJCT;
+        response.Reason = reason;
+        response.AdditionalInfo = additionalInfo;
+
+        return response;
     }
 
     // verification and parsing now delegated to shared services, record/persist via IISOMessageService
