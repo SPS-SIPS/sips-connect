@@ -213,32 +213,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .Setup(x => x.SignEnvelope(It.IsAny<string>(), It.IsAny<string>()))
                 .Returns<string, string>((message, _) => message);
 
-            // Default setup for StatusOrchestrator - covers most common scenarios
-            // Tests can override these for specific scenarios
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns((string status) => status == "RJCT");
-
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()))
-                .Returns((string ipsStatus, string cbStatus, bool isReturn) =>
-                {
-                    // Default mapping logic to prevent unmocked calls
-                    // Handle RJCT from IPS
-                    if (ipsStatus == "RJCT")
-                        return (TransactionStatus.Failed, TransactionStatus.Failed, "Payment rejected", "IPS rejection");
-
-                    // Handle successful CoreBank response
-                    if (cbStatus == "ACSC" || cbStatus == "ACCP")
-                        return (TransactionStatus.Success, TransactionStatus.Success, "Payment completed", "Success");
-
-                    // Handle failed or null CoreBank response - should be ReadyForReturn
-                    if (cbStatus == "RJCT" || cbStatus == null || cbStatus == string.Empty)
-                        return (TransactionStatus.ReadyForReturn, TransactionStatus.ReadyForReturn, "CoreBank failed or null", "Ready for return");
-
-                    // Default fallback
-                    return (TransactionStatus.Success, TransactionStatus.Success, "Default success", "Completed");
-                });
+            // No default setup for StatusOrchestrator
         }
 
         protected IncomingPaymentStatusReportHandler CreateHandler()
@@ -248,6 +223,10 @@ public class IncomingPaymentStatusReportHandler_Tests
             var parser = new PaymentStatusReportParser();
             var inbound = new InboundMessageService(MockSignatureService.Object);
             var isoService = new ISOMessageService(MockPersistence.Object);
+
+            // Use REAL StatusOrchestrator to test actual business logic
+            var statusOrchestratorLogger = Mock.Of<ILogger<StatusOrchestrator>>();
+            var statusOrchestrator = new StatusOrchestrator(statusOrchestratorLogger);
 
             return new IncomingPaymentStatusReportHandler(
                 Options,
@@ -262,20 +241,22 @@ public class IncomingPaymentStatusReportHandler_Tests
                 inbound,
                 MockCallbackOrchestrator.Object,
                 isoService,
-                MockStatusOrchestrator.Object,
+                statusOrchestrator,  // Real implementation!
                 CoreOptions
             );
         }
 
         protected void SetupCoreBankSuccessResponse(string txId)
         {
+            // Transform returns a JsonObject (can be the same as input for test purposes)
             MockJsonAdapter
                 .Setup(x => x.Transform(It.IsAny<JsonObject>(), "CB_PaymentResponse"))
-                .Returns(new JsonObject());
+                .Returns<JsonObject, string>((input, _) => input);
 
+            // ToObject converts the JsonObject to the DTO - use lambda to ensure fresh return
             MockJsonAdapter
                 .Setup(x => x.ToObject<CBPaymentStatusResponseDto>(It.IsAny<JsonObject>()))
-                .Returns(TestHelpers.CreateCbsSuccessResponse(txId));
+                .Returns(() => TestHelpers.CreateCbsSuccessResponse(txId));
 
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
@@ -294,13 +275,15 @@ public class IncomingPaymentStatusReportHandler_Tests
 
         protected void SetupCoreBankFailureResponse(string txId)
         {
+            // Transform returns a JsonObject (can be the same as input for test purposes)
             MockJsonAdapter
                 .Setup(x => x.Transform(It.IsAny<JsonObject>(), "CB_PaymentResponse"))
-                .Returns(new JsonObject());
+                .Returns<JsonObject, string>((input, _) => input);
 
+            // ToObject converts the JsonObject to the DTO - use lambda to ensure fresh return
             MockJsonAdapter
                 .Setup(x => x.ToObject<CBPaymentStatusResponseDto>(It.IsAny<JsonObject>()))
-                .Returns(TestHelpers.CreateCbsFailureResponse(txId));
+                .Returns(() => TestHelpers.CreateCbsFailureResponse(txId));
 
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
@@ -314,7 +297,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
                     It.IsAny<string>()))
-                .ReturnsAsync(TestHelpers.CreateSuccessCallbackResponse());
+                .ReturnsAsync(Response<JsonObject?>.Fail("CoreBank error", HttpStatusCode.InternalServerError));
         }
     }
 
