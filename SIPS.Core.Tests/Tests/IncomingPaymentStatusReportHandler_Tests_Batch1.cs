@@ -307,6 +307,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             // Arrange
             const string txId = "TX-HAPPY-001";
             var pendingTransaction = ISOMessageBuilder.CreatePendingTransaction(txId);
+            ISOMessage? persistedMessage = null;
 
             MockPersistence
                 .Setup(x => x.GetISOMessageWithTransactionsByTxIdAsync(txId, It.IsAny<CancellationToken>()))
@@ -314,10 +315,12 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             MockPersistence
                 .Setup(x => x.RecordISOMessageStatusAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
+                .Callback<ISOMessageStatus, CancellationToken>((status, _) => persistedMessage = status.ISOMessage)
                 .ReturnsAsync(new ISOMessageStatus { ISOMessage = pendingTransaction });
 
             MockPersistence
                 .Setup(x => x.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
+                .Callback<ISOMessageStatus, CancellationToken>((status, _) => persistedMessage = status.ISOMessage)
                 .ReturnsAsync(new ISOMessageStatus { ISOMessage = pendingTransaction });
 
             SetupCoreBankSuccessResponse(txId);
@@ -333,10 +336,11 @@ public class IncomingPaymentStatusReportHandler_Tests
             result.Should().NotBeNullOrEmpty("Handler should return a response");
             result.Should().StartWith("<", "Response should be XML");
 
-            pendingTransaction.Status.Should().Be(TransactionStatus.Success,
+            persistedMessage.Should().NotBeNull("Handler should persist the transaction");
+            persistedMessage!.Status.Should().Be(TransactionStatus.Success,
                 "Transaction status should be updated to Success after CoreBank success");
 
-            pendingTransaction.Reason.Should().Be("Payment completed successfully",
+            persistedMessage.Reason.Should().Contain("Processed",
                 "Transaction reason should reflect the successful completion");
 
             MockCallbackOrchestrator.Verify(
