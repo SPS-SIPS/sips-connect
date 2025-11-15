@@ -18,6 +18,7 @@ using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 namespace SIPS.Core.Services;
+
 public sealed class OutgoingTransactionStatusHandler(
     ISO20022Options options,
     ILogger<OutgoingTransactionStatusHandler> logger,
@@ -28,6 +29,9 @@ public sealed class OutgoingTransactionStatusHandler(
     SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
     SIPS.Core.Services.Abstractions.IISOMessageService isoService,
     SIPS.Core.Services.Abstractions.IStatusOrchestrator statusOrchestrator,
+    SIPS.Core.Services.Abstractions.ICallbackOrchestrator callbacks,
+    SIPS.Adapter.IJsonAdapter jsonAdapter,
+    SIPS.Core.Services.Callback.ICallbackClient callback,
     IOptions<CoreOptions> coreOptions
     ) : IOutgoingTransactionStatusHandler
 // Note: This handler is used by SAF to check status of both:
@@ -44,7 +48,16 @@ public sealed class OutgoingTransactionStatusHandler(
     private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
     private readonly SIPS.Core.Services.Abstractions.IISOMessageService _isoService = isoService;
     private readonly SIPS.Core.Services.Abstractions.IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
+    private readonly SIPS.Core.Services.Abstractions.ICallbackOrchestrator _callbacks = callbacks;
+    private readonly SIPS.Adapter.IJsonAdapter _jsonAdapter = jsonAdapter;
+    private readonly SIPS.Core.Services.Callback.ICallbackClient _callback = callback;
     private readonly CoreOptions _core = coreOptions.Value;
+    private readonly System.Text.Json.JsonSerializerOptions _jsonSerializerOptions = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase) }
+    };
     public async Task<Response<PaymentResponseDto>> HandleAsync(StatusRequestDto message, CancellationToken ct)
     {
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
@@ -112,10 +125,27 @@ public sealed class OutgoingTransactionStatusHandler(
             // trigger CoreBank callback to complete the return (reverse the credit)
             if (wasReadyForReturn && isOriginalPayment && finalStatus == TransactionStatus.Success)
             {
-                _logger.LogInformation("[{CorrelationId}] Incoming return for payment {TxId} confirmed via SAF. Triggering CoreBank callback to process return.", cid, isoMessage.TxId);
-                // TODO: Trigger CoreBank return callback here
-                // This completes the incoming return flow when pacs.002 was delayed/missing
-                // CoreBank needs to reverse the credit that was applied for this payment
+                _logger.LogInformation("[{CorrelationId}] Incoming return for payment {TxId} confirmed via SAF. Calling CoreBank to process return.", cid, isoMessage.TxId);
+
+                // Call CoreBank to reverse the credit
+                // This is the SAF fallback path for incoming return completion when pacs.002 was delayed/missing
+                var returnCompleted = await CallCoreBankReturnAsync(isoMessage, ct, cid, dbCt);
+
+                if (!returnCompleted)
+                {
+                    // CBS reversal failed - revert to ReadyForReturn for manual intervention
+                    _logger.LogWarning("[{CorrelationId}] CoreBank return reversal failed for TxId {TxId}. Reverting to ReadyForReturn status.", cid, isoMessage.TxId);
+                    isoMessage.Status = TransactionStatus.ReadyForReturn;
+                    isoMessage.Reason = "Return confirmed by IPS but CBS reversal failed";
+                    isoMessage.AdditionalInfo = "Manual intervention required to complete return";
+
+                    // Update the persisted status
+                    await _persistence.ISOMessageStatusResponseAsync(record, dbCt);
+                }
+                else
+                {
+                    _logger.LogInformation("[{CorrelationId}] CoreBank return reversal completed successfully for TxId {TxId}", cid, isoMessage.TxId);
+                }
             }
 
             // Step 5: Return success response
@@ -265,5 +295,113 @@ public sealed class OutgoingTransactionStatusHandler(
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Calls CoreBank to reverse a credit for an incoming return transaction.
+    /// This is triggered by SAF when a ReadyForReturn transaction is confirmed via pacs.028.
+    /// This is the fallback path when pacs.002 never arrived.
+    /// </summary>
+    private async Task<bool> CallCoreBankReturnAsync(
+        ISOMessage isoMessage,
+        CancellationToken ct,
+        string cid,
+        CancellationToken dbCt)
+    {
+        try
+        {
+            var headers = new Dictionary<string, string>() {
+                { API_Key, _configuration.Key! },
+                { API_Secret, _configuration.Secret! }
+            };
+
+            var idem = isoMessage.TxId;
+            if (!string.IsNullOrWhiteSpace(idem))
+                headers["X-Idempotency-Key"] = idem!;
+            if (!string.IsNullOrWhiteSpace(isoMessage.TxId))
+                headers["X-Transaction-Id"] = isoMessage.TxId!;
+            if (!string.IsNullOrWhiteSpace(isoMessage.ReturnId))
+                headers["X-Return-Id"] = isoMessage.ReturnId;
+
+            // Get transaction details for the return
+            var transaction = isoMessage.Transactions.FirstOrDefault();
+
+            // Build return request payload for CoreBank
+            var returnDto = new CBReturnRequestDto
+            {
+                FromBIC = isoMessage.FromBIC ?? string.Empty,
+                OriginalEndToEnd = transaction?.EndToEndId ?? string.Empty,
+                OrgnlTxId = isoMessage.TxId ?? string.Empty,
+                ReturnId = isoMessage.ReturnId ?? string.Empty,
+                Reason = "Return confirmed by IPS via SAF",
+                AdditionalInfo = isoMessage.AdditionalInfo ?? "Return processed via Store-and-Forward mechanism"
+            };
+
+            var result = await _callbacks.SendJsonAsync(
+                _configuration.Return!,
+                headers,
+                returnDto,
+                CB_ReturnRequest,
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                ct,
+                cid
+            );
+
+            // Guard against null callback result
+            if (result == null)
+            {
+                _logger.LogError("[{CorrelationId}] CoreBank return callback returned null for TxId {TxId}", cid, isoMessage.TxId);
+                return false;
+            }
+
+            _logger.LogInformation("[{CorrelationId}] CoreBank return callback completed for TxId {TxId}, StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
+
+            // Parse CoreBank response
+            if (result.Data == null)
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank return callback returned null data for TxId {TxId}", cid, isoMessage.TxId);
+                return false;
+            }
+
+            // Transform and parse the response
+            var js = result.Data;
+            var md = _jsonAdapter.Transform(js, "CB_PaymentResponse");
+            var cbResponse = _jsonAdapter.ToObject<CBPaymentStatusResponseDto>(md);
+
+            if (cbResponse == null || string.IsNullOrWhiteSpace(cbResponse.Status))
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank return response has no status for TxId {TxId}", cid, isoMessage.TxId);
+                return false;
+            }
+
+            // Check if CBS successfully reversed the credit
+            // Map the CBS status - if it indicates success, the return is complete
+            var (parentStatus, _, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
+                ACSC,  // IPS confirmed the return
+                cbResponse.Status,  // CBS return result
+                false);
+
+            // If CBS reversal succeeded, keep the Success status
+            // If CBS reversal failed, the caller will revert to ReadyForReturn
+            if (parentStatus == TransactionStatus.Success)
+            {
+                isoMessage.Reason = reason;
+                isoMessage.AdditionalInfo = additionalInfo ?? "Return completed via SAF";
+                return true;
+            }
+            else
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank return reversal failed for TxId {TxId}. CBS Status={Status}", cid, isoMessage.TxId, cbResponse.Status);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[{CorrelationId}] Exception calling CoreBank return callback for TxId {TxId}", cid, isoMessage.TxId);
+            return false;
+        }
     }
 }
