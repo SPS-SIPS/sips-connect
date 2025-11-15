@@ -191,61 +191,46 @@ public sealed class IncomingReturnTransactionHandler(
 
         try
         {
-            // Step 7: Send callback and parse result via orchestrator
-            var headers = new Dictionary<string, string>() {
-                { API_Key, _callbackLinks.Key! },
-                { API_Secret, _callbackLinks.Secret! }
-            };
-            var idem = string.IsNullOrWhiteSpace(request.ReturnId) ? request.OrgnlTxId : $"{request.OrgnlTxId}-{request.ReturnId}";
-            headers["X-Idempotency-Key"] = idem;
-            headers["X-Transaction-Id"] = request.OrgnlTxId;
-            if (!string.IsNullOrWhiteSpace(request.ReturnId))
-                headers["X-Return-Id"] = request.ReturnId;
-            if (!string.IsNullOrWhiteSpace(request.OriginalEndToEnd))
-                headers["X-EndToEnd-Id"] = request.OriginalEndToEnd;
-            var dto = new CBReturnRequestDto
-            {
-                FromBIC = request.From,
-                OriginalEndToEnd = request.OriginalEndToEnd,
-                OrgnlTxId = request.OrgnlTxId,
-                ReturnId = request.ReturnId,
-                Reason = request.ReturnReason,
-                AdditionalInfo = request.AdditionalInfo,
-            };
-            var responseMessage = await _callbacks.SendJsonAsync(
-                _callbackLinks.Return!,
-                headers,
-                dto,
-                CB_ReturnRequest,
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                ct,
-                cid);
-            if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
-            {
-                ParseCallbackResult(responseMessage.Data, response, originalMessage);
-            }
-            else
-            {
-                response.AdditionalInfo = "Failed to get response from CB.";
-            }
-            // Step 6: Build, persist, and sign response
+            // Step 7: Mark original transaction as ReadyForReturn and return ACSC
+            // DO NOT call CoreBank yet - wait for pacs.002 confirmation first
+            _logger.LogInformation("[{CorrelationId}] Marking original transaction {TxId} as ReadyForReturn", cid, request.OrgnlTxId);
+
+            // Update original message status to ReadyForReturn
+            originalMessage.Status = TransactionStatus.ReadyForReturn;
+            originalMessage.Reason = "Return request received - awaiting confirmation";
+            originalMessage.AdditionalInfo = "Marked as ReadyForReturn";
+            await _persistence.ISOMessageResponseAsync(originalMessage, dbCt);
+
+            // Build ACSC acknowledgment response
+            response.Status = ACSC;
+            response.Reason = "Return request accepted - awaiting confirmation";
+            response.AdditionalInfo = "Transaction marked as ReadyForReturn. Awaiting pacs.002 confirmation to complete return.";
+
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            _logger.LogInformation("[{CorrelationId}] Built response (IRTH): {Response}", cid, rsp);
-            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            _logger.LogInformation("[{CorrelationId}] Built ACSC response (IRTH): {Response}", cid, rsp);
+
+            // Persist return message as ReadyForReturn (not final status yet)
+            await _isoService.PersistReturnResponseAsync(record, ACSC, response.Reason ?? ACSC, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+
             return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request.OrgnlTxId);
-            response.AdditionalInfo = "Failed to transfer: " + ex.Message;
+            _logger.LogError(ex, "[{CorrelationId}] Failed to process return request", cid);
+            response.Status = RJCT;
+            response.Reason = MISS;
+            response.AdditionalInfo = "Failed to process return request.";
             var rsp = ReturnPaymentResponseBuilder.Build(response);
             await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
         }
     }
+
+    // Note: CoreBank callback for return completion will be triggered by IncomingPaymentStatusReportHandler
+    // when pacs.002 confirmation is received. The handler will:
+    // 1. Check if original transaction status is ReadyForReturn
+    // 2. Call CoreBank to complete the return
+    // 3. Finalize the transaction status based on CoreBank response
 
     private ReturnPaymentResponseBuilder.Response BuildInitialResponse(ReturnPaymentRequestBuilder.Request request)
     {
