@@ -186,7 +186,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         var response = _responses.BuildPaymentStatusInitial(statusReq);
 
     // Ensure the nested Original/Debtor/Creditor objects exist and have safe defaults
-    if (response.Original == null) response.Original = new PaymentRequestBuilder.Request();
+    response.Original ??= new PaymentRequestBuilder.Request();
     if (response.Original.Debtor == null) response.Original.Debtor = new PaymentRequestBuilder.Request().Debtor;
     if (response.Original.Creditor == null) response.Original.Creditor = new PaymentRequestBuilder.Request().Creditor;
     if (string.IsNullOrWhiteSpace(response.Original.Debtor.Name)) response.Original.Debtor.Name = "NA";
@@ -338,7 +338,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null data for TxId {TxId}", cid, request.TxId);
         }
 
-        var crResponse = result.Data != null ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+    var crResponse = result.Data != null ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
         _logger.LogDebug("[IncomingPaymentStatusReportHandler] crResponse.Status={Status} TxId={TxId}", crResponse?.Status, crResponse?.TxId);
 
         // Use StatusOrchestrator to map IPS + CoreBank statuses to final status
@@ -348,7 +348,20 @@ public sealed class IncomingPaymentStatusReportHandler(
             false);
 
         // Ensure response mirrors the CoreBank status so the built XML contains the expected status
-        response.Status = crResponse?.Status ?? response.Status;
+        // Prefer the CoreBank status only when it is non-empty; otherwise keep the IPS status
+        var cbStatus = crResponse?.Status;
+        response.Status = string.IsNullOrWhiteSpace(cbStatus) ? response.Status : cbStatus;
+
+        // Acceptance date: prefer CoreBank's acceptance date when provided; otherwise, use IPS acceptance date
+        // This prevents default 0001-01-01 values.
+        if (crResponse != null && crResponse.AcceptanceDate != default)
+        {
+            response.AcceptanceDate = crResponse.AcceptanceDate;
+        }
+        else if (request.AcceptanceDate != default)
+        {
+            response.AcceptanceDate = request.AcceptanceDate;
+        }
 
         // Apply mapped status to parent ISOMessage
         isoMessage.Status = parentStatus;
@@ -395,6 +408,11 @@ public sealed class IncomingPaymentStatusReportHandler(
             response.TxId = statusReq.OrgnlTxId ?? response.TxId;
             response.Original.TxId = statusReq.OrgnlTxId ?? response.Original.TxId;
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] response.Original.EndToEndId='{EndToEndId}'", response.Original.EndToEndId);
+            // Final safety: schema requires TxSts (status) to be at least length 1
+            if (string.IsNullOrWhiteSpace(response.Status))
+            {
+                response.Status = string.IsNullOrWhiteSpace(request.Status) ? RJCT : request.Status;
+            }
             var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
 
         // Persist with consistent status: both parent and child reflect the same status
