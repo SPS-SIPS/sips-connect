@@ -23,6 +23,7 @@ public sealed class OutgoingTransactionHandler(
     ICorrelationService correlation,
     SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
     SIPS.Core.Services.Abstractions.IISOMessageService isoService,
+    SIPS.Core.Services.Abstractions.IStatusOrchestrator statusOrchestrator,
     IOptions<CoreOptions> coreOptions
     ) : IOutgoingTransactionHandler
 {
@@ -34,6 +35,7 @@ public sealed class OutgoingTransactionHandler(
     private readonly ICorrelationService _correlation = correlation;
     private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
     private readonly SIPS.Core.Services.Abstractions.IISOMessageService _isoService = isoService;
+    private readonly SIPS.Core.Services.Abstractions.IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
@@ -68,36 +70,42 @@ public sealed class OutgoingTransactionHandler(
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
 
-            // Step 3: Parse ACSC acknowledgment from IPS
-            // Note: This is just an acknowledgment that IPS received the pacs.008
-            // Final status will be determined when we receive pacs.002 (handled by IncomingPaymentStatusReportHandler)
+            // Step 3: Parse IPS response and finalize transaction
+            // Note: For outgoing pacs.008, IPS responds immediately with final status
+            // This is different from incoming flow where we wait for separate pacs.002
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
-                _logger.LogError("[{CorrelationId}] Failed to parse ACSC acknowledgment: {message}", cid, responseMessage.Data);
-                await _isoService.MarkForCheckStatusAsync(record, "Failed to parse IPS acknowledgment", dbCt);
+                _logger.LogError("[{CorrelationId}] Failed to parse IPS response: {message}", cid, responseMessage.Data);
+                await _isoService.MarkForCheckStatusAsync(record, "Failed to parse IPS response", dbCt);
                 return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
-            _logger.LogInformation("[{CorrelationId}] Received ACSC acknowledgment from IPS for TxId {TxId}", cid, txId);
+            _logger.LogInformation("[{CorrelationId}] Received response from IPS for TxId {TxId}: Status={Status}", cid, txId, rs.Status);
             _logger.LogDebug("[{CorrelationId}] IPS Response: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true,
             }));
 
-            // Store the IPS acknowledgment response but keep status as Pending
+            // Use StatusOrchestrator to map IPS status to final status
+            var finalStatus = _statusOrchestrator.MapSingleStatus(rs.Status ?? RJCT, "IPS");
+
+            // Finalize transaction with IPS response
             record.Response = Encoding.UTF8.GetBytes(responseMessage.Data!);
+            record.Status = finalStatus;
+            record.Reason = rs.Reason ?? string.Empty;
+            record.AdditionalInfo = rs.AdditionalInfo ?? string.Empty;
+
             await _persistence.ISOMessageResponseAsync(record, dbCt);
 
-            // Step 4: Return ACSC acknowledgment to caller
-            // Transaction remains Pending until pacs.002 is received
+            // Step 4: Return final status to caller
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
             {
                 Status = rs.Status ?? ACSC,
                 AcceptanceDate = rs.AcceptanceDate,
                 TxId = txId,
                 EndToEndId = message.EndToEndId,
-                Reason = "Transaction sent to IPS - awaiting pacs.002 confirmation",
-                AdditionalInfo = "Status: Pending"
+                Reason = rs.Reason ?? "Transaction completed",
+                AdditionalInfo = rs.AdditionalInfo ?? string.Empty
             });
         }
         catch (Exception ex)
