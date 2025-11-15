@@ -28,6 +28,7 @@ using SIPS.ISO20022.Options;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Models;
 using SIPS.XMLDsig.Xades.Interfaces;
+using SIPS.Core.Tests.Fakes;
 
 namespace SIPS.Core.Tests.Tests;
 
@@ -119,8 +120,15 @@ public class IncomingPaymentStatusReportHandler_Tests
     {
         public static string CreateSamplePacs002(string txId, string status = "ACSC")
         {
-            // Simplified XML that the fallback parser can handle
-            return $"<Document><TxId>{txId}</TxId><Status>{status}</Status></Document>";
+            // Proper ISO 20022 pacs.002 XML structure
+            return $@"<Document xmlns=""urn:iso:std:iso:20022:tech:xsd:pacs.002.001.10"">
+  <FIToFIPmtStsRpt>
+    <TxInfAndSts>
+      <OrgnlTxId>{txId}</OrgnlTxId>
+      <TxSts>{status}</TxSts>
+    </TxInfAndSts>
+  </FIToFIPmtStsRpt>
+</Document>";
         }
 
         public static CBPaymentStatusResponseDto CreateCbsSuccessResponse(string txId)
@@ -170,7 +178,7 @@ public class IncomingPaymentStatusReportHandler_Tests
         protected Mock<ILogger<IncomingPaymentStatusReportHandler>> MockLogger { get; }
         protected Mock<ISignatureService> MockSignatureService { get; }
         protected Mock<IPersistenceGateway> MockPersistence { get; }
-        protected Mock<IJsonAdapter> MockJsonAdapter { get; }
+        protected FakeJsonAdapter FakeJsonAdapter { get; }
         protected Mock<ICallbackClient> MockCallbackClient { get; }
         protected Mock<INativeSigner> MockSigner { get; }
         protected Mock<IStatusOrchestrator> MockStatusOrchestrator { get; }
@@ -183,7 +191,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             MockLogger = new Mock<ILogger<IncomingPaymentStatusReportHandler>>();
             MockSignatureService = new Mock<ISignatureService>();
             MockPersistence = new Mock<IPersistenceGateway>();
-            MockJsonAdapter = new Mock<IJsonAdapter>();
+            FakeJsonAdapter = new FakeJsonAdapter();
             MockCallbackClient = new Mock<ICallbackClient>();
             MockSigner = new Mock<INativeSigner>();
             MockStatusOrchestrator = new Mock<IStatusOrchestrator>();
@@ -232,7 +240,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 Options,
                 MockLogger.Object,
                 MockSigner.Object,
-                MockJsonAdapter.Object,
+                FakeJsonAdapter,  // Use fake instead of mock!
                 parser,
                 MockCallbackClient.Object,
                 responseFactory,
@@ -248,15 +256,8 @@ public class IncomingPaymentStatusReportHandler_Tests
 
         protected void SetupCoreBankSuccessResponse(string txId)
         {
-            // Transform returns a JsonObject (can be the same as input for test purposes)
-            MockJsonAdapter
-                .Setup(x => x.Transform(It.IsAny<JsonObject>(), "CB_PaymentResponse"))
-                .Returns<JsonObject, string>((input, _) => input);
-
-            // ToObject converts the JsonObject to the DTO - use lambda to ensure fresh return
-            MockJsonAdapter
-                .Setup(x => x.ToObject<CBPaymentStatusResponseDto>(It.IsAny<JsonObject>()))
-                .Returns(() => TestHelpers.CreateCbsSuccessResponse(txId));
+            // Configure FakeJsonAdapter to return success DTO
+            FakeJsonAdapter.SetToObjectResponse(TestHelpers.CreateCbsSuccessResponse(txId));
 
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
@@ -275,15 +276,8 @@ public class IncomingPaymentStatusReportHandler_Tests
 
         protected void SetupCoreBankFailureResponse(string txId)
         {
-            // Transform returns a JsonObject (can be the same as input for test purposes)
-            MockJsonAdapter
-                .Setup(x => x.Transform(It.IsAny<JsonObject>(), "CB_PaymentResponse"))
-                .Returns<JsonObject, string>((input, _) => input);
-
-            // ToObject converts the JsonObject to the DTO - use lambda to ensure fresh return
-            MockJsonAdapter
-                .Setup(x => x.ToObject<CBPaymentStatusResponseDto>(It.IsAny<JsonObject>()))
-                .Returns(() => TestHelpers.CreateCbsFailureResponse(txId));
+            // Configure FakeJsonAdapter to return failure DTO
+            FakeJsonAdapter.SetToObjectResponse(TestHelpers.CreateCbsFailureResponse(txId));
 
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
@@ -328,14 +322,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             SetupCoreBankSuccessResponse(txId);
 
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("ACSC", "ACSC", false))
-                .Returns((TransactionStatus.Success, TransactionStatus.Success, "Payment completed successfully", "Credit applied"));
-
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns(false);
-
+            // Using REAL StatusOrchestrator - no mocking needed!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
@@ -394,15 +381,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             SetupCoreBankFailureResponse(txId);
 
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("ACSC", "RJCT", false))
-                .Returns((TransactionStatus.ReadyForReturn, TransactionStatus.ReadyForReturn,
-                    "CoreBank rejected credit", "Account closed"));
-
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns(false);
-
+            // Using REAL StatusOrchestrator - no mocking needed!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
@@ -458,15 +437,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .Setup(x => x.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new ISOMessageStatus { ISOMessage = pendingTransaction });
 
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus("RJCT"))
-                .Returns(true);
-
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("RJCT", null, false))
-                .Returns((TransactionStatus.Failed, TransactionStatus.Failed,
-                    "Payment rejected by IPS", "Insufficient funds"));
-
+            // Using REAL StatusOrchestrator - no mocking needed!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "RJCT");
 
@@ -535,13 +506,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .ReturnsAsync(new ISOMessageStatus { ISOMessage = readyForReturnTransaction });
 
             // Setup CoreBank return callback
-            MockJsonAdapter
-                .Setup(x => x.Transform(It.IsAny<JsonObject>(), "CB_PaymentResponse"))
-                .Returns(new JsonObject());
-
-            MockJsonAdapter
-                .Setup(x => x.ToObject<CBPaymentStatusResponseDto>(It.IsAny<JsonObject>()))
-                .Returns(TestHelpers.CreateCbsSuccessResponse(txId));
+            FakeJsonAdapter.SetToObjectResponse(TestHelpers.CreateCbsSuccessResponse(txId));
 
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
@@ -557,14 +522,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<string>()))
                 .ReturnsAsync(TestHelpers.CreateSuccessCallbackResponse());
 
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("ACSC", "ACSC", false))
-                .Returns((TransactionStatus.Success, TransactionStatus.Success, "Return completed", "Credit reversed"));
-
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns(false);
-
+            // Using REAL StatusOrchestrator - no mocking needed!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
@@ -619,13 +577,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .Setup(x => x.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new ISOMessageStatus { ISOMessage = readyForReturnTransaction });
 
-            MockJsonAdapter
-                .Setup(x => x.Transform(It.IsAny<JsonObject>(), "CB_PaymentResponse"))
-                .Returns(new JsonObject());
-
-            MockJsonAdapter
-                .Setup(x => x.ToObject<CBPaymentStatusResponseDto>(It.IsAny<JsonObject>()))
-                .Returns(TestHelpers.CreateCbsSuccessResponse(txId));
+            FakeJsonAdapter.SetToObjectResponse(TestHelpers.CreateCbsSuccessResponse(txId));
 
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
@@ -641,15 +593,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<string>()))
                 .ReturnsAsync(TestHelpers.CreateSuccessCallbackResponse());
 
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("ACSC", "ACSC", false))
-                .Returns((TransactionStatus.Success, TransactionStatus.Success,
-                    "Return completed successfully", "Credit reversed"));
-
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns(false);
-
+            // Using REAL StatusOrchestrator - no mocking needed!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
@@ -926,16 +870,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<string>()))
                 .ReturnsAsync((Response<JsonObject?>)null);
 
-            // Critical: StatusOrchestrator maps ACSC + null CB → ReadyForReturn
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("ACSC", null, false))
-                .Returns((TransactionStatus.ReadyForReturn, TransactionStatus.ReadyForReturn,
-                    "CoreBank returned null", "Ready for return"));
-
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns(false);
-
+            // Using REAL StatusOrchestrator - no mocking needed!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
@@ -1003,16 +938,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<string>()))
                 .ReturnsAsync(nullDataResponse);
 
-            // Critical: StatusOrchestrator maps ACSC + null CB data → ReadyForReturn
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("ACSC", null, false))
-                .Returns((TransactionStatus.ReadyForReturn, TransactionStatus.ReadyForReturn,
-                    "CoreBank returned null data", "Ready for return"));
-
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns(false);
-
+            // Using REAL StatusOrchestrator - no mocking needed!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
@@ -1232,16 +1158,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             SetupCoreBankSuccessResponse(txId);
 
-            // Critical: StatusOrchestrator determines final status
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("ACSC", "ACSC", false))
-                .Returns((TransactionStatus.Success, TransactionStatus.Success,
-                    "Orchestrator mapped to Success", "Payment completed via orchestrator"));
-
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns(false);
-
+            // Using REAL StatusOrchestrator - validates actual business logic!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
@@ -1292,16 +1209,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             SetupCoreBankFailureResponse(txId);
 
-            // Critical: StatusOrchestrator maps ACSC + CBS failure to ReadyForReturn
-            MockStatusOrchestrator
-                .Setup(x => x.MapCompletionStatus("ACSC", "RJCT", false))
-                .Returns((TransactionStatus.ReadyForReturn, TransactionStatus.ReadyForReturn,
-                    "Orchestrator mapped to ReadyForReturn", "CBS rejected, ready for return"));
-
-            MockStatusOrchestrator
-                .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
-                .Returns(false);
-
+            // Using REAL StatusOrchestrator - validates actual business logic!
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
