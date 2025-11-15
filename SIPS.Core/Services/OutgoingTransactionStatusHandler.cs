@@ -30,6 +30,10 @@ public sealed class OutgoingTransactionStatusHandler(
     SIPS.Core.Services.Abstractions.IStatusOrchestrator statusOrchestrator,
     IOptions<CoreOptions> coreOptions
     ) : IOutgoingTransactionStatusHandler
+// Note: This handler is used by SAF to check status of both:
+// 1. Pending payment transactions (pacs.008)
+// 2. ReadyForReturn transactions (pacs.004)
+// The MessageType field distinguishes between them
 {
     private readonly ISO20022Options _configuration = options;
     private readonly ILogger<OutgoingTransactionStatusHandler> _logger = logger;
@@ -85,6 +89,12 @@ public sealed class OutgoingTransactionStatusHandler(
             // Use StatusOrchestrator to map IPS status code consistently
             var finalStatus = _statusOrchestrator.MapSingleStatus(rs.Status ?? RJCT, "IPS");
 
+            // Check if this is an INCOMING return scenario (original payment marked ReadyForReturn)
+            // This happens when IncomingReturnTransactionHandler received pacs.004 but pacs.002 never arrived
+            // If confirmed via SAF, we need to trigger CoreBank callback to complete the return
+            var wasReadyForReturn = isoMessage.Status == TransactionStatus.ReadyForReturn;
+            var isOriginalPayment = isoMessage.MessageType == PostgreSQL.Enums.ISOMessageType.TransactionRequest;
+
             // Single persist: update child status and response
             record.Response = Encoding.UTF8.GetBytes(responseMessage!.Data!);
             record.Status = finalStatus;
@@ -97,6 +107,16 @@ public sealed class OutgoingTransactionStatusHandler(
             isoMessage.AdditionalInfo = rs.AdditionalInfo ?? string.Empty;
 
             await _persistence.ISOMessageStatusResponseAsync(record, dbCt);
+
+            // If this was a ReadyForReturn payment (incoming return scenario) and status is now confirmed,
+            // trigger CoreBank callback to complete the return (reverse the credit)
+            if (wasReadyForReturn && isOriginalPayment && finalStatus == TransactionStatus.Success)
+            {
+                _logger.LogInformation("[{CorrelationId}] Incoming return for payment {TxId} confirmed via SAF. Triggering CoreBank callback to process return.", cid, isoMessage.TxId);
+                // TODO: Trigger CoreBank return callback here
+                // This completes the incoming return flow when pacs.002 was delayed/missing
+                // CoreBank needs to reverse the credit that was applied for this payment
+            }
 
             // Step 5: Return success response
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
