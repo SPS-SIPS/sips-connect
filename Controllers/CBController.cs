@@ -112,13 +112,14 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
 
             return Ok(new VerifyResponse
             {
+                Reason = "SUCC",
+                Message = "Account verified successfully",
                 AccountNo = account.IBAN!,
                 AccountType = "IBAN",
                 Currency = account.Currency!,
                 Name = account.CustomerName!,
                 Address = account.Address!,
                 IsVerified = true,
-                Message = account.Id.ToString()
             });
         }
         catch (Exception ex)
