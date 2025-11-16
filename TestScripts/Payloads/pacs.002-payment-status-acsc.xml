@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FPEnvelope xmlns="urn:iso:std:iso:20022:tech:xsd:payment_response" xmlns:document="urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12" xmlns:header="urn:iso:std:iso:20022:tech:xsd:head.001.001.03">
+  <header:AppHdr>
+    <header:Fr>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>SENDERBIC</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:Fr>
+    <header:To>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>RECEIVERBIC</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:To>
+    <header:BizMsgIdr>MSG-ACSC-001</header:BizMsgIdr>
+    <header:MsgDefIdr>pacs.002.001.12</header:MsgDefIdr>
+    <header:CreDt>2025-11-16T06:45:00.000Z</header:CreDt>
+  </header:AppHdr>
+  <document:Document>
+    <document:FIToFIPmtStsRpt>
+      <document:GrpHdr>
+        <document:MsgId>STATUS-ACSC-001</document:MsgId>
+        <document:CreDtTm>2025-11-16T06:45:00.000Z</document:CreDtTm>
+      </document:GrpHdr>
+      <document:TxInfAndSts>
+        <document:OrgnlInstrId>ORIG-INSTR-ACSC</document:OrgnlInstrId>
+        <document:OrgnlEndToEndId>E2E-ACSC-001</document:OrgnlEndToEndId>
+        <document:OrgnlTxId>TX-ACSC-001</document:OrgnlTxId>
+        <document:TxSts>ACSC</document:TxSts>
+        <document:StsRsnInf>
+          <document:Rsn>
+            <document:Cd>G000</document:Cd>
+          </document:Rsn>
+          <document:AddtlInf>Payment accepted and settled successfully</document:AddtlInf>
+        </document:StsRsnInf>
+        <document:OrgnlTxRef>
+          <document:IntrBkSttlmAmt Ccy="USD">2500.00</document:IntrBkSttlmAmt>
+          <document:Dbtr>
+            <document:Nm>Success Test Debtor</document:Nm>
+          </document:Dbtr>
+          <document:DbtrAcct>
+            <document:Id>
+              <document:Othr>
+                <document:Id>ACC-DEBTOR-ACSC</document:Id>
+              </document:Othr>
+            </document:Id>
+          </document:DbtrAcct>
+          <document:Cdtr>
+            <document:Nm>Success Test Creditor</document:Nm>
+          </document:Cdtr>
+          <document:CdtrAcct>
+            <document:Id>
+              <document:Othr>
+                <document:Id>ACC-CREDITOR-ACSC</document:Id>
+              </document:Othr>
+            </document:Id>
+          </document:CdtrAcct>
+        </document:OrgnlTxRef>
+      </document:TxInfAndSts>
+    </document:FIToFIPmtStsRpt>
+  </document:Document>
+</FPEnvelope>
