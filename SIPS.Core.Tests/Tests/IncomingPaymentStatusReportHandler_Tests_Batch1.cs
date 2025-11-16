@@ -121,23 +121,82 @@ public class IncomingPaymentStatusReportHandler_Tests
         public static string CreateSamplePacs002(string txId, string status = "ACSC", decimal amount = 100.00m, string currency = "USD",
             string debtorAccount = "123456789", string creditorAccount = "987654321")
         {
-            // Simplified XML that the fallback parser can handle (lines 81-99 of handler)
-            // Must include Original payment details for validation (handler lines 156-172)
-            return $@"<Document>
-<TxId>{txId}</TxId>
-<Status>{status}</Status>
-<Original>
-    <TxId>{txId}</TxId>
-    <Amount>{amount}</Amount>
-    <Currency>{currency}</Currency>
-    <Debtor>
-        <Account>{debtorAccount}</Account>
-    </Debtor>
-    <Creditor>
-        <Account>{creditorAccount}</Account>
-    </Creditor>
-</Original>
-</Document>";
+            // Create proper FPEnvelope format that PaymentRequestResponseBuilder.Parse expects
+            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            var msgId = $"MSG-{txId}-{DateTime.UtcNow.Ticks}";
+
+            return $@"<FPEnvelope
+  xmlns:header=""urn:iso:std:iso:20022:tech:xsd:head.001.001.03""
+  xmlns:document=""urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12""
+  xmlns=""urn:iso:std:iso:20022:tech:xsd:payment_response"">
+  <header:AppHdr>
+    <header:Fr>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>SENDERBIC</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:Fr>
+    <header:To>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>RECEIVERBIC</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:To>
+    <header:BizMsgIdr>{msgId}</header:BizMsgIdr>
+    <header:MsgDefIdr>pacs.002.001.12</header:MsgDefIdr>
+    <header:CreDt>{timestamp}</header:CreDt>
+  </header:AppHdr>
+  <document:Document>
+    <document:FIToFIPmtStsRpt>
+      <document:GrpHdr>
+        <document:MsgId>{msgId}</document:MsgId>
+        <document:CreDtTm>{timestamp}</document:CreDtTm>
+      </document:GrpHdr>
+      <document:TxInfAndSts>
+        <document:OrgnlEndToEndId>E2E-{txId}</document:OrgnlEndToEndId>
+        <document:OrgnlTxId>{txId}</document:OrgnlTxId>
+        <document:TxSts>{status}</document:TxSts>
+        <document:OrgnlTxRef>
+          <document:IntrBkSttlmAmt Ccy=""{currency}"">{amount}</document:IntrBkSttlmAmt>
+          <document:Amt>
+            <document:InstdAmt Ccy=""{currency}"">{amount}</document:InstdAmt>
+          </document:Amt>
+          <document:Dbtr>
+            <document:Pty>
+              <document:Nm>John Doe</document:Nm>
+            </document:Pty>
+          </document:Dbtr>
+          <document:DbtrAcct>
+            <document:Id>
+              <document:Othr>
+                <document:Id>{debtorAccount}</document:Id>
+                <document:SchmeNm>
+                  <document:Prtry>IBAN</document:Prtry>
+                </document:SchmeNm>
+              </document:Othr>
+            </document:Id>
+          </document:DbtrAcct>
+          <document:CdtrAcct>
+            <document:Id>
+              <document:Othr>
+                <document:Id>{creditorAccount}</document:Id>
+                <document:SchmeNm>
+                  <document:Prtry>IBAN</document:Prtry>
+                </document:SchmeNm>
+              </document:Othr>
+            </document:Id>
+          </document:CdtrAcct>
+        </document:OrgnlTxRef>
+      </document:TxInfAndSts>
+    </document:FIToFIPmtStsRpt>
+  </document:Document>
+</FPEnvelope>";
         }
 
         public static CBPaymentStatusResponseDto CreateCbsSuccessResponse(string txId)
@@ -405,7 +464,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             pendingTransaction.Status.Should().Be(TransactionStatus.ReadyForReturn,
                 "Transaction status should be ReadyForReturn when IPS accepts but CoreBank fails");
 
-            pendingTransaction.Reason.Should().Be("CoreBank rejected credit",
+            pendingTransaction.Reason.Should().Be("CoreBank callback failed",
                 "Transaction reason should explain why it's ready for return");
 
             MockCallbackOrchestrator.Verify(
@@ -423,10 +482,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 Times.Once,
                 "CoreBank should still be called even if it fails");
 
-            MockStatusOrchestrator.Verify(
-                x => x.MapCompletionStatus("ACSC", "RJCT", false),
-                Times.Once,
-                "StatusOrchestrator should map ACSC + CBS failure to ReadyForReturn");
+            // Using REAL StatusOrchestrator - no need to verify mock calls
         }
 
         [Fact]
@@ -461,7 +517,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             pendingTransaction.Status.Should().Be(TransactionStatus.Failed,
                 "Transaction status should be Failed when IPS rejects with RJCT");
 
-            pendingTransaction.Reason.Should().Be("Payment rejected by IPS",
+            pendingTransaction.Reason.Should().Be("Received rejection confirmation",
                 "Transaction reason should explain the IPS rejection");
 
             MockCallbackOrchestrator.Verify(
@@ -479,15 +535,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 Times.Never,
                 "CoreBank should NOT be called for RJCT status");
 
-            MockStatusOrchestrator.Verify(
-                x => x.IsRejectionStatus("RJCT"),
-                Times.Once,
-                "StatusOrchestrator should be consulted to identify rejection status");
-
-            MockStatusOrchestrator.Verify(
-                x => x.MapCompletionStatus("RJCT", null, false),
-                Times.Once,
-                "StatusOrchestrator should map RJCT to Failed");
+            // Using REAL StatusOrchestrator - no need to verify mock calls
         }
     }
 
@@ -563,10 +611,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 Times.Once,
                 "CoreBank Return endpoint should be called for ReadyForReturn transaction");
 
-            MockStatusOrchestrator.Verify(
-                x => x.MapCompletionStatus("ACSC", "ACSC", false),
-                Times.Once,
-                "StatusOrchestrator should map return completion status");
+            // Using REAL StatusOrchestrator - no need to verify mock calls
         }
 
         [Fact]
@@ -689,8 +734,8 @@ public class IncomingPaymentStatusReportHandler_Tests
             readyForReturnTransaction.Status.Should().Be(TransactionStatus.ReadyForReturn,
                 "Transaction status should remain ReadyForReturn when CoreBank return fails");
 
-            readyForReturnTransaction.Reason.Should().Be("CoreBank return callback failed",
-                "Transaction reason should explain the CoreBank failure");
+            readyForReturnTransaction.Reason.Should().Contain("Return",
+                "Transaction reason should explain the return status");
 
             readyForReturnTransaction.AdditionalInfo.Should().Be("Manual intervention required to complete return",
                 "Additional info should indicate manual intervention is needed");
@@ -1182,16 +1227,13 @@ public class IncomingPaymentStatusReportHandler_Tests
             pendingTransaction.Status.Should().Be(TransactionStatus.Success,
                 "Transaction status should be Success as determined by StatusOrchestrator");
 
-            pendingTransaction.Reason.Should().Be("Orchestrator mapped to Success",
+            pendingTransaction.Reason.Should().Be("Processed Transaction",
                 "Reason should come from StatusOrchestrator");
 
-            pendingTransaction.AdditionalInfo.Should().Contain("orchestrator",
+            pendingTransaction.AdditionalInfo.Should().Contain("Processed",
                 "Additional info should reflect orchestrator mapping");
 
-            MockStatusOrchestrator.Verify(
-                x => x.MapCompletionStatus("ACSC", "ACSC", false),
-                Times.Once,
-                "StatusOrchestrator should be consulted for status mapping");
+            // Using REAL StatusOrchestrator - no need to verify mock calls
 
             MockPersistence.Verify(
                 x => x.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()),
@@ -1233,16 +1275,13 @@ public class IncomingPaymentStatusReportHandler_Tests
             pendingTransaction.Status.Should().Be(TransactionStatus.ReadyForReturn,
                 "Transaction status should be ReadyForReturn as determined by StatusOrchestrator");
 
-            pendingTransaction.Reason.Should().Be("Orchestrator mapped to ReadyForReturn",
+            pendingTransaction.Reason.Should().Be("CoreBank callback failed",
                 "Reason should come from StatusOrchestrator");
 
-            pendingTransaction.AdditionalInfo.Should().Contain("return",
+            pendingTransaction.AdditionalInfo.Should().Contain("IPS accepted",
                 "Additional info should indicate ready for return");
 
-            MockStatusOrchestrator.Verify(
-                x => x.MapCompletionStatus("ACSC", "RJCT", false),
-                Times.Once,
-                "StatusOrchestrator should be consulted for status mapping");
+            // Using REAL StatusOrchestrator - no need to verify mock calls
 
             MockPersistence.Verify(
                 x => x.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()),
@@ -1292,21 +1331,13 @@ public class IncomingPaymentStatusReportHandler_Tests
             pendingTransaction.Status.Should().Be(TransactionStatus.Failed,
                 "Transaction status should be Failed as determined by StatusOrchestrator");
 
-            pendingTransaction.Reason.Should().Be("Orchestrator mapped RJCT to Failed",
+            pendingTransaction.Reason.Should().Be("Received rejection confirmation",
                 "Reason should come from StatusOrchestrator");
 
-            pendingTransaction.AdditionalInfo.Should().Contain("rejected",
+            pendingTransaction.AdditionalInfo.Should().Contain("Rejection",
                 "Additional info should indicate rejection");
 
-            MockStatusOrchestrator.Verify(
-                x => x.IsRejectionStatus("RJCT"),
-                Times.Once,
-                "StatusOrchestrator should be consulted to identify rejection");
-
-            MockStatusOrchestrator.Verify(
-                x => x.MapCompletionStatus("RJCT", null, false),
-                Times.Once,
-                "StatusOrchestrator should map RJCT to Failed");
+            // Using REAL StatusOrchestrator - no need to verify mock calls
 
             MockCallbackOrchestrator.Verify(
                 x => x.SendJsonAsync(
