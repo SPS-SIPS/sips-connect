@@ -35,6 +35,7 @@ namespace SIPS.Core.Tests.Tests;
 
 public sealed class IncomingTransactionStatusHandler_Token_Tests
 {
+    [Fact]
     public void Placeholder_Passes()
     {
         Assert.True(true);

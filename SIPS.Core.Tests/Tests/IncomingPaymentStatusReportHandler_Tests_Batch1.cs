@@ -411,7 +411,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             MockCallbackOrchestrator.Verify(
                 x => x.SendJsonAsync(
-                    Options.Transfer,
+                    Options.Transfer!,
                     It.IsAny<Dictionary<string, string>>(),
                     It.Is<CBPaymentRequestDto>(dto => dto.TxId == txId),
                     "CB_PaymentRequest",
@@ -469,7 +469,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             MockCallbackOrchestrator.Verify(
                 x => x.SendJsonAsync(
-                    Options.Transfer,
+                    Options.Transfer!,
                     It.IsAny<Dictionary<string, string>>(),
                     It.Is<CBPaymentRequestDto>(dto => dto.TxId == txId),
                     "CB_PaymentRequest",
@@ -569,7 +569,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
-                    Options.Return,
+                    Options.Return!,
                     It.IsAny<Dictionary<string, string>>(),
                     It.IsAny<CBReturnRequestDto>(),
                     "CB_ReturnRequest",
@@ -600,7 +600,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             // CoreBank Return endpoint is NOT called automatically for ReadyForReturn transactions
             MockCallbackOrchestrator.Verify(
                 x => x.SendJsonAsync(
-                    Options.Return,
+                    Options.Return!,
                     It.IsAny<Dictionary<string, string>>(),
                     It.IsAny<CBReturnRequestDto>(),
                     "CB_ReturnRequest",
@@ -639,7 +639,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
-                    Options.Return,
+                    Options.Return!,
                     It.IsAny<Dictionary<string, string>>(),
                     It.IsAny<CBReturnRequestDto>(),
                     "CB_ReturnRequest",
@@ -675,7 +675,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             // Handler doesn't support automatic return completion yet
             MockCallbackOrchestrator.Verify(
                 x => x.SendJsonAsync(
-                    Options.Return,
+                    Options.Return!,
                     It.IsAny<Dictionary<string, string>>(),
                     It.IsAny<CBReturnRequestDto>(),
                     "CB_ReturnRequest",
@@ -711,7 +711,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             // Setup CoreBank return to return null (failure)
             MockCallbackOrchestrator
                 .Setup(x => x.SendJsonAsync(
-                    Options.Return,
+                    Options.Return!,
                     It.IsAny<Dictionary<string, string>>(),
                     It.IsAny<CBReturnRequestDto>(),
                     "CB_ReturnRequest",
@@ -721,7 +721,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
                     It.IsAny<string>()))
-                .ReturnsAsync((Response<JsonObject?>)null);
+                .ReturnsAsync((Response<JsonObject?>?)null!);
 
             MockStatusOrchestrator
                 .Setup(x => x.IsRejectionStatus(It.IsAny<string>()))
@@ -749,7 +749,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             // Handler doesn't support automatic return completion yet
             MockCallbackOrchestrator.Verify(
                 x => x.SendJsonAsync(
-                    Options.Return,
+                    Options.Return!,
                     It.IsAny<Dictionary<string, string>>(),
                     It.IsAny<CBReturnRequestDto>(),
                     "CB_ReturnRequest",
@@ -871,7 +871,7 @@ public class IncomingPaymentStatusReportHandler_Tests
 
             MockPersistence
                 .Setup(x => x.GetISOMessageWithTransactionsByTxIdAsync(txId, It.IsAny<CancellationToken>()))
-                .ReturnsAsync((ISOMessage)null);
+                .ReturnsAsync((ISOMessage)null!);
 
             var handler = CreateHandler();
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
@@ -931,7 +931,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
                     It.IsAny<string>()))
-                .ReturnsAsync((Response<JsonObject?>)null);
+                .ReturnsAsync((Response<JsonObject?>?)null!);
 
             // Using REAL StatusOrchestrator - no mocking needed!
             var handler = CreateHandler();
