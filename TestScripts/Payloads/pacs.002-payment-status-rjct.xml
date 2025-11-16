@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FPEnvelope xmlns="urn:iso:std:iso:20022:tech:xsd:payment_response" xmlns:document="urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12" xmlns:header="urn:iso:std:iso:20022:tech:xsd:head.001.001.03">
+  <header:AppHdr>
+    <header:Fr>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>SENDERBIC</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:Fr>
+    <header:To>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>RECEIVERBIC</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:To>
+    <header:BizMsgIdr>MSG-RJCT-001</header:BizMsgIdr>
+    <header:MsgDefIdr>pacs.002.001.12</header:MsgDefIdr>
+    <header:CreDt>2025-11-16T06:45:00.000Z</header:CreDt>
+  </header:AppHdr>
+  <document:Document>
+    <document:FIToFIPmtStsRpt>
+      <document:GrpHdr>
+        <document:MsgId>STATUS-RJCT-001</document:MsgId>
+        <document:CreDtTm>2025-11-16T06:45:00.000Z</document:CreDtTm>
+      </document:GrpHdr>
+      <document:TxInfAndSts>
+        <document:OrgnlInstrId>ORIG-INSTR-RJCT</document:OrgnlInstrId>
+        <document:OrgnlEndToEndId>E2E-RJCT-001</document:OrgnlEndToEndId>
+        <document:OrgnlTxId>TX-RJCT-001</document:OrgnlTxId>
+        <document:TxSts>RJCT</document:TxSts>
+        <document:StsRsnInf>
+          <document:Rsn>
+            <document:Cd>AM04</document:Cd>
+          </document:Rsn>
+          <document:AddtlInf>Insufficient funds in debtor account</document:AddtlInf>
+        </document:StsRsnInf>
+        <document:OrgnlTxRef>
+          <document:IntrBkSttlmAmt Ccy="USD">5000.00</document:IntrBkSttlmAmt>
+          <document:Dbtr>
+            <document:Nm>Rejected Test Debtor</document:Nm>
+          </document:Dbtr>
+          <document:DbtrAcct>
+            <document:Id>
+              <document:Othr>
+                <document:Id>ACC-DEBTOR-RJCT</document:Id>
+              </document:Othr>
+            </document:Id>
+          </document:DbtrAcct>
+          <document:Cdtr>
+            <document:Nm>Rejected Test Creditor</document:Nm>
+          </document:Cdtr>
+          <document:CdtrAcct>
+            <document:Id>
+              <document:Othr>
+                <document:Id>ACC-CREDITOR-RJCT</document:Id>
+              </document:Othr>
+            </document:Id>
+          </document:CdtrAcct>
+        </document:OrgnlTxRef>
+      </document:TxInfAndSts>
+    </document:FIToFIPmtStsRpt>
+  </document:Document>
+</FPEnvelope>

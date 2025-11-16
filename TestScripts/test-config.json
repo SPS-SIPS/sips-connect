@@ -1,0 +1,53 @@
+{
+  "apiBaseUrl": "http://localhost:5000",
+  "endpoints": {
+    "incoming": "/api/v1/incoming",
+    "gateway": {
+      "verify": "/api/v1/gateway/Verify",
+      "payment": "/api/v1/gateway/Payment",
+      "status": "/api/v1/gateway/Status",
+      "return": "/api/v1/gateway/Return"
+    }
+  },
+  "testSettings": {
+    "timeout": 30,
+    "retryCount": 0,
+    "verboseOutput": false,
+    "jsonOutput": false
+  },
+  "payloads": {
+    "directory": "./Payloads",
+    "files": {
+      "transaction": "pacs.008.xml",
+      "verification": "acmt.023.xml",
+      "status": "pacs.002-status.xml",
+      "paymentStatus": "pacs.002-payment-status.xml",
+      "paymentStatusAcsc": "pacs.002-payment-status-acsc.xml",
+      "paymentStatusRjct": "pacs.002-payment-status-rjct.xml",
+      "paymentStatusNotFound": "pacs.002-payment-status-notfound.xml"
+    }
+  },
+  "environments": {
+    "local": {
+      "baseUrl": "http://localhost:5000",
+      "description": "Local development environment"
+    },
+    "dev": {
+      "baseUrl": "https://dev-api.example.com",
+      "description": "Development environment"
+    },
+    "staging": {
+      "baseUrl": "https://staging-api.example.com",
+      "description": "Staging environment"
+    },
+    "production": {
+      "baseUrl": "https://api.example.com",
+      "description": "Production environment"
+    }
+  },
+  "validation": {
+    "checkXmlStructure": true,
+    "extractTransactionId": true,
+    "validateSignature": false
+  }
+}
