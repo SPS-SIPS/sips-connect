@@ -267,7 +267,7 @@ public sealed class OutgoingTransactionStatusHandler(
 
     // verification delegated to shared signature service
 
-    private async Task<Response<PaymentResponseDto>> LogPersistAndReturnAsync(
+    private Task<Response<PaymentResponseDto>> LogPersistAndReturnAsync(
         ISOMessageStatus record,
         string logMessage,
         string persistMessage,
@@ -278,7 +278,7 @@ public sealed class OutgoingTransactionStatusHandler(
     {
         _logger.LogError("Failed to receive valid response from IPS: {Message}", logMessage);
         // Note: SAF marking handled in HandleSIPSCallExceptionAsync
-        return Response<PaymentResponseDto>.Fail(failMessage, statusCode);
+        return Task.FromResult(Response<PaymentResponseDto>.Fail(failMessage, statusCode));
     }
 
     // Note: PersistISOMessageAsync removed - we now use single persist in main flow

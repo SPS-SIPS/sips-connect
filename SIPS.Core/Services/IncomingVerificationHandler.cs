@@ -25,6 +25,7 @@ using SIPS.Core.Options;
 
 namespace SIPS.Core.Services;
 
+#pragma warning disable CS9113 // Parameter is unread - may be used in future functionality
 public sealed class IncomingVerificationHandler(
     ISO20022Options options,
     ILogger<IncomingVerificationHandler> logger,
@@ -40,6 +41,7 @@ public sealed class IncomingVerificationHandler(
     IISOMessageService isoService,
     IOptions<CoreOptions> coreOptions
 ) : IIncomingVerificationHandler
+#pragma warning restore CS9113
 {
     private readonly ISO20022Options _callbackLinks = options;
     private readonly ILogger<IncomingVerificationHandler> _logger = logger;

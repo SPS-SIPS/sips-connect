@@ -284,7 +284,7 @@ public sealed class OutgoingReturnTransactionHandler(
             Status = ACSC,
         });
     }
-    private async Task<Response<ReturnPaymentResponseDto>> LogPersistAndReturnAsync(
+    private Task<Response<ReturnPaymentResponseDto>> LogPersistAndReturnAsync(
         ISOMessage record,
         string logMessage,
         string persistMessage,
@@ -295,7 +295,7 @@ public sealed class OutgoingReturnTransactionHandler(
     {
         _logger.LogError("Failed to receive valid response from IPS: {Message}", logMessage);
         // Note: SAF marking handled in HandleSIPSCallExceptionAsync
-        return Response<ReturnPaymentResponseDto>.Fail(failMessage, statusCode);
+        return Task.FromResult(Response<ReturnPaymentResponseDto>.Fail(failMessage, statusCode));
     }
     private static bool TryParse(string message, out ReturnPaymentResponseBuilder.Response? response)
     {
