@@ -230,6 +230,10 @@ public static class DI
        })
        .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
             ApiKeyDefaults.AuthenticationScheme, _ => { });
+
+        // Register Health Check Service
+        services.AddScoped<IHealthCheckService, HealthCheckService>();
+
         services.AddCore(configuration);
     }
 }
