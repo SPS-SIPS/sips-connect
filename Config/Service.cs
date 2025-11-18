@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SIPS.Adapter.Models;
@@ -117,10 +118,43 @@ public static class DI
             return new InterfaceHttpClient(logger, client, coreOptionsAccessor);
         });
 
+        // Register Data Protection for secret encryption (MUST be before ApiKeys)
+        services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo("./keys"))
+            .SetApplicationName("SIPS.Connect");
+
+        // Register Secret Management Services (MUST be before ApiKeys)
+        services.AddSingleton<ISecretManagementService, SecretManagementService>();
+        services.AddSingleton<SecretManagementTool>();
+
         var corsPolicy = new CorsPolicies();
         configuration.Bind(nameof(CorsPolicies), corsPolicy);
 
-    var apiKeys = configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? new List<ApiKey>();
+        // Load and decrypt API keys at startup
+        var apiKeys = configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? new List<ApiKey>();
+
+        // Decrypt secrets using a temporary service provider
+        var tempServiceProvider = services.BuildServiceProvider();
+        var secretService = tempServiceProvider.GetService<ISecretManagementService>();
+
+        if (secretService != null)
+        {
+            foreach (var key in apiKeys)
+            {
+                if (!string.IsNullOrEmpty(key.Secret) && secretService.IsEncrypted(key.Secret))
+                {
+                    try
+                    {
+                        key.Secret = secretService.Decrypt(key.Secret);
+                    }
+                    catch (Exception)
+                    {
+                        // If decryption fails, keep original value
+                    }
+                }
+            }
+        }
+
         services.AddSingleton(new ApiKeys(apiKeys));
 
         services.AddCors(options =>
@@ -185,9 +219,9 @@ public static class DI
            options.RequireHttpsMetadata = false;
            options.MapInboundClaims = false;
            options.RefreshOnIssuerKeyNotFound = true;
-           
-            options.TokenValidationParameters.ValidateIssuer           = validateIssuer;
-            options.TokenValidationParameters.ValidIssuer              = authority;
+
+           options.TokenValidationParameters.ValidateIssuer = validateIssuer;
+           options.TokenValidationParameters.ValidIssuer              = authority;
             options.TokenValidationParameters.ValidateAudience         = true;
             options.TokenValidationParameters.ValidAudience            = audience;
             options.TokenValidationParameters.ValidateLifetime         = true;
