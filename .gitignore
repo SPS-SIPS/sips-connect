@@ -476,3 +476,11 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# Cascade AI documentation and working files
+.cascade/
+
+# Secret management
+keys/
+appsettings.Secrets.json
+*.backup.*
