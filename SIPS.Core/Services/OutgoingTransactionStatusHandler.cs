@@ -79,6 +79,26 @@ public sealed class OutgoingTransactionStatusHandler(
             if (isoMessage == null)
                 return Response<PaymentResponseDto>.Fail("Transaction not found", System.Net.HttpStatusCode.NotFound);
 
+            // Guard: Don't reprocess transactions with terminal statuses
+            if (isoMessage.Status == TransactionStatus.Success ||
+                isoMessage.Status == TransactionStatus.Failed ||
+                isoMessage.Status == TransactionStatus.ReadyForReturn)
+            {
+                _logger.LogInformation("[{CorrelationId}] Transaction {TxId} already has terminal status {Status}. Returning cached status without reprocessing.",
+                    cid, isoMessage.TxId, isoMessage.Status);
+
+                // Return the existing status without making a new IPS call
+                return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                {
+                    Status = _statusOrchestrator.MapToIsoStatusCode(isoMessage.Status),
+                    TxId = isoMessage.TxId ?? string.Empty,
+                    EndToEndId = isoMessage.EndToEndId ?? string.Empty,
+                    Reason = isoMessage.Reason ?? string.Empty,
+                    AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty,
+                    AcceptanceDate = default
+                });
+            }
+
             // Step 2: Build and sign request
             if (!BuildRequest(fromBIC, isoMessage, message, out var request))
                 return Response<PaymentResponseDto>.Fail("Failed to build the request.", System.Net.HttpStatusCode.BadRequest);
