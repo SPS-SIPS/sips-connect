@@ -17,7 +17,7 @@ export const useTransactions = (initialQuery: TransactionQuery = { page: 0, page
             const params = {
               page: query.page,
               pageSize: query.pageSize,
-              status: query.Status?.toString(),
+              Status: query.Status?.toString(),
               TransactionId: query.TransactionId,
               EndToEndId: query.EndToEndId,
               LocalInstrument: query.LocalInstrument,
