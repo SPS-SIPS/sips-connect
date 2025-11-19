@@ -89,10 +89,10 @@ export enum ISOMessageType {
 }
 
 export enum TransactionType {
-    Deposit = 1,
-    Withdrawal = 2,
-    ReturnDeposit = 3,
-    ReturnWithdrawal = 4
+  Deposit = 1,
+  Withdrawal = 2,
+  ReadyForReturn = 3,
+  ReturnWithdrawal = 4,
 }
 
 

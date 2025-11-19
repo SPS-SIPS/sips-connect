@@ -87,7 +87,7 @@ const TransactionsList = () => {
         switch(status) {
             case TransactionType.Deposit: return styles.transactionDeposit;
             case TransactionType.Withdrawal: return styles.Withdrawal;
-            case TransactionType.ReturnDeposit: return styles.ReturnDeposit;
+            case TransactionType.ReadyForReturn: return styles.ReadyForReturn;
             case TransactionType.ReturnWithdrawal: return styles.transactionReturnWithdrawal;
             default: return '';
         }
