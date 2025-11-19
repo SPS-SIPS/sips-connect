@@ -524,13 +524,26 @@ public sealed class IncomingPaymentStatusReportHandler(
             false);
 
         isoMessage.Status = parentStatus;
-        isoMessage.Reason = reason;
-        isoMessage.AdditionalInfo = additionalInfo;
+
+        // If return completed successfully, update reason and additional info to reflect this
+        if (parentStatus == TransactionStatus.Success)
+        {
+            isoMessage.Reason = "Transaction returned successfully";
+            isoMessage.AdditionalInfo = $"Return completed with ReturnId: {isoMessage.ReturnId ?? "N/A"}. CoreBank reversal successful.";
+            _logger.LogInformation("[{CorrelationId}] Return completed successfully for TxId {TxId} with ReturnId {ReturnId}",
+                cid, transaction?.TxId, isoMessage.ReturnId);
+        }
+        else
+        {
+            // Keep original reason/additionalInfo for failed returns
+            isoMessage.Reason = reason;
+            isoMessage.AdditionalInfo = additionalInfo;
+        }
 
         // Update response to reflect return completion
         response.Status = cbResponse?.Status ?? RJCT;
-        response.Reason = reason;
-        response.AdditionalInfo = additionalInfo;
+        response.Reason = isoMessage.Reason;
+        response.AdditionalInfo = isoMessage.AdditionalInfo;
 
         return response;
     }

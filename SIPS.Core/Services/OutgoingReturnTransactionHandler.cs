@@ -114,7 +114,7 @@ public sealed class OutgoingReturnTransactionHandler(
             // Use StatusOrchestrator to map IPS status code consistently
             var finalStatus = _statusOrchestrator.MapSingleStatus(rs.Status ?? RJCT, "IPS");
 
-            // Persist with mapped status
+            // Persist return message with mapped status
             record.Response = Encoding.UTF8.GetBytes(responseMessage.Data!);
             record.Status = finalStatus;
             record.Reason = rs.Reason ?? MISS;
@@ -123,6 +123,27 @@ public sealed class OutgoingReturnTransactionHandler(
             record.EndToEndId = rs.Original?.OriginalEndToEnd ?? string.Empty;
 
             await _persistence.ISOMessageResponseAsync(record, dbCt);
+
+            // Update original transaction to reflect return status
+            if (finalStatus == PostgreSQL.Enums.TransactionStatus.Success)
+            {
+                // IPS accepted the return (ACSC) - update original transaction
+                originalMessage.Status = PostgreSQL.Enums.TransactionStatus.Success;
+                originalMessage.Reason = "Outgoing return completed successfully";
+                originalMessage.AdditionalInfo = $"Return sent with ReturnId: {message.ReturnId}. IPS confirmed with ACSC.";
+                _logger.LogInformation("[{CorrelationId}] Outgoing return completed for TxId {TxId} with ReturnId {ReturnId}",
+                    cid, message.OriginalTxId, message.ReturnId);
+            }
+            else
+            {
+                // IPS rejected the return (RJCT) - update original transaction
+                originalMessage.Reason = "Outgoing return rejected by IPS";
+                originalMessage.AdditionalInfo = $"Return attempt with ReturnId: {message.ReturnId} was rejected. Reason: {rs.Reason ?? "Unknown"}";
+                _logger.LogWarning("[{CorrelationId}] Outgoing return rejected for TxId {TxId} with ReturnId {ReturnId}. Reason: {Reason}",
+                    cid, message.OriginalTxId, message.ReturnId, rs.Reason);
+            }
+
+            await _persistence.ISOMessageResponseAsync(originalMessage, dbCt);
 
             // Step 7: Return success response
             return Response<ReturnPaymentResponseDto>.Success(new ReturnPaymentResponseDto

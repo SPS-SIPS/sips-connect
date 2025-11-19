@@ -193,12 +193,14 @@ public sealed class IncomingReturnTransactionHandler(
         {
             // Step 7: Mark original transaction as ReadyForReturn and return ACSC
             // DO NOT call CoreBank yet - wait for pacs.002 confirmation first
-            _logger.LogInformation("[{CorrelationId}] Marking original transaction {TxId} as ReadyForReturn", cid, request.OrgnlTxId);
+            _logger.LogInformation("[{CorrelationId}] Marking original transaction {TxId} as ReadyForReturn with ReturnId {ReturnId}",
+                cid, request.OrgnlTxId, request.ReturnId);
 
-            // Update original message status to ReadyForReturn
+            // Update original message status to ReadyForReturn and store ReturnId
             originalMessage.Status = TransactionStatus.ReadyForReturn;
+            originalMessage.ReturnId = request.ReturnId; // Store ReturnId for audit trail
             originalMessage.Reason = "Return request received - awaiting confirmation";
-            originalMessage.AdditionalInfo = "Marked as ReadyForReturn";
+            originalMessage.AdditionalInfo = $"Return requested with ReturnId: {request.ReturnId}";
             await _persistence.ISOMessageResponseAsync(originalMessage, dbCt);
 
             // Build ACSC acknowledgment response
