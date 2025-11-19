@@ -119,43 +119,64 @@ public static class DI
         });
 
         // Register Data Protection for secret encryption (MUST be before ApiKeys)
-        services.AddDataProtection()
+        var dataProtectionBuilder = services.AddDataProtection()
             .PersistKeysToFileSystem(new DirectoryInfo("./keys"))
             .SetApplicationName("SIPS.Connect");
+
+        // Encrypt Data Protection keys at rest
+        // Option 1: Use X509 certificate (Recommended for production)
+        var certPath = configuration["DataProtection:CertificatePath"];
+        var certPassword = configuration["DataProtection:CertificatePassword"];
+
+        if (!string.IsNullOrEmpty(certPath) && File.Exists(certPath))
+        {
+            try
+            {
+                var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                    certPath,
+                    certPassword
+                );
+                dataProtectionBuilder.ProtectKeysWithCertificate(cert);
+                var logger = services.BuildServiceProvider().GetService<ILogger<Program>>();
+                logger?.LogInformation("Data Protection keys encrypted with certificate: {CertPath}", certPath);
+            }
+            catch (Exception ex)
+            {
+                var logger = services.BuildServiceProvider().GetService<ILogger<Program>>();
+                logger?.LogError(ex, "Failed to load Data Protection certificate from {CertPath}", certPath);
+            }
+        }
+        // Option 2: Use DPAPI on Windows
+        else if (OperatingSystem.IsWindows())
+        {
+            dataProtectionBuilder.ProtectKeysWithDpapi(protectToLocalMachine: true);
+            var logger = services.BuildServiceProvider().GetService<ILogger<Program>>();
+            logger?.LogInformation("Data Protection keys encrypted with Windows DPAPI");
+        }
+        // Option 3: Warn if no encryption (Development only)
+        else
+        {
+            var logger = services.BuildServiceProvider().GetService<ILogger<Program>>();
+            logger?.LogWarning("⚠️  Data Protection keys are stored UNENCRYPTED. For production, configure DataProtection:CertificatePath in appsettings.json");
+        }
 
         // Register Secret Management Services (MUST be before ApiKeys)
         services.AddSingleton<ISecretManagementService, SecretManagementService>();
         services.AddSingleton<SecretManagementTool>();
 
+        // Register API Key Provider for dynamic reloading
+        services.AddSingleton<IApiKeyProvider, ApiKeyProvider>();
+
         var corsPolicy = new CorsPolicies();
         configuration.Bind(nameof(CorsPolicies), corsPolicy);
 
-        // Load and decrypt API keys at startup
-        var apiKeys = configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? new List<ApiKey>();
-
-        // Decrypt secrets using a temporary service provider
-        var tempServiceProvider = services.BuildServiceProvider();
-        var secretService = tempServiceProvider.GetService<ISecretManagementService>();
-
-        if (secretService != null)
+        // Register ApiKeys using the provider (reads fresh from config each time)
+        services.AddScoped<ApiKeys>(sp =>
         {
-            foreach (var key in apiKeys)
-            {
-                if (!string.IsNullOrEmpty(key.Secret) && secretService.IsEncrypted(key.Secret))
-                {
-                    try
-                    {
-                        key.Secret = secretService.Decrypt(key.Secret);
-                    }
-                    catch (Exception)
-                    {
-                        // If decryption fails, keep original value
-                    }
-                }
-            }
-        }
-
-        services.AddSingleton(new ApiKeys(apiKeys));
+            var apiKeyProvider = sp.GetRequiredService<IApiKeyProvider>();
+            var apiKeys = apiKeyProvider.GetApiKeys();
+            return new ApiKeys(apiKeys);
+        });
 
         services.AddCors(options =>
         {

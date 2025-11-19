@@ -15,50 +15,61 @@ namespace SIPS.Connect.Controllers;
 public class ConfigurationsController(
     IConfiguration configuration,
     IWebHostEnvironment env,
-    ISecretManagementService secretService) : ControllerBase
+    ISecretManagementService secretService,
+    ILogger<ConfigurationsController> logger) : ControllerBase
 {
     private readonly IConfiguration _configuration = configuration;
     private readonly ISecretManagementService _secretService = secretService;
+    private readonly ILogger<ConfigurationsController> _logger = logger;
     private readonly string _jsonFilePath = Path.Combine(env.ContentRootPath, "appsettings.json");
     private static readonly JsonSerializerOptions options = new() { WriteIndented = true };
 
+    /// <summary>
+    /// Reload configuration after changes
+    /// </summary>
+    private void ReloadConfiguration()
+    {
+        try
+        {
+            if (_configuration is IConfigurationRoot configurationRoot)
+            {
+                configurationRoot.Reload();
+                _logger.LogInformation("Configuration reloaded successfully");
+            }
+            else
+            {
+                _logger.LogWarning("Configuration does not support reload");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reload configuration");
+        }
+    }
+
 
     [HttpGet("Core")]
-    // [Authorize (Roles = Admin)]
+    [Authorize(Roles = Admin)]
     public IActionResult GetCore()
     {
         var configs = new CoreOptions();
         _configuration.GetSection("Core").Bind(configs);
 
-        // Decrypt sensitive fields for display
-        if (!string.IsNullOrEmpty(configs.Username) && _secretService.IsEncrypted(configs.Username))
+        // Mask sensitive fields - never return passwords in plain text
+        if (!string.IsNullOrEmpty(configs.Username))
         {
-            try
-            {
-                configs.Username = _secretService.Decrypt(configs.Username);
-            }
-            catch (Exception)
-            {
-                // If decryption fails, return as-is (might be corrupted or plain text)
-            }
+            configs.Username = "********";
         }
-        if (!string.IsNullOrEmpty(configs.Password) && _secretService.IsEncrypted(configs.Password))
+        if (!string.IsNullOrEmpty(configs.Password))
         {
-            try
-            {
-                configs.Password = _secretService.Decrypt(configs.Password);
-            }
-            catch (Exception)
-            {
-                // If decryption fails, return as-is (might be corrupted or plain text)
-            }
+            configs.Password = "********";
         }
 
         return Ok(configs);
     }
 
     [HttpPut("Core")]
-    // [Authorize (Roles = Admin)]
+    [Authorize(Roles = Admin)]
     public IActionResult ChangeCore([FromBody] CoreOptions request)
     {
         var fileContent = System.IO.File.ReadAllText(_jsonFilePath);
@@ -80,6 +91,10 @@ public class ConfigurationsController(
         jsonNode["Core"] = JsonSerializer.SerializeToNode(request, options);
         var updatedJson = jsonNode.ToJsonString(options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+
+        // Reload configuration to apply changes
+        ReloadConfiguration();
+
         return Ok("Core options updated successfully.");
     }
 
@@ -90,17 +105,10 @@ public class ConfigurationsController(
         var configs = new XadesOptions();
         _configuration.GetSection("Xades").Bind(configs);
 
-        // Decrypt sensitive fields for display
-        if (!string.IsNullOrEmpty(configs.PrivateKeyPassphrase) && _secretService.IsEncrypted(configs.PrivateKeyPassphrase))
+        // Mask sensitive fields - never return passphrase in plain text
+        if (!string.IsNullOrEmpty(configs.PrivateKeyPassphrase))
         {
-            try
-            {
-                configs.PrivateKeyPassphrase = _secretService.Decrypt(configs.PrivateKeyPassphrase);
-            }
-            catch (Exception)
-            {
-                // If decryption fails, return as-is
-            }
+            configs.PrivateKeyPassphrase = "********";
         }
 
         return Ok(configs);
@@ -125,6 +133,10 @@ public class ConfigurationsController(
         jsonNode["Xades"] = JsonSerializer.SerializeToNode(request, options);
         var updatedJson = jsonNode.ToJsonString(options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+
+        // Reload configuration to apply changes
+        ReloadConfiguration();
+
         return Ok("Xades options updated successfully.");
     }
 
@@ -135,28 +147,14 @@ public class ConfigurationsController(
         var configs = new ISO20022Options();
         _configuration.GetSection("ISO20022").Bind(configs);
 
-        // Decrypt sensitive fields for display
-        if (!string.IsNullOrEmpty(configs.Key) && _secretService.IsEncrypted(configs.Key))
+        // Mask sensitive fields - never return secrets in plain text
+        if (!string.IsNullOrEmpty(configs.Key))
         {
-            try
-            {
-                configs.Key = _secretService.Decrypt(configs.Key);
-            }
-            catch (Exception)
-            {
-                // If decryption fails, return as-is
-            }
+            configs.Key = "********";
         }
-        if (!string.IsNullOrEmpty(configs.Secret) && _secretService.IsEncrypted(configs.Secret))
+        if (!string.IsNullOrEmpty(configs.Secret))
         {
-            try
-            {
-                configs.Secret = _secretService.Decrypt(configs.Secret);
-            }
-            catch (Exception)
-            {
-                // If decryption fails, return as-is
-            }
+            configs.Secret = "********";
         }
 
         return Ok(configs);
@@ -212,6 +210,10 @@ public class ConfigurationsController(
         jsonNode["Emv"] = JsonSerializer.SerializeToNode(request, options);
         var updatedJson = jsonNode.ToJsonString(options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+
+        // Reload configuration to apply changes
+        ReloadConfiguration();
+
         return Ok("Emv options updated successfully.");
     }
 
@@ -238,6 +240,10 @@ public class ConfigurationsController(
         jsonNode["CorsPolicies"] = JsonSerializer.SerializeToNode(request, options);
         var updatedJson = jsonNode.ToJsonString(options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+
+        // Reload configuration to apply changes
+        ReloadConfiguration();
+
         return Ok("Cors Policies options updated successfully.");
     }
 
@@ -262,28 +268,25 @@ public class ConfigurationsController(
         jsonNode["AllowedHosts"] = string.Join(";", hosts);
         var updatedJson = jsonNode.ToJsonString(options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+
+        // Reload configuration to apply changes
+        ReloadConfiguration();
+
         return Ok("AllowedHosts options updated successfully.");
     }
 
     [HttpGet("APIKeys")]
-    // [Authorize(Roles = Admin)]
+    [Authorize(Roles = Admin)]
     public IActionResult APIKeys([FromQuery] string? key)
     {
         var keys = _configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? [];
 
-        // Decrypt secrets for display
+        // Mask secrets - never return API secrets in plain text
         foreach (var k in keys)
         {
-            if (!string.IsNullOrEmpty(k.Secret) && _secretService.IsEncrypted(k.Secret))
+            if (!string.IsNullOrEmpty(k.Secret))
             {
-                try
-                {
-                    k.Secret = _secretService.Decrypt(k.Secret);
-                }
-                catch (Exception)
-                {
-                    // If decryption fails, keep original value
-                }
+                k.Secret = "********";
             }
         }
 
@@ -297,7 +300,7 @@ public class ConfigurationsController(
     }
 
     [HttpPut("APIKeys")]
-    // [Authorize(Roles = Admin)]
+    [Authorize(Roles = Admin)]
     public IActionResult ChangeAPIKeys([FromBody] ApiKey request)
     {
         var fileContent = System.IO.File.ReadAllText(_jsonFilePath);
@@ -334,6 +337,10 @@ public class ConfigurationsController(
         jsonNode["ApiKeys"] = JsonSerializer.SerializeToNode(keys, options);
         var updatedJson = jsonNode.ToJsonString(options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+
+        // Reload configuration to apply changes
+        ReloadConfiguration();
+
         return Ok(isUpdate ? "API Key updated successfully." : "API Key added successfully.");
     }
 
@@ -358,6 +365,10 @@ public class ConfigurationsController(
         jsonNode["ApiKeys"] = JsonSerializer.SerializeToNode(keys, options);
         var updatedJson = jsonNode.ToJsonString(options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
+
+        // Reload configuration to apply changes
+        ReloadConfiguration();
+
         return Ok("API Key deleted successfully.");
     }
 
