@@ -139,7 +139,7 @@ public static class PaymentRequestResponseBuilder
                 TxInfAndSts = [
                     new PaymentTransaction130 {
                         OrgnlGrpInf = new OriginalGroupInformation29 {
-                            OrgnlMsgId = orig.BizMsgIdr,
+                            OrgnlMsgId = orig.MsgId,
                             OrgnlMsgNmId = orig.MsgDefIdr,
                             OrgnlCreDtTm = orig.CreDt
                         },

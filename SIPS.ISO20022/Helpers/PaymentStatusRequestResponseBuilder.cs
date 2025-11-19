@@ -156,7 +156,7 @@ public static class PaymentStatusRequestResponseBuilder
                 TxInfAndSts = [
                     new PaymentTransaction130 {
                         OrgnlGrpInf = new OriginalGroupInformation29 {
-                            OrgnlMsgId = request.Original?.BizMsgIdr ?? string.Empty,
+                            OrgnlMsgId = request.Original?.MsgId ?? string.Empty,
                             OrgnlMsgNmId = request.Original?.MsgDefIdr ?? string.Empty,
                             OrgnlCreDtTm = request.Original?.CreDt ?? DateTime.UtcNow
                         },
