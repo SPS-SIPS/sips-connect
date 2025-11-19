@@ -73,6 +73,7 @@ public static class DI
         services.AddScoped<IIncomingTransactionStatusHandler, IncomingTransactionStatusHandler>();
         services.AddScoped<IIncomingReturnTransactionHandler, IncomingReturnTransactionHandler>();
         services.AddScoped<IIncomingPaymentStatusReportHandler, IncomingPaymentStatusReportHandler>();
+        services.AddScoped<IReturnRetryHandler, ReturnRetryHandler>();
 
         services.AddScoped<IOutgoingVerificationHandler, OutgoingVerificationHandler>();
         services.AddScoped<IOutgoingTransactionStatusHandler, OutgoingTransactionStatusHandler>();
