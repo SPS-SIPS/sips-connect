@@ -17,11 +17,18 @@ understanding of the below commands is a mandatory requirement for the below pro
 2. **Certificate Authority (CA)**
     Contact the SPS CA team to get a user account and access to the CA server.
 ```
-1. **Generate a Certificate Signing Request (CSR) and Private Key**  
-   Execute the following command to create a CSR and a private key:  
+1. **Generate a Certificate Signing Request (CSR) and Encrypted Private Key**  
+   Execute the following command to create a CSR and an **encrypted** private key:  
    ```bash
-   openssl req -new -newkey rsa:2048 -nodes -keyout private.key -out request.csr -subj "/CN=<your-bic>"
+   # This will prompt you for a passphrase to encrypt the private key
+   openssl req -new -newkey rsa:2048 -keyout private.key -out request.csr -subj "/CN=<your-bic>"
+   
+   # You will be prompted to enter and verify a passphrase
+   # IMPORTANT: Store this passphrase securely - you'll need it to use the private key
+   # Add the passphrase to appsettings.json under Xades.PrivateKeyPassphrase
    ```
+   
+   **⚠️ Security Note:** The private key is now encrypted with AES-256. Never use the `-nodes` flag in production as it creates an unencrypted key.
 ### Procedure for Generating and Verifying Certificates Using OpenSSL
 2. **Submit the CSR to the Certificate Authority (CA)**  
    Copy the CSR content and submit it to the CA server:  
@@ -68,7 +75,11 @@ understanding of the below commands is a mandatory requirement for the below pro
    ```bash
    openssl req -noout -modulus -in request.csr | openssl md5
    openssl x509 -noout -modulus -in certificate.cer | openssl md5
+   
+   # For encrypted private key, you'll be prompted for the passphrase
    openssl rsa -noout -modulus -in private.key | openssl md5
+   
+   # All three MD5 hashes must match exactly
    ```
 
 6. **Validate Certificate and Chain Modulus Consistency**  
@@ -104,6 +115,61 @@ understanding of the below commands is a mandatory requirement for the below pro
    ```
 
 This structured process ensures the secure generation, verification, and validation of certificates.
+
+---
+
+## Configuring the Private Key Passphrase in SIPS.Connect
+
+After generating your encrypted private key, you need to configure the passphrase in your application:
+
+### Option 1: Plain Text (Development Only)
+```json
+{
+  "Xades": {
+    "PrivateKeyPassphrase": "your-passphrase-here"
+  }
+}
+```
+
+### Option 2: Encrypted (Recommended for Production)
+
+1. **Encrypt the passphrase using the Secret Management API:**
+   ```bash
+   curl -X POST https://localhost:443/api/v1/SecretManagement/encrypt \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '"your-passphrase-here"'
+   ```
+
+2. **Update appsettings.json with the encrypted value:**
+   ```json
+   {
+     "Xades": {
+       "PrivateKeyPassphrase": "ENCRYPTED:CfDJ8..."
+     }
+   }
+   ```
+
+3. **Or use the Configuration API:**
+   ```bash
+   curl -X PUT https://localhost:443/api/v1/Configurations/Xades \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "CertificatePath": "./certs/certificate.pem",
+       "PrivateKeyPath": "./certs/private.key",
+       "PrivateKeyPassphrase": "your-passphrase-here",
+       "ChainPath": "./certs/chain.pem"
+     }'
+   ```
+   The API will automatically encrypt the passphrase before saving.
+
+**⚠️ Security Best Practice:**
+- Never commit plain text passphrases to version control
+- Always use encrypted passphrases in production
+- Store the Data Protection keys securely (see `DATA_PROTECTION_KEY_SECURITY.md`)
+
+---
 
 ## I do not use windows or linux, so the commands are not tested on those platforms. Please test them on your own before using them, or simply use macOS 😬.
 ## Certification Disclaimer
