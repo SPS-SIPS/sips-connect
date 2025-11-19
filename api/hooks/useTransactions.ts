@@ -15,15 +15,17 @@ export const useTransactions = (initialQuery: TransactionQuery = { page: 0, page
 
         try {
             const params = {
-                status: query.Status?.toString(),
-                TransactionId: query.TransactionId,
-                EndToEndId: query.EndToEndId,
-                LocalInstrument: query.LocalInstrument,
-                CategoryPurpose: query.CategoryPurpose,
-                DebtorAccount: query.DebtorAccount,
-                CreditorAccount: query.CreditorAccount,
-                fromDate: query.FromDate,
-                toDate: query.ToDate,
+              page: query.page,
+              pageSize: query.pageSize,
+              status: query.Status?.toString(),
+              TransactionId: query.TransactionId,
+              EndToEndId: query.EndToEndId,
+              LocalInstrument: query.LocalInstrument,
+              CategoryPurpose: query.CategoryPurpose,
+              DebtorAccount: query.DebtorAccount,
+              CreditorAccount: query.CreditorAccount,
+              fromDate: query.FromDate,
+              toDate: query.ToDate,
             };
 
             if (query.ISOMessageId) {
