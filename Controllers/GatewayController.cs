@@ -17,7 +17,8 @@ public class GatewayController(
     IOutgoingVerificationHandler verificationService,
     IOutgoingTransactionHandler transactionService,
     IOutgoingTransactionStatusHandler transactionStatusService,
-    IOutgoingReturnTransactionHandler returnTransactionService
+    IOutgoingReturnTransactionHandler returnTransactionService,
+    IReturnRetryHandler returnRetryHandler
     ) : ControllerBase
 {
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
@@ -25,6 +26,7 @@ public class GatewayController(
     private readonly IOutgoingTransactionHandler _transactionService = transactionService;
     private readonly IOutgoingTransactionStatusHandler _transactionStatusService = transactionStatusService;
     private readonly IOutgoingReturnTransactionHandler _returnTransactionService = returnTransactionService;
+    private readonly IReturnRetryHandler _returnRetryHandler = returnRetryHandler;
 
     [HttpPost("Verify")]
     [Authorize(Roles = Gateway)]
@@ -62,8 +64,16 @@ public class GatewayController(
     {
         JsonObject md = _jsonAdapter.Transform(body, ReturnRequest);
         var query = _jsonAdapter.ToObject<ReturnPaymentRequestDto>(md);
-        Console.WriteLine("md.OriginalTxId" + query.OriginalTxId);
         var response = await _returnTransactionService.HandleAsync(query, ct);
         return GenerateAdminMessage(response, _jsonAdapter, PaymentResponse);
+    }
+
+
+    [HttpPost("Retry/{id}")]
+    [Authorize(Roles = Admin)]
+    public async Task<ActionResult> Retry([FromRoute] string id, CancellationToken ct)
+    {
+        var response = await _returnRetryHandler.RetryReturnAsync(id, ct);
+        return GenerateAdminMessage(new Response<ReturnRetryResult>(response), _jsonAdapter, PaymentResponse);
     }
 }
