@@ -197,6 +197,20 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
             EndToEndId = request.EndToEndId,
             AcceptanceDate = DateTime.UtcNow
         };
+
+        var txn = await _broker.InterBankTransactions.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.TransactionIdentification == request.TxId, ct);
+
+        if (txn is not null)
+        {
+            return Ok(new StatusResponse
+            {
+                Status = txn.Status,
+                Reason = "DUPL",
+                AdditionalInfo = "Transaction already processed"
+            });
+        }
+
         try
         {
             var query = _broker.Accounts.AsQueryable();
