@@ -8,4 +8,5 @@ public static class KnownRoles
     public const string Admin = "configuration";
     public const string Gateway = "gateway";
     public const string QR = "som_qr";
+    public const string Recon = "recon";
 }
