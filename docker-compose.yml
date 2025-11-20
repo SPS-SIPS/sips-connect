@@ -2,7 +2,7 @@ name: ${INSTITUTION_NAME:-agro}-sips-connect
 services:
   sips-connect:
     restart: unless-stopped
-    image: hanad/sips-connect:1.1.7
+    image: hanad/sips-connect:1.2.3
     environment:
       - DB_HOST=${DB_HOST:-sips-connect-db}
       - DB_PORT=5432
@@ -83,7 +83,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
   sips-corebank:
-    image: hanad/sips-consumer:1.1.0
+    image: hanad/sips-consumer:1.1.1
     restart: unless-stopped
     ports:
       - "${CB_PORT:-9032}:8080"
