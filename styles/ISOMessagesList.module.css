@@ -148,6 +148,28 @@
     color: var(--color-text-on-primary);
 }
 
+.retryButton {
+    background: var(--color-warning-background);
+    color: var(--color-warning);
+    border: 1px solid var(--color-warning);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition-fast);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+}
+
+.retryButton:hover:not(:disabled) {
+    background: var(--color-warning);
+    color: var(--color-text-on-primary);
+}
+
+.retryButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 @media (max-width: 1200px) {
     .searchInputRow,
     .filterControlsRow {
@@ -342,6 +364,11 @@
 .warning {
     background-color: var(--color-warning-background);
     color: var(--color-warning);
+}
+
+.info {
+    background-color: var(--color-info-background);
+    color: var(--color-info);
 }
 
 /* Pagination Styles */

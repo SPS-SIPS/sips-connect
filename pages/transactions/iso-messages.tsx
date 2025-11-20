@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FiSettings, FiX, FiCheck } from 'react-icons/fi';
+import { FiSettings, FiX, FiCheck, FiRefreshCw } from 'react-icons/fi';
 
 import {useISOMessages} from "../../api/hooks/useISOMessages";
 import {
@@ -16,6 +16,7 @@ import ActionButton from "../../component/common/ActionButton/ActionButton";
 import styles from '../../styles/ISOMessagesList.module.css';
 import RoleGuard from "../../auth/RoleGuard";
 import XmlViewerModal from "../../component/XmlViewerModal/XmlViewerModal";
+import useAxiosPrivate from "../../api/hooks/useAxiosPrivate";
 
 const allColumns = [
     { id: 'msgId', label: 'Message ID' },
@@ -32,6 +33,7 @@ const allColumns = [
     { id: 'additionalInfo', label: 'Additional Info' },
     { id: 'request', label: 'Request XML' },
     { id: 'response', label: 'Response XML' },
+    { id: 'actions', label: 'Actions' },
 ];
 
 const ISOMessagesList = () => {
@@ -44,10 +46,13 @@ const ISOMessagesList = () => {
         refetch
     } = useISOMessages();
 
+    const axiosPrivate = useAxiosPrivate();
+    const [retryingId, setRetryingId] = useState<number | null>(null);
+
     const [showColumnSettings, setShowColumnSettings] = useState(false);
     const [selectedXml, setSelectedXml] = useState<{ content: string; title: string } | null>(null);
     const [visibleColumns, setVisibleColumns] = useState<string[]>([
-        'msgId', 'messageType', 'status', 'date', 'fromBIC', 'toBIC', 'txId'
+        'msgId', 'messageType', 'status', 'date', 'fromBIC', 'toBIC', 'txId', 'actions'
     ]);
 
     const toggleColumnVisibility = (columnId: string) => {
@@ -80,6 +85,29 @@ const ISOMessagesList = () => {
 
     const formatDate = (dateString: string) => {
         return new Date(dateString).toLocaleString();
+    };
+
+    const handleRetry = async (txId: string, messageId: number) => {
+        if (!txId) {
+            alert('Transaction ID is required for retry');
+            return;
+        }
+
+        if (!confirm(`Are you sure you want to retry return for transaction ${txId}?`)) {
+            return;
+        }
+
+        setRetryingId(messageId);
+        try {
+            await axiosPrivate.post(`/api/v1/Gateway/Retry/${txId}`);
+            alert('Return retry initiated successfully');
+            refetch();
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to retry return';
+            alert(`Error: ${errorMessage}`);
+        } finally {
+            setRetryingId(null);
+        }
     };
 
     const getStatusClass = (status: TransactionStatus) => {
@@ -120,6 +148,18 @@ const ISOMessagesList = () => {
                         View XML
                     </button>
                 );
+            case 'actions':
+                return message.status === TransactionStatus.ReadyForReturn && message.txId ? (
+                    <button
+                        onClick={() => handleRetry(message.txId!, message.id)}
+                        disabled={retryingId === message.id}
+                        className={styles.retryButton}
+                        title="Retry Return Transaction"
+                    >
+                        <FiRefreshCw style={{ marginRight: '4px', display: 'inline' }} />
+                        {retryingId === message.id ? 'Retrying...' : 'Retry'}
+                    </button>
+                ) : '-';
             default:
                 return message[columnId as keyof ISOMessage] || '-';
         }
