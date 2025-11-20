@@ -17,6 +17,8 @@ import styles from '../../styles/ISOMessagesList.module.css';
 import RoleGuard from "../../auth/RoleGuard";
 import XmlViewerModal from "../../component/XmlViewerModal/XmlViewerModal";
 import useAxiosPrivate from "../../api/hooks/useAxiosPrivate";
+import AlertModal from "../../component/common/AlertModal/AlertModal";
+import ConfirmationModal from "../../component/common/ConfirmationModal/ConfirmationModal";
 
 const allColumns = [
     { id: 'msgId', label: 'Message ID' },
@@ -48,6 +50,8 @@ const ISOMessagesList = () => {
 
     const axiosPrivate = useAxiosPrivate();
     const [retryingId, setRetryingId] = useState<number | null>(null);
+    const [confirmRetry, setConfirmRetry] = useState<{ txId: string; messageId: number } | null>(null);
+    const [alertModal, setAlertModal] = useState<{ title: string; message: string; error: boolean } | null>(null);
 
     const [showColumnSettings, setShowColumnSettings] = useState(false);
     const [selectedXml, setSelectedXml] = useState<{ content: string; title: string } | null>(null);
@@ -87,24 +91,57 @@ const ISOMessagesList = () => {
         return new Date(dateString).toLocaleString();
     };
 
-    const handleRetry = async (txId: string, messageId: number) => {
+    const handleRetryClick = (txId: string, messageId: number) => {
         if (!txId) {
-            alert('Transaction ID is required for retry');
+            setAlertModal({
+                title: 'Error',
+                message: 'Transaction ID is required for retry',
+                error: true
+            });
             return;
         }
+        setConfirmRetry({ txId, messageId });
+    };
 
-        if (!confirm(`Are you sure you want to retry return for transaction ${txId}?`)) {
-            return;
-        }
+    const handleRetryConfirm = async () => {
+        if (!confirmRetry) return;
 
+        const { txId, messageId } = confirmRetry;
+        setConfirmRetry(null);
         setRetryingId(messageId);
+
         try {
-            await axiosPrivate.post(`/api/v1/Gateway/Retry/${txId}`);
-            alert('Return retry initiated successfully');
+            const response = await axiosPrivate.post(`/api/v1/Gateway/Retry/${txId}`);
+
+            // The backend returns 200 OK with transformed data when successful
+            // For errors, it returns appropriate HTTP status codes with error messages
+            // Check HTTP status first, then check response body structure
+            if (response.status >= 200 && response.status < 300) {
+                // Success - the backend transforms and returns only the data when successful
+                setAlertModal({
+                    title: 'Success',
+                    message: 'Return retry initiated successfully',
+                    error: false
+                });
+            } else {
+                // Error response
+                const errorMessage = response.data?.message || 'Return retry failed';
+                setAlertModal({
+                    title: 'Error',
+                    message: errorMessage,
+                    error: true
+                });
+            }
             refetch();
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Failed to retry return';
-            alert(`Error: ${errorMessage}`);
+            // Network errors or HTTP error status codes (4xx, 5xx)
+            const error = err as { response?: { data?: { message?: string } }; message?: string };
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to retry return';
+            setAlertModal({
+                title: 'Error',
+                message: errorMessage,
+                error: true
+            });
         } finally {
             setRetryingId(null);
         }
@@ -151,7 +188,7 @@ const ISOMessagesList = () => {
             case 'actions':
                 return message.status === TransactionStatus.ReadyForReturn && message.txId ? (
                     <button
-                        onClick={() => handleRetry(message.txId!, message.id)}
+                        onClick={() => handleRetryClick(message.txId!, message.id)}
                         disabled={retryingId === message.id}
                         className={styles.retryButton}
                         title="Retry Return Transaction"
@@ -348,6 +385,22 @@ const ISOMessagesList = () => {
                    onClose={() => setSelectedXml(null)}
                />
            )}
+                {confirmRetry && (
+                    <ConfirmationModal
+                        message={`Are you sure you want to re-call your corebank to process this transaction ${confirmRetry.txId}?`}
+                        onConfirm={handleRetryConfirm}
+                        onCancel={() => setConfirmRetry(null)}
+                    />
+                )}
+                {alertModal && (
+                    <AlertModal
+                        title={alertModal.title}
+                        message={alertModal.message}
+                        error={alertModal.error}
+                        onConfirm={() => setAlertModal(null)}
+                        onClose={() => setAlertModal(null)}
+                    />
+                )}
        </div>
    </RoleGuard>
     );
