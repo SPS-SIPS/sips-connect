@@ -70,7 +70,7 @@ public class GatewayController(
 
 
     [HttpPost("Retry/{id}")]
-    [Authorize(Roles = Admin)]
+    [Authorize(Roles = Recon)]
     public async Task<ActionResult> Retry([FromRoute] string id, CancellationToken ct)
     {
         var response = await _returnRetryHandler.RetryReturnAsync(id, ct);
