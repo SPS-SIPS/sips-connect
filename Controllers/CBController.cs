@@ -205,7 +205,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         {
             return Ok(new StatusResponse
             {
-                Status = txn.Status,
+                Status = txn.Status.Name,
                 Reason = "DUPL",
                 AdditionalInfo = "Transaction already processed"
             });
@@ -243,7 +243,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
             var categoryPurpose = request.CategoryPurpose!.ToUpper();
             var chargeBearer = request.ChargeBearer!.ToUpper();
 
-            var txn = new InterBankTransaction
+            var newTxn = new InterBankTransaction
             {
                 VerificationMessageId = request.TxId,
                 BizMsgIdr = "pacs.008.001.10",
@@ -280,7 +280,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 Status = TransactionStatus.AcceptedSettlementCompleted
             };
 
-            await _broker.InterBankTransactions.AddAsync(txn, ct);
+            await _broker.InterBankTransactions.AddAsync(newTxn, ct);
             await _broker.SaveChangesAsync(ct);
             return Ok(response);
         }
