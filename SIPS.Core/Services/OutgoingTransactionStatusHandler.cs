@@ -147,7 +147,26 @@ public sealed class OutgoingTransactionStatusHandler(
             if (isOriginalPayment && (finalStatus == TransactionStatus.Success || finalStatus == TransactionStatus.Failed))
             {
                 _logger.LogInformation("[{CorrelationId}] SAF resolved status for outgoing transaction {TxId}. Notifying CoreBank of completion.", cid, isoMessage.TxId);
-                await NotifyCoreBankCompletionAsync(isoMessage, rs.Status ?? RJCT, rs.Reason, rs.AdditionalInfo, ct, cid);
+                var notificationSuccess = await NotifyCoreBankCompletionAsync(isoMessage, rs.Status ?? RJCT, rs.Reason, rs.AdditionalInfo, ct, cid);
+
+                // If notification fails, mark for retry so SAF tries again
+                if (!notificationSuccess)
+                {
+                    _logger.LogWarning("[{CorrelationId}] CoreBank completion notification failed for TxId {TxId}. Marking for retry.", cid, isoMessage.TxId);
+                    await _isoService.MarkForCheckStatusAsync(
+                        isoMessage,
+                        $"CoreBank callback failed - will retry notification. Final status: {rs.Status}",
+                        ct);
+                    // Don't update the final status yet - keep it in CheckStatus for retry
+                    return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                    {
+                        Status = PDNG,
+                        TxId = isoMessage.TxId ?? string.Empty,
+                        EndToEndId = isoMessage.EndToEndId ?? string.Empty,
+                        Reason = "Status resolved but CoreBank notification pending",
+                        AdditionalInfo = $"Final status: {rs.Status}. Notification will be retried."
+                    });
+                }
             }
 
             // If this was a ReadyForReturn payment (incoming return scenario) and status is now confirmed,
@@ -442,7 +461,7 @@ public sealed class OutgoingTransactionStatusHandler(
     /// This is called when an outgoing transaction that previously timed out (returned PDNG) is now resolved.
     /// CoreBank can use this to finalize the transaction status on their side.
     /// </summary>
-    private async Task NotifyCoreBankCompletionAsync(
+    private async Task<bool> NotifyCoreBankCompletionAsync(
         ISOMessage isoMessage,
         string status,
         string? reason,
@@ -456,7 +475,7 @@ public sealed class OutgoingTransactionStatusHandler(
             if (string.IsNullOrWhiteSpace(_configuration.CompletionNotification))
             {
                 _logger.LogWarning("[{CorrelationId}] CompletionNotification URL not configured. Skipping CoreBank notification for TxId {TxId}", cid, isoMessage.TxId);
-                return;
+                return true; // Not configured is not a failure - just skip
             }
 
             var headers = new Dictionary<string, string>() {
@@ -496,16 +515,26 @@ public sealed class OutgoingTransactionStatusHandler(
             if (result == null)
             {
                 _logger.LogWarning("[{CorrelationId}] CoreBank completion notification returned null for TxId {TxId}", cid, isoMessage.TxId);
-                return;
+                return false; // Null response = failure, should retry
             }
 
-            _logger.LogInformation("[{CorrelationId}] CoreBank completion notification sent successfully for TxId {TxId}, StatusCode={StatusCode}",
+            // Check for successful HTTP status codes (2xx)
+            if (result.StatusCode >= System.Net.HttpStatusCode.OK && result.StatusCode < System.Net.HttpStatusCode.MultipleChoices)
+            {
+                _logger.LogInformation("[{CorrelationId}] CoreBank completion notification sent successfully for TxId {TxId}, StatusCode={StatusCode}",
+                    cid, isoMessage.TxId, result.StatusCode);
+                return true;
+            }
+
+            _logger.LogWarning("[{CorrelationId}] CoreBank completion notification failed for TxId {TxId}, StatusCode={StatusCode}",
                 cid, isoMessage.TxId, result.StatusCode);
+            return false; // Non-2xx status = failure, should retry
         }
         catch (Exception ex)
         {
-            // Don't fail the SAF process if notification fails - just log it
+            // Network errors, timeouts, etc. should trigger retry
             _logger.LogError(ex, "[{CorrelationId}] Exception sending CoreBank completion notification for TxId {TxId}", cid, isoMessage.TxId);
+            return false; // Exception = failure, should retry
         }
     }
 }
