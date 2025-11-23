@@ -67,7 +67,9 @@ public sealed class OutgoingTransactionHandler(
             // Step 2: Call SIPS and handle response
             var responseMessage = await _sips.SendAsync(url, signed, ct, cid);
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, dbCt, cid);
-            if (!responseMessageStatus.IsSuccess)
+            // If handler returns a response (error or PDNG), return it immediately
+            // Only continue if we got a valid parseable response (indicated by ACSC dummy status)
+            if (!responseMessageStatus.IsSuccess || responseMessageStatus.Data?.Status == PDNG)
                 return responseMessageStatus;
 
             // Step 3: Parse IPS response and finalize transaction
@@ -195,7 +197,38 @@ public sealed class OutgoingTransactionHandler(
     CancellationToken ct,
     string correlationId)
     {
-        // Check for null or missing data
+        // Handle timeout or bad gateway responses FIRST - mark for SAF retry
+        // CRITICAL: Return PDNG (Pending) to CoreBank instead of failure
+        // This prevents CoreBank from auto-reversing while the transaction may have succeeded at IPS
+        // Check status code even if Data is null (timeout responses may have null data)
+        if (responseMessage != null &&
+            (responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
+             responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway))
+        {
+            _logger.LogWarning("[{CorrelationId}] IPS send timeout/gateway error - marking for SAF retry. Status: {Status}",
+                correlationId, responseMessage.StatusCode);
+            await _isoService.MarkForCheckStatusAsync(
+                record,
+                $"IPS send timeout: {responseMessage.StatusCode}",
+                ct);
+
+            // Return PDNG status to CoreBank - transaction is pending final confirmation
+            // CoreBank MUST NOT reverse the transaction on PDNG status
+            // CoreBank should either:
+            // 1. Wait for completion callback from SIPS when SAF resolves the status
+            // 2. Implement their own status inquiry mechanism
+            // 3. Mark transaction as pending and require manual reconciliation
+            return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+            {
+                Status = PDNG,
+                TxId = record.TxId ?? string.Empty,
+                EndToEndId = record.EndToEndId ?? string.Empty,
+                Reason = "Transaction pending - awaiting IPS confirmation",
+                AdditionalInfo = $"Timeout occurred. Transaction marked for status verification. Do not reverse. Status: {responseMessage.StatusCode}"
+            });
+        }
+
+        // Check for null or missing data (after timeout check)
         if (responseMessage == null || responseMessage.Data == null)
         {
             return await LogPersistAndReturnAsync(
@@ -206,21 +239,6 @@ public sealed class OutgoingTransactionHandler(
                 failMessage: "Failed to get Valid Response from SIPS",
                 statusCode: System.Net.HttpStatusCode.BadRequest,
                 ct: ct);
-        }
-
-        // Handle timeout or bad gateway responses - mark for SAF retry
-        if (responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
-            responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway)
-        {
-            _logger.LogWarning("[{CorrelationId}] IPS send timeout/gateway error - marking for SAF retry. Status: {Status}",
-                correlationId, responseMessage.StatusCode);
-            await _isoService.MarkForCheckStatusAsync(
-                record,
-                $"IPS send timeout: {responseMessage.StatusCode}",
-                ct);
-            return Response<PaymentResponseDto>.Fail(
-                "Request to IPS timed out - transaction marked for retry",
-                responseMessage.StatusCode);
         }
 
         // Handle bad request or unauthorized responses

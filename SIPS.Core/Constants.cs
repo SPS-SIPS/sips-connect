@@ -16,6 +16,7 @@ public static class Constants
 
     public const string ACSC = "ACSC";
     public const string RJCT = "RJCT";
+    public const string PDNG = "PDNG"; // Pending - awaiting final status
     public const string MISS = "MISS";
     public const string SUCC = "SUCC";
     public const string IBAN = "IBAN";

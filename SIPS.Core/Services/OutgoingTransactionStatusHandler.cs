@@ -142,6 +142,14 @@ public sealed class OutgoingTransactionStatusHandler(
 
             await _persistence.ISOMessageStatusResponseAsync(record, dbCt);
 
+            // Notify CoreBank of completion for OUTGOING transactions that were previously in CheckStatus
+            // This resolves the timeout scenario where CoreBank received PDNG and is waiting for final status
+            if (isOriginalPayment && (finalStatus == TransactionStatus.Success || finalStatus == TransactionStatus.Failed))
+            {
+                _logger.LogInformation("[{CorrelationId}] SAF resolved status for outgoing transaction {TxId}. Notifying CoreBank of completion.", cid, isoMessage.TxId);
+                await NotifyCoreBankCompletionAsync(isoMessage, rs.Status ?? RJCT, rs.Reason, rs.AdditionalInfo, ct, cid);
+            }
+
             // If this was a ReadyForReturn payment (incoming return scenario) and status is now confirmed,
             // trigger CoreBank callback to complete the return (reverse the credit)
             if (wasReadyForReturn && isOriginalPayment && finalStatus == TransactionStatus.Success)
@@ -423,6 +431,78 @@ public sealed class OutgoingTransactionStatusHandler(
         {
             _logger.LogError(ex, "[{CorrelationId}] Exception calling CoreBank return callback for TxId {TxId}", cid, isoMessage.TxId);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Notifies CoreBank of transaction completion when SAF resolves the final status.
+    /// This is called when an outgoing transaction that previously timed out (returned PDNG) is now resolved.
+    /// CoreBank can use this to finalize the transaction status on their side.
+    /// </summary>
+    private async Task NotifyCoreBankCompletionAsync(
+        ISOMessage isoMessage,
+        string status,
+        string? reason,
+        string? additionalInfo,
+        CancellationToken ct,
+        string cid)
+    {
+        try
+        {
+            // Only send completion notification if the URL is configured
+            if (string.IsNullOrWhiteSpace(_configuration.CompletionNotification))
+            {
+                _logger.LogWarning("[{CorrelationId}] CompletionNotification URL not configured. Skipping CoreBank notification for TxId {TxId}", cid, isoMessage.TxId);
+                return;
+            }
+
+            var headers = new Dictionary<string, string>() {
+                { API_Key, _configuration.Key! },
+                { API_Secret, _configuration.Secret! }
+            };
+
+            var idem = isoMessage.TxId;
+            if (!string.IsNullOrWhiteSpace(idem))
+                headers["X-Idempotency-Key"] = idem!;
+            if (!string.IsNullOrWhiteSpace(isoMessage.TxId))
+                headers["X-Transaction-Id"] = isoMessage.TxId!;
+
+            // Build completion notification payload for CoreBank
+            var notificationDto = new CBCompletionNotification
+            {
+                OriginalTxId = isoMessage.TxId ?? string.Empty,
+                OriginalEndToEndId = isoMessage.EndToEndId ?? string.Empty,
+                Status = status,
+                Reason = reason ?? string.Empty,
+                AdditionalInfo = additionalInfo ?? "Transaction status resolved via SAF"
+            };
+
+            var result = await _callbacks.SendJsonAsync(
+                _configuration.CompletionNotification!,
+                headers,
+                notificationDto,
+                CB_CompletionNotification,
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                ct,
+                cid
+            );
+
+            if (result == null)
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank completion notification returned null for TxId {TxId}", cid, isoMessage.TxId);
+                return;
+            }
+
+            _logger.LogInformation("[{CorrelationId}] CoreBank completion notification sent successfully for TxId {TxId}, StatusCode={StatusCode}",
+                cid, isoMessage.TxId, result.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            // Don't fail the SAF process if notification fails - just log it
+            _logger.LogError(ex, "[{CorrelationId}] Exception sending CoreBank completion notification for TxId {TxId}", cid, isoMessage.TxId);
         }
     }
 }
