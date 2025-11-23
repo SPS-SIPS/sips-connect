@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>SIPS.Core</PackageId>
-    <Version>2.0.7</Version>
+    <Version>2.0.8</Version>
     <Authors>Abdulshakur Ahmed</Authors>
     <Product>SIPS Core</Product>
     <Description>SIPS CORE</Description>
@@ -29,11 +29,7 @@
     <PackageReference Include="SIPS.Adapter" Version="1.0.2" />
     <PackageReference Include="SIPS.PostgreSQL" Version="1.0.3" />
     <PackageReference Include="SIPS.Emv" Version="1.0.3" />
-    <!-- <PackageReference Include="SIPS.ISO20022" Version="1.1.0" /> -->
+    <PackageReference Include="SIPS.ISO20022" Version="1.1.1" />
     <PackageReference Include="SIPS.XMLDsig.Xades" Version="1.0.8" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="../SIPS.ISO20022/SIPS.ISO20022.csproj" />
   </ItemGroup>
 </Project>
