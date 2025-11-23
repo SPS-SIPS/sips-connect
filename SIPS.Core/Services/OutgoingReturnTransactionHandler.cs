@@ -245,8 +245,26 @@ public sealed class OutgoingReturnTransactionHandler(
     CancellationToken ct,
     string correlationId)
     {
-        // Check for null or missing data
-        if (responseMessage == null || responseMessage.Data == null)
+        // Handle timeout, bad gateway, or connection errors FIRST - mark for SAF retry
+        if (responseMessage == null ||
+            responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
+            responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway ||
+            responseMessage.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+        {
+            var statusDescription = responseMessage?.StatusCode.ToString() ?? "Connection Error";
+            _logger.LogWarning("[{CorrelationId}] IPS return request timeout/connection error - marking for SAF retry. Status: {Status}",
+                correlationId, statusDescription);
+            await _isoService.MarkForCheckStatusAsync(
+                originalMessage,
+                $"IPS return request timeout/connection error: {statusDescription}",
+                ct);
+            return Response<ReturnPaymentResponseDto>.Fail(
+                "Request to IPS timed out or connection error - transaction marked for retry",
+                responseMessage?.StatusCode ?? System.Net.HttpStatusCode.InternalServerError);
+        }
+
+        // Check for missing data (after timeout/connection error check)
+        if (responseMessage.Data == null)
         {
             return await LogPersistAndReturnAsync(
                 record,
@@ -256,21 +274,6 @@ public sealed class OutgoingReturnTransactionHandler(
                 failMessage: "Failed to get Valid Response from SIPS",
                 statusCode: System.Net.HttpStatusCode.BadRequest,
                 ct: ct);
-        }
-
-        // Handle timeout or bad gateway responses - mark for SAF retry
-        if (responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
-            responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway)
-        {
-            _logger.LogWarning("[{CorrelationId}] IPS return request timeout/gateway error - marking for SAF retry. Status: {Status}",
-                correlationId, responseMessage.StatusCode);
-            await _isoService.MarkForCheckStatusAsync(
-                originalMessage,
-                $"IPS return request timeout: {responseMessage.StatusCode}",
-                ct);
-            return Response<ReturnPaymentResponseDto>.Fail(
-                "Request to IPS timed out - transaction marked for retry",
-                responseMessage.StatusCode);
         }
 
         // Handle bad request or unauthorized responses

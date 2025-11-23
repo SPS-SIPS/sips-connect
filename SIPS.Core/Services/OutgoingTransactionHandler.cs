@@ -4,7 +4,6 @@ using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Interfaces;
 using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Options;
-using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -197,19 +196,21 @@ public sealed class OutgoingTransactionHandler(
     CancellationToken ct,
     string correlationId)
     {
-        // Handle timeout or bad gateway responses FIRST - mark for SAF retry
+        // Handle timeout, bad gateway, or connection errors FIRST - mark for SAF retry
         // CRITICAL: Return PDNG (Pending) to CoreBank instead of failure
         // This prevents CoreBank from auto-reversing while the transaction may have succeeded at IPS
-        // Check status code even if Data is null (timeout responses may have null data)
-        if (responseMessage != null &&
-            (responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
-             responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway))
+        // Connection errors (null response or 500 InternalServerError from HttpClient) should be treated like timeouts
+        if (responseMessage == null ||
+            responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
+            responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway ||
+            responseMessage.StatusCode == System.Net.HttpStatusCode.InternalServerError)
         {
-            _logger.LogWarning("[{CorrelationId}] IPS send timeout/gateway error - marking for SAF retry. Status: {Status}",
-                correlationId, responseMessage.StatusCode);
+            var statusDescription = responseMessage?.StatusCode.ToString() ?? "Connection Error";
+            _logger.LogWarning("[{CorrelationId}] IPS send timeout/connection error - marking for SAF retry. Status: {Status}",
+                correlationId, statusDescription);
             await _isoService.MarkForCheckStatusAsync(
                 record,
-                $"IPS send timeout: {responseMessage.StatusCode}",
+                $"IPS send timeout/connection error: {statusDescription}",
                 ct);
 
             // Return PDNG status to CoreBank - transaction is pending final confirmation
@@ -224,12 +225,12 @@ public sealed class OutgoingTransactionHandler(
                 TxId = record.TxId ?? string.Empty,
                 EndToEndId = record.EndToEndId ?? string.Empty,
                 Reason = "Transaction pending - awaiting IPS confirmation",
-                AdditionalInfo = $"Timeout occurred. Transaction marked for status verification. Do not reverse. Status: {responseMessage.StatusCode}"
+                AdditionalInfo = $"Network error occurred. Transaction marked for status verification. Do not reverse. Status: {statusDescription}"
             });
         }
 
-        // Check for null or missing data (after timeout check)
-        if (responseMessage == null || responseMessage.Data == null)
+        // Check for missing data (after timeout/connection error check)
+        if (responseMessage.Data == null)
         {
             return await LogPersistAndReturnAsync(
                 record,
