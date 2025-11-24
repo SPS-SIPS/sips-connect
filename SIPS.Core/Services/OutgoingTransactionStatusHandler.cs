@@ -117,7 +117,16 @@ public sealed class OutgoingTransactionStatusHandler(
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse IPS status response: {message}", cid, responseMessage?.Data ?? "");
                 await _isoService.MarkForCheckStatusAsync(isoMessage, "Failed to parse IPS status response", dbCt);
-                return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
+
+                // Return PDNG for SAF - will retry on next run
+                return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                {
+                    Status = PDNG,
+                    TxId = isoMessage.TxId ?? string.Empty,
+                    EndToEndId = isoMessage.EndToEndId ?? string.Empty,
+                    Reason = "Status check pending - IPS response parsing failed",
+                    AdditionalInfo = "IPS status response invalid. Transaction marked for retry."
+                });
             }
 
             // Use StatusOrchestrator to map IPS status code consistently
@@ -338,14 +347,23 @@ public sealed class OutgoingTransactionStatusHandler(
 
     private static bool TryParse(string message, out PaymentRequestResponseBuilder.Response? response)
     {
-        response = PaymentRequestResponseBuilder.Parse(message);
-
-        if (response == null)
+        try
         {
+            response = PaymentRequestResponseBuilder.Parse(message);
+
+            if (response == null)
+            {
+                return false;
+            }
+
+            return true;
+        }
+        catch
+        {
+            // XML parsing exceptions (e.g., "Root element is missing")
+            response = null;
             return false;
         }
-
-        return true;
     }
 
     /// <summary>

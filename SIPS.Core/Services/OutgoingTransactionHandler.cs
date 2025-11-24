@@ -78,7 +78,17 @@ public sealed class OutgoingTransactionHandler(
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse IPS response: {message}", cid, responseMessage.Data);
                 await _isoService.MarkForCheckStatusAsync(record, "Failed to parse IPS response", dbCt);
-                return Response<PaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
+
+                // Return PDNG instead of FAIL - IPS received the request but response is invalid
+                // SAF will check the actual status later
+                return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                {
+                    Status = PDNG,
+                    TxId = record.TxId ?? string.Empty,
+                    EndToEndId = record.EndToEndId ?? string.Empty,
+                    Reason = "Transaction pending - IPS response parsing failed",
+                    AdditionalInfo = "IPS received request but returned invalid response. Transaction marked for status verification. Do not reverse."
+                });
             }
             _logger.LogInformation("[{CorrelationId}] Received response from IPS for TxId {TxId}: Status={Status}", cid, txId, rs.Status);
             _logger.LogDebug("[{CorrelationId}] IPS Response: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
@@ -289,14 +299,23 @@ public sealed class OutgoingTransactionHandler(
     }
     private static bool TryParse(string message, out PaymentRequestResponseBuilder.Response? response)
     {
-        response = PaymentRequestResponseBuilder.Parse(message);
-
-        if (response == null)
+        try
         {
+            response = PaymentRequestResponseBuilder.Parse(message);
+
+            if (response == null)
+            {
+                return false;
+            }
+
+            return true;
+        }
+        catch
+        {
+            // XML parsing exceptions (e.g., "Root element is missing")
+            response = null;
             return false;
         }
-
-        return true;
     }
     // Note: PersistISOMessageAsync removed - we no longer finalize status here
     // Status is kept as Pending until pacs.002 is received
