@@ -52,7 +52,7 @@ public static class PaymentStatusRequestResponseBuilder
                     }
                 }
             },
-            BizMsgIdr = Transformers.GenerateId(model.From),
+            BizMsgIdr = model.BizMsgIdr,
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
             Rltd = [

@@ -51,7 +51,7 @@ public static class ReturnPaymentResponseBuilder
                     }
                 }
             },
-            BizMsgIdr = Transformers.GenerateId(model.From),
+            BizMsgIdr = model.BizMsgIdr,
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
             Rltd = [
