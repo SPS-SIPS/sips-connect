@@ -2,7 +2,7 @@ name: ${INSTITUTION_NAME:-agro}-sips-connect
 services:
   sips-connect:
     restart: unless-stopped
-    image: hanad/sips-connect:1.2.6
+    image: hanad/sips-connect:1.2.7
     environment:
       - DB_HOST=${DB_HOST:-sips-connect-db}
       - DB_PORT=5432
