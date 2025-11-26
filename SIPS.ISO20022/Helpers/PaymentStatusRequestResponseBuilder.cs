@@ -22,6 +22,15 @@ public static class PaymentStatusRequestResponseBuilder
         public DateTime AcceptanceDate { get; set; }
         public string TxId { get; set; } = string.Empty;
     }
+    /// <summary>
+    /// Creates the AppHdr for a pacs.002 response message (completion notification response).
+    /// IMPORTANT: SmartVista IPS Switch Behavior
+    /// - The switch REGENERATES AppHdr when forwarding messages (new BizMsgIdr, CreDt, Fr/To)
+    /// - The Rltd block MUST reference the IMMEDIATE PARENT message (switch-generated pacs.002 CN)
+    /// - NOT the original pacs.008 message
+    /// - This is per BPC SmartVista IPS architecture where the switch acts as a message gateway
+    /// - For completion notification responses, Rltd points to the CN we received from the switch
+    /// </summary>
     private static AppHdr AppHeader(Response model, SupportedMessageTypes type)
     {
         AppHdr hdr = new()
@@ -55,6 +64,8 @@ public static class PaymentStatusRequestResponseBuilder
             BizMsgIdr = model.BizMsgIdr,
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
+            // Rltd references the IMMEDIATE PARENT message we received (switch-generated pacs.002 CN)
+            // NOT the original pacs.008 - this is critical for SmartVista IPS correlation
             Rltd = [
                 new BusinessApplicationHeader7
             {
@@ -66,6 +77,7 @@ public static class PaymentStatusRequestResponseBuilder
                         {
                             Othr = new Schemas.PSRHeader.GenericFinancialIdentification1
                             {
+                                // Use the immediate parent's From (switch or sending bank)
                                 Id = model.Original.From
                             }
                         }
@@ -79,11 +91,13 @@ public static class PaymentStatusRequestResponseBuilder
                         {
                             Othr = new Schemas.PSRHeader.GenericFinancialIdentification1
                             {
+                                // Use the immediate parent's To (which is us)
                                 Id = model.Original.To
                             }
                         }
                     }
                 },
+                // These fields come from the RECEIVED message's AppHdr (switch-generated)
                 BizMsgIdr = model.Original?.BizMsgIdr ?? string.Empty,
                 MsgDefIdr = model.Original?.MsgDefIdr ?? string.Empty,
                 CreDt = model.Original?.CreDt ?? DateTime.UtcNow

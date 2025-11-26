@@ -22,6 +22,14 @@ public static class PaymentRequestResponseBuilder
         public DateTime AcceptanceDate { get; set; }
         public string TxId { get; set; } = string.Empty;
     }
+    /// <summary>
+    /// Creates the AppHdr for a pacs.002 response message.
+    /// IMPORTANT: SmartVista IPS Switch Behavior
+    /// - The switch REGENERATES AppHdr when forwarding pacs.008 (new BizMsgIdr, CreDt, Fr/To)
+    /// - The Rltd block MUST reference the IMMEDIATE PARENT message (switch-forwarded pacs.008)
+    /// - NOT the original bank's pacs.008 message
+    /// - This is per BPC SmartVista IPS architecture where the switch acts as a message gateway
+    /// </summary>
     private static AppHdr AppHeader(Response model, SupportedMessageTypes type)
     {
         AppHdr hdr = new()
@@ -55,6 +63,8 @@ public static class PaymentRequestResponseBuilder
             BizMsgIdr = model.BizMsgIdr,
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
+            // Rltd references the IMMEDIATE PARENT message we received (switch-forwarded pacs.008)
+            // NOT the original bank's pacs.008 - this is critical for SmartVista IPS correlation
             Rltd = [
                 new BusinessApplicationHeader7
             {
@@ -66,6 +76,7 @@ public static class PaymentRequestResponseBuilder
                         {
                             Othr = new Schemas.PRRHeader.GenericFinancialIdentification1
                             {
+                                // Use the immediate parent's From (which is the switch or sending bank)
                                 Id = model.Original.From
                             }
                         }
@@ -79,11 +90,13 @@ public static class PaymentRequestResponseBuilder
                         {
                             Othr = new Schemas.PRRHeader.GenericFinancialIdentification1
                             {
+                                // Use the immediate parent's To (which is us)
                                 Id = model.Original.To
                             }
                         }
                     }
                 },
+                // These fields come from the RECEIVED message's AppHdr (switch-generated)
                 BizMsgIdr = model.Original.BizMsgIdr,
                 MsgDefIdr = model.Original.MsgDefIdr,
                 CreDt = model.Original.CreDt
