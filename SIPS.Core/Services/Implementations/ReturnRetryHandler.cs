@@ -52,7 +52,7 @@ public sealed class ReturnRetryHandler(
     public async Task<ReturnRetryResult> RetryReturnAsync(string txId, CancellationToken ct)
     {
         var cid = _correlation.Create();
-        _logger.LogInformation("[{CorrelationId}] Starting return retry for TxId {TxId}", cid, txId);
+        _logger.LogInformation("[{CorrelationId}] Starting CoreBank retry for TxId {TxId}", cid, txId);
 
         try
         {
@@ -72,6 +72,22 @@ public sealed class ReturnRetryHandler(
             }
 
             // Step 2: Verify transaction is in ReadyForReturn status
+            // Do not allow retrying transactions that are already successful or in other terminal states
+            if (isoMessage.Status == TransactionStatus.Success)
+            {
+                _logger.LogInformation("[{CorrelationId}] Transaction TxId {TxId} is already successful. No retry needed.",
+                    cid, txId);
+                return new ReturnRetryResult
+                {
+                    Success = true,
+                    Message = "Transaction already completed successfully",
+                    TxId = txId,
+                    Status = isoMessage.Status.ToString(),
+                    Reason = isoMessage.Reason,
+                    AdditionalInfo = isoMessage.AdditionalInfo
+                };
+            }
+
             if (isoMessage.Status != TransactionStatus.ReadyForReturn)
             {
                 _logger.LogWarning("[{CorrelationId}] Transaction TxId {TxId} is not in ReadyForReturn status. Current status: {Status}",
@@ -85,20 +101,23 @@ public sealed class ReturnRetryHandler(
                 };
             }
 
-            // Step 3: Check retry limits (max 2 retries = round 3)
-            const int MaxRetryRound = 3;
-            if (isoMessage.Round >= MaxRetryRound)
+            // Step 3: Check retry limits (max 2 retries)
+            // Round 1: Initial attempt, Round 2: First retry, Round 3: Second retry
+            // Block at Round 3+ to prevent further CoreBank calls
+            // Transaction stays in ReadyForReturn for dispute channel or IPS return (if within 2 calendar days)
+            const int MaxAllowedRound = 2;
+            if (isoMessage.Round > MaxAllowedRound)
             {
-                _logger.LogWarning("[{CorrelationId}] Maximum retry attempts reached for TxId {TxId}. Round: {Round}",
+                _logger.LogWarning("[{CorrelationId}] Maximum retry attempts reached for TxId {TxId}. Round: {Round}. No further CoreBank retries allowed.",
                     cid, txId, isoMessage.Round);
                 return new ReturnRetryResult
                 {
                     Success = false,
-                    Message = $"Maximum retry attempts ({MaxRetryRound - 1}) reached. Return the transaction to IPS.",
+                    Message = $"Maximum retry attempts ({MaxAllowedRound}) reached. Route to dispute channel or return to IPS if within 2 calendar days.",
                     TxId = txId,
-                    Status = "MaxRetriesExceeded",
-                    Reason = "Maximum retry attempts exceeded",
-                    AdditionalInfo = $"Current round: {isoMessage.Round}. Return the transaction to IPS."
+                    Status = isoMessage.Status.ToString(), // Keep current status (ReadyForReturn)
+                    Reason = "Maximum retry attempts exceeded - CoreBank rejected transaction",
+                    AdditionalInfo = $"Current round: {isoMessage.Round}. No further automatic retries allowed. Route to dispute channel or return to IPS."
                 };
             }
 
@@ -125,31 +144,52 @@ public sealed class ReturnRetryHandler(
 
             if (!string.IsNullOrWhiteSpace(transaction.TxId))
                 headers["X-Transaction-Id"] = transaction.TxId;
+            var retryId = $"{transaction.TxId}-retry-{DateTime.UtcNow:yyyyMMddHHmmss}";
             if (!string.IsNullOrWhiteSpace(transaction.TxId))
-                headers["X-Idempotency-Key"] = $"{transaction.TxId}-retry-{DateTime.UtcNow:yyyyMMddHHmmss}";
-            if (!string.IsNullOrWhiteSpace(isoMessage.ReturnId))
-                headers["X-Return-Id"] = isoMessage.ReturnId;
+                headers["X-Idempotency-Key"] = retryId;
+            if (!string.IsNullOrWhiteSpace(retryId))
+                headers["X-Retry-Id"] = retryId;
 
-            // Step 5: Build return request payload for CoreBank
-            var returnDto = new CBReturnRequestDto
+            // Step 5: Build payment request payload for CoreBank with full transaction data
+            var paymentDto = new CBPaymentRequestDto
             {
-                FromBIC = isoMessage.FromBIC ?? string.Empty,
-                OriginalEndToEnd = transaction.EndToEndId ?? string.Empty,
-                OrgnlTxId = transaction.TxId ?? string.Empty,
-                ReturnId = isoMessage.ReturnId ?? string.Empty,
-                Reason = isoMessage.Reason ?? "Return retry - manual intervention",
-                AdditionalInfo = isoMessage.AdditionalInfo ?? "Retry initiated by operator"
+                FromBIC = transaction.FromBIC ?? string.Empty,
+                LocalInstrument = transaction.LocalInstrument ?? string.Empty,
+                CategoryPurpose = transaction.CategoryPurpose ?? string.Empty,
+                EndToEndId = transaction.EndToEndId ?? string.Empty,
+                TxId = transaction.TxId ?? string.Empty,
+                Amount = transaction.Amount,
+                Currency = transaction.Currency ?? string.Empty,
+                DebtorName = transaction.DebtorName ?? string.Empty,
+                DebtorAccount = transaction.DebtorAccount ?? string.Empty,
+                DebtorAccountType = transaction.DebtorAccountType ?? string.Empty,
+                DebtorAgentBIC = transaction.DebtorAgentBIC ?? string.Empty,
+                DebtorIssuer = transaction.DebtorIssuer ?? string.Empty,
+                CreditorName = transaction.CreditorName ?? string.Empty,
+                CreditorAccount = transaction.CreditorAccount ?? string.Empty,
+                CreditorAccountType = transaction.CreditorAccountType ?? string.Empty,
+                CreditorAgentBIC = transaction.CreditorAgentBIC ?? string.Empty,
+                CreditorIssuer = transaction.CreditorIssuer ?? string.Empty,
+                RemittanceInformation = transaction.RemittanceInformation ?? string.Empty,
+                Date = DateTime.UtcNow,
+                ToBIC = isoMessage.FromBIC ?? string.Empty,
+                SettlementMethod = "CLRG",
+                ChargeBearer = "SLEV",
+                BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
+                MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
+                ClearingSystem = string.Empty,
+                MsgId = isoMessage.MsgId ?? string.Empty
             };
 
-            _logger.LogInformation("[{CorrelationId}] Calling CoreBank return endpoint for TxId {TxId} with ReturnId {ReturnId}",
-                cid, txId, isoMessage.ReturnId);
+            _logger.LogInformation("[{CorrelationId}] Calling CoreBank transfer endpoint for TxId {TxId} with RetryId {RetryId}",
+                cid, txId, retryId);
 
-            // Step 6: Call CoreBank return endpoint
+            // Step 6: Call CoreBank transfer endpoint to retry the return request
             var result = await _callbacks.SendJsonAsync(
-                _callbackLinks.Return!,
+                _callbackLinks.Transfer!,
                 headers,
-                returnDto,
-                CB_ReturnRequest,
+                paymentDto,
+                CB_PaymentRequest,
                 _jsonAdapter,
                 _correlation,
                 _jsonSerializerOptions,
@@ -161,19 +201,19 @@ public sealed class ReturnRetryHandler(
             // Step 7: Handle CoreBank response
             if (result == null)
             {
-                _logger.LogError("[{CorrelationId}] CoreBank return callback returned null for TxId {TxId}", cid, txId);
+                _logger.LogError("[{CorrelationId}] CoreBank callback returned null for TxId {TxId}", cid, txId);
                 return new ReturnRetryResult
                 {
                     Success = false,
                     Message = "CoreBank callback returned null response",
                     TxId = txId,
                     Status = "CallbackFailed",
-                    Reason = "CoreBank return callback failed",
+                    Reason = "CoreBank callback failed",
                     AdditionalInfo = "Manual intervention required"
                 };
             }
 
-            _logger.LogInformation("[{CorrelationId}] CoreBank return callback completed for TxId {TxId}, StatusCode={StatusCode}",
+            _logger.LogInformation("[{CorrelationId}] CoreBank callback completed for TxId {TxId}, StatusCode={StatusCode}",
                 cid, txId, result.StatusCode);
 
             // Step 8: Parse CoreBank response
@@ -182,33 +222,33 @@ public sealed class ReturnRetryHandler(
 
             _logger.LogInformation("[{CorrelationId}] CoreBank response status: {Status} for TxId {TxId}", cid, cbStatus, txId);
 
-            // Step 9: Map CoreBank response to final status
-            var (parentStatus, childStatus, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
-                "ACSC",  // IPS side - return was confirmed
-                cbStatus,
-                false);
+            // Step 9: Determine final status based on CoreBank response
+            // IMPORTANT: This handler should NEVER set status to Failed
+            // Only two outcomes: Success (if CoreBank processed) or ReadyForReturn (if CoreBank rejected/failed)
+            bool coreBankSuccess = _statusOrchestrator.IsSuccessStatus(cbStatus);
 
             // Step 11: Update database with new status
             using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
 
-            isoMessage.Status = parentStatus;
-
-            if (parentStatus == TransactionStatus.Success)
+            if (coreBankSuccess)
             {
-                isoMessage.Reason = "Transaction returned successfully - retry completed";
-                isoMessage.AdditionalInfo = $"Return completed with ReturnId: {isoMessage.ReturnId ?? "N/A"}. CoreBank reversal successful.";
-                _logger.LogInformation("[{CorrelationId}] Return retry completed successfully for TxId {TxId} with ReturnId {ReturnId}",
-                    cid, txId, isoMessage.ReturnId);
+                // CoreBank successfully processed the transaction
+                isoMessage.Status = TransactionStatus.Success;
+                isoMessage.Reason = "Transaction processed successfully - retry completed";
+                isoMessage.AdditionalInfo = $"Retry completed with RetryId: {retryId}. CoreBank processing successful.";
+                _logger.LogInformation("[{CorrelationId}] CoreBank retry completed successfully for TxId {TxId} with RetryId {RetryId}",
+                    cid, txId, retryId);
             }
             else
             {
-                // Increment round counter for failed retries
+                // CoreBank rejected or failed - keep in ReadyForReturn and increment round
+                isoMessage.Status = TransactionStatus.ReadyForReturn;
                 isoMessage.Round++;
-                isoMessage.Reason = reason;
-                isoMessage.AdditionalInfo = additionalInfo;
-                _logger.LogWarning("[{CorrelationId}] Return retry failed for TxId {TxId}. Status: {Status}, Reason: {Reason}, Round: {Round}",
-                    cid, txId, parentStatus, reason, isoMessage.Round);
+                isoMessage.Reason = "CoreBank processing failed - ready for retry";
+                isoMessage.AdditionalInfo = $"CoreBank rejected. Status: {cbStatus}. Retry attempt {isoMessage.Round}.";
+                _logger.LogWarning("[{CorrelationId}] CoreBank retry failed for TxId {TxId}. Status: ReadyForReturn, CoreBank Status: {CbStatus}, Round: {Round}",
+                    cid, txId, cbStatus, isoMessage.Round);
             }
 
             // Persist the CoreBank response
@@ -217,19 +257,21 @@ public sealed class ReturnRetryHandler(
 
             return new ReturnRetryResult
             {
-                Success = parentStatus == TransactionStatus.Success,
-                Message = parentStatus == TransactionStatus.Success
-                    ? "Return completed successfully"
-                    : "Return retry failed",
+                Success = isoMessage.Status == TransactionStatus.Success,
+                Message = isoMessage.Status == TransactionStatus.Success
+                    ? "CoreBank processing completed successfully"
+                    : "CoreBank retry failed",
                 TxId = txId,
-                Status = parentStatus.ToString(),
+                Status = isoMessage.Status.ToString(),
                 Reason = isoMessage.Reason,
-                AdditionalInfo = isoMessage.AdditionalInfo
+                AdditionalInfo = isoMessage.AdditionalInfo,
+                EndToEndId = cbResponse?.EndToEndId,
+                AcceptanceDate = cbResponse?.AcceptanceDate
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[{CorrelationId}] Exception during return retry for TxId {TxId}", cid, txId);
+            _logger.LogError(ex, "[{CorrelationId}] Exception during CoreBank retry for TxId {TxId}", cid, txId);
             return new ReturnRetryResult
             {
                 Success = false,

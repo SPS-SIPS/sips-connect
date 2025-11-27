@@ -27,9 +27,9 @@ public sealed class StatusOrchestrator : IStatusOrchestrator
     public (TransactionStatus parentStatus, TransactionStatus childStatus, string reason, string additionalInfo) 
         MapCompletionStatus(string ipsStatusCode, string? coreBankStatusCode, bool isReturnFlow = false)
     {
-        // Normalize inputs
-        var ipsCode = ipsStatusCode?.Trim().ToUpperInvariant() ?? string.Empty;
-        var cbCode = coreBankStatusCode?.Trim().ToUpperInvariant();
+        // Normalize inputs and map full descriptions to ISO codes
+        var ipsCode = NormalizeStatusCode(ipsStatusCode);
+        var cbCode = string.IsNullOrWhiteSpace(coreBankStatusCode) ? null : NormalizeStatusCode(coreBankStatusCode);
 
         _logger.LogDebug("[StatusOrchestrator] Mapping completion status: IPS={IpsCode}, CB={CbCode}, IsReturn={IsReturn}", 
             ipsCode, cbCode ?? "null", isReturnFlow);
@@ -81,7 +81,7 @@ public sealed class StatusOrchestrator : IStatusOrchestrator
     /// <inheritdoc/>
     public TransactionStatus MapSingleStatus(string statusCode, string source = "Unknown")
     {
-        var code = statusCode?.Trim().ToUpperInvariant() ?? string.Empty;
+        var code = NormalizeStatusCode(statusCode);
 
         _logger.LogDebug("[StatusOrchestrator] Mapping single status: Code={Code}, Source={Source}", code, source);
 
@@ -113,14 +113,25 @@ public sealed class StatusOrchestrator : IStatusOrchestrator
     /// <inheritdoc/>
     public bool IsSuccessStatus(string? statusCode)
     {
-        var code = statusCode?.Trim().ToUpperInvariant() ?? string.Empty;
+        var code = NormalizeStatusCode(statusCode);
         return code == ACSC || code == SUCC;
     }
 
     /// <inheritdoc/>
     public bool IsRejectionStatus(string? statusCode)
     {
-        var code = statusCode?.Trim().ToUpperInvariant() ?? string.Empty;
+        var code = NormalizeStatusCode(statusCode);
         return code == RJCT || code == MISS;
+    }
+
+    /// <summary>
+    /// Normalizes status codes by trimming and converting to uppercase
+    /// </summary>
+    private string NormalizeStatusCode(string? statusCode)
+    {
+        if (string.IsNullOrWhiteSpace(statusCode))
+            return string.Empty;
+
+        return statusCode.Trim().ToUpperInvariant();
     }
 }

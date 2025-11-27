@@ -24,6 +24,45 @@ using SIPS.Core.Options;
 
 namespace SIPS.Core.Services;
 
+/// <summary>
+/// Handles incoming pacs.002 payment status reports from SmartVista IPS.
+/// 
+/// IMPORTANT: SmartVista IPS Switch Behavior
+/// ==========================================
+/// The SmartVista IPS switch does NOT act as a pass-through for ISO 20022 messages.
+/// Instead, it REGENERATES the AppHdr for all forwarded messages:
+/// 
+/// 1. Original Bank → Switch (pacs.008):
+///    - Bank sends pacs.008 with BizMsgIdr=BANK001, CreDt=T1
+///    
+/// 2. Switch → Receiving Bank (pacs.008):
+///    - Switch REGENERATES AppHdr with NEW BizMsgIdr=SWITCH001, CreDt=T2
+///    - Switch PRESERVES the original signature and document payload
+///    - Only the AppHdr is replaced
+///    
+/// 3. Receiving Bank → Switch (pacs.002):
+///    - Bank responds with pacs.002
+///    - Rltd block references SWITCH001 (the message we received), NOT BANK001
+///    
+/// 4. Switch → Original Bank (pacs.002):
+///    - Switch REGENERATES AppHdr again with NEW BizMsgIdr=SWITCH002
+///    - Rltd block references the receiving bank's pacs.002
+///    
+/// 5. Completion Notification (Switch → Original Bank):
+///    - Switch sends final pacs.002 with BizMsgIdr=SWITCH003
+///    - Rltd references SWITCH002 (the receiving bank's response)
+///    
+/// CORRELATION STRATEGY:
+/// ====================
+/// - We CANNOT rely on BizMsgIdr for correlation (it changes at every hop)
+/// - We MUST use TxId which remains constant throughout the entire flow
+/// - The handlers correctly retrieve messages by TxId, not BizMsgIdr
+/// - Response builders populate Rltd with the IMMEDIATE PARENT message details
+/// 
+/// This handler processes pacs.002 messages from:
+/// - Direct responses from receiving banks (after we sent pacs.008)
+/// - Completion notifications from the switch (after settlement)
+/// </summary>
 public sealed class IncomingPaymentStatusReportHandler(
     ISO20022Options options,
     ILogger<IncomingPaymentStatusReportHandler> logger,
@@ -107,7 +146,9 @@ public sealed class IncomingPaymentStatusReportHandler(
 
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] parsed request TxId={TxId} Status={Status}", request.TxId, request.Status);
 
-        // Step 2: Retrieve ISO message by TxId (try both variants for compatibility with tests)
+        // Step 2: Retrieve ISO message by TxId
+        // CRITICAL: We use TxId for correlation, NOT BizMsgIdr
+        // SmartVista switch regenerates BizMsgIdr at each hop, but TxId remains constant
         var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.TxId, ct);
         isoMessage ??= await _persistence.GetISOMessageByTxIdAsync(request.TxId, ct);
 
