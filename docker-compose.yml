@@ -83,7 +83,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
   sips-corebank:
-    image: hanad/sips-consumer:1.1.1
+    image: hanad/sips-consumer:1.1.2
     restart: unless-stopped
     ports:
       - "${CB_PORT:-9032}:8080"
