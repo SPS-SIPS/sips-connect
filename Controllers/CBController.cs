@@ -205,7 +205,7 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
         {
             return Ok(new StatusResponse
             {
-                Status = txn.Status.Name,
+                Status = txn.Status.Id,
                 Reason = "DUPL",
                 AdditionalInfo = "Transaction already processed"
             });
@@ -282,6 +282,8 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
 
             await _broker.InterBankTransactions.AddAsync(newTxn, ct);
             await _broker.SaveChangesAsync(ct);
+
+            _logger.LogInformation("POST /api/CB/Transfer responded with body: {Response}", System.Text.Json.JsonSerializer.Serialize(response));
             return Ok(response);
         }
         catch (Exception ex)
@@ -338,8 +340,9 @@ public class CBController(ILogger<CBController> logger, AppDbContext broker) : C
                 txn.Status = Enumeration<string>.FromId<TransactionStatus>(request.Status);
                 await _broker.SaveChangesAsync(ct);
                 _logger.LogInformation("Transaction {TxId} confirmed with status {Status}", txn.TransactionIdentification, txn.Status.Name);
-                response.Status = txn.Status.Name;
+                response.Status = txn.Status.Id;
             }
+            _logger.LogInformation("POST /api/CB/CompletionNotification responded with body: {Response}", System.Text.Json.JsonSerializer.Serialize(response));
             return Ok(response);
         }
         catch (Exception ex)
