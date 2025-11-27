@@ -74,7 +74,21 @@ public sealed class CertificateService : ICertificateService
         {
             foreach (var cert in certs)
             {
-                // If self-signed, skip (root)
+                // Check expiry date for all certificates in the chain
+                try
+                {
+                    cert.CheckValidity();
+                }
+                catch (CertificateExpiredException)
+                {
+                    throw new Exception($"Certificate has expired: {cert.SubjectDN}. Valid until: {cert.NotAfter}");
+                }
+                catch (CertificateNotYetValidException)
+                {
+                    throw new Exception($"Certificate is not yet valid: {cert.SubjectDN}. Valid from: {cert.NotBefore}");
+                }
+
+                // If self-signed, verify with its own public key (root certificate)
                 if (cert.IssuerDN.Equivalent(cert.SubjectDN))
                 {
                     cert.Verify(cert.GetPublicKey());
@@ -82,10 +96,9 @@ public sealed class CertificateService : ICertificateService
                 }
 
                 // Find issuer in the list
-                var issuer = certs.FirstOrDefault(c => c.SubjectDN.Equivalent(cert.IssuerDN));
-                if (issuer == null)
-                    throw new Exception($"Issuer not found for certificate: {cert.SubjectDN}");
+                var issuer = certs.FirstOrDefault(c => c.SubjectDN.Equivalent(cert.IssuerDN)) ?? throw new Exception($"Issuer not found for certificate: {cert.SubjectDN}");
 
+                // Verify certificate signature with issuer's public key
                 cert.Verify(issuer.GetPublicKey());
             }
         }
@@ -122,7 +135,23 @@ public sealed class CertificateService : ICertificateService
         var certificatePem = File.ReadAllText(Path.Combine(currentDirectory, certPath));
         using StringReader reader = new(certificatePem);
         PemReader pemReader = new(reader);
-        return (X509Certificate)pemReader.ReadObject();
+        var certificate = (X509Certificate)pemReader.ReadObject();
+
+        // Validate certificate expiry on load to fail fast
+        try
+        {
+            certificate.CheckValidity();
+        }
+        catch (CertificateExpiredException)
+        {
+            throw new Exception($"Main certificate has expired: {certificate.SubjectDN}. Valid until: {certificate.NotAfter}");
+        }
+        catch (CertificateNotYetValidException)
+        {
+            throw new Exception($"Main certificate is not yet valid: {certificate.SubjectDN}. Valid from: {certificate.NotBefore}");
+        }
+
+        return certificate;
     }
     public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string signingTime, string algorithm)
     {
@@ -179,7 +208,7 @@ public sealed class CertificateService : ICertificateService
             }
 
             var possibleIssuers = Chain.Where(c => c.SubjectDN.Equivalent(certificate.IssuerDN)).ToList();
-            if (!possibleIssuers.Any())
+            if (possibleIssuers.Count == 0)
                 return (false, $"Issuer not found in the chain for IssuerDN: {certificate.IssuerDN}");
 
             foreach (var issuer in possibleIssuers)
