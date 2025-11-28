@@ -1,115 +1,68 @@
-<FPEnvelope xmlns="urn:iso:std:iso:20022:tech:xsd:verification_request"
-	xmlns:document="urn:iso:std:iso:20022:tech:xsd:acmt.023.001.03"
-	xmlns:header="urn:iso:std:iso:20022:tech:xsd:head.001.001.03">
-	<header:AppHdr>
-		<header:Fr>
-			<header:FIId>
-				<header:FinInstnId>
-					<header:Othr>
-						<header:Id>FP</header:Id>
-					</header:Othr>
-				</header:FinInstnId>
-			</header:FIId>
-		</header:Fr>
-		<header:To>
-			<header:FIId>
-				<header:FinInstnId>
-					<header:Othr>
-						<header:Id>ZKBASOS0</header:Id>
-					</header:Othr>
-				</header:FinInstnId>
-			</header:FIId>
-		</header:To>
-		<header:BizMsgIdr>ZKBASOS0529010268246517051903</header:BizMsgIdr>
-		<header:MsgDefIdr>acmt.023.001.03</header:MsgDefIdr>
-		<header:CreDt>2025-10-17T10:10:32.032Z</header:CreDt>
-		<Sgntr xmlns="urn:iso:std:iso:20022:tech:xsd:head.001.001.03">
-			<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
-				<ds:SignedInfo>
-					<ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
-					<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
-					<ds:Reference URI="#_2123b0e0-7ef5-461d-a7b5-a26a715c5bc8">
-						<ds:Transforms>
-							<ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
-						</ds:Transforms>
-						<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-						<ds:DigestValue>xlH3dhgX3Dow3hzIZlDC2bGTFAz1gnpmJ2/DIx21uEw=</ds:DigestValue>
-					</ds:Reference>
-					<ds:Reference Type="http://uri.etsi.org/01903/v1.3.2#SignedProperties" URI="#_16985510-8eb2-438e-9f88-62ce4d55ddf9-signedprops">
-						<ds:Transforms>
-							<ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
-						</ds:Transforms>
-						<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-						<ds:DigestValue>BXAKq1Gvyw31Q273XkQA1Dv/U7JddB8QQQH7ZSc/Mi8=</ds:DigestValue>
-					</ds:Reference>
-					<ds:Reference>
-						<ds:Transforms>
-							<ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
-						</ds:Transforms>
-						<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-						<ds:DigestValue>WLguWl7+4VFlovh7cYKVl4kPYg9fj99Lr9SKZF3d3d8=</ds:DigestValue>
-					</ds:Reference>
-				</ds:SignedInfo>
-				<ds:SignatureValue>nn/K2Jpex3/Sm8ivUC9BVZEebaNX+xjBbCcxiBvpv+ZCkAiVx7x80WR12rAZ/SM7tNRiq5CEmGx0CocrF/xs4PN739Z10goFHUthe4mtY/7IBPuHxg4vyvRJ2nmgp+QEtdjeuPuDUZCclhKOQ/un9neZu/U/XK9O2Yq3wDXestakwELen9kuIWX/cXRfbJLwvv31BTaUZLYwWcYjdyiNTBQasqiX5GQLsf4Opex5Ul0WD+HVXyifMgbUzu1tRaARLRhOP1g1u9yT7WaKJW6h7He3+5h+QLuZw/jaaQsePuLe+hc+YBOISgAgTppfAUCkxcBGBPsxmj+nqSpHGpP18w==</ds:SignatureValue>
-				<ds:KeyInfo Id="_2123b0e0-7ef5-461d-a7b5-a26a715c5bc8">
-					<ds:X509Data>
-						<ds:X509IssuerSerial>
-							<ds:X509IssuerName>CN=sps issuing CA, DC=sps, DC=local</ds:X509IssuerName>
-							<ds:X509SerialNumber>401413413616749210650695336207296384181731336</ds:X509SerialNumber>
-						</ds:X509IssuerSerial>
-					</ds:X509Data>
-				</ds:KeyInfo>
-				<ds:Object>
-					<xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#">
-						<xades:SignedProperties Id="_16985510-8eb2-438e-9f88-62ce4d55ddf9-signedprops">
-							<xades:SignedSignatureProperties>
-								<xades:SigningTime>2025-10-17T10:10:32Z</xades:SigningTime>
-							</xades:SignedSignatureProperties>
-						</xades:SignedProperties>
-					</xades:QualifyingProperties>
-				</ds:Object>
-			</ds:Signature>
-		</Sgntr>
-	</header:AppHdr>
-	<document:Document>
-		<document:IdVrfctnReq>
-			<document:Assgnmt>
-				<document:MsgId>MYBASOS0529010638962926320039797</document:MsgId>
-				<document:CreDtTm>2025-10-17T10:10:32.0039882Z</document:CreDtTm>
-				<document:Assgnr>
-					<document:Agt>
-						<document:FinInstnId>
-							<document:Othr>
-								<document:Id>MYBASOS0</document:Id>
-							</document:Othr>
-						</document:FinInstnId>
-					</document:Agt>
-				</document:Assgnr>
-				<document:Assgne>
-					<document:Agt>
-						<document:FinInstnId>
-							<document:Othr>
-								<document:Id>ZKBASOS0</document:Id>
-							</document:Othr>
-						</document:FinInstnId>
-					</document:Agt>
-				</document:Assgne>
-			</document:Assgnmt>
-			<document:Vrfctn>
-				<document:Id>MYBASOS0529010100000108676</document:Id>
-				<document:PtyAndAcctId>
-					<document:Acct>
-						<document:Id>
-							<document:Othr>
-								<document:Id>SO040014202305005007605</document:Id>
-								<document:SchmeNm>
-									<document:Prtry>IBAN</document:Prtry>
-								</document:SchmeNm>
-							</document:Othr>
-						</document:Id>
-					</document:Acct>
-				</document:PtyAndAcctId>
-			</document:Vrfctn>
-		</document:IdVrfctnReq>
-	</document:Document>
+<FPEnvelope xmlns:header="urn:iso:std:iso:20022:tech:xsd:head.001.001.03"
+  xmlns:document="urn:iso:std:iso:20022:tech:xsd:acmt.023.001.03"
+  xmlns="urn:iso:std:iso:20022:tech:xsd:verification_request">
+  <header:AppHdr>
+    <header:Fr>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>ZKBASOS0</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:Fr>
+    <header:To>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>AGROSOS0</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:To>
+    <header:BizMsgIdr>ZKBASOS0533212638999281417689820</header:BizMsgIdr>
+    <header:MsgDefIdr>acmt.023.001.03</header:MsgDefIdr>
+    <header:CreDt>2025-11-28T12:02:21.769412Z</header:CreDt>
+  </header:AppHdr>
+  <document:Document>
+    <document:IdVrfctnReq>
+      <document:Assgnmt>
+        <document:MsgId>ZKBASOS0533212638999281417694470</document:MsgId>
+        <document:CreDtTm>2025-11-28T12:02:21.769461Z</document:CreDtTm>
+        <document:Assgnr>
+          <document:Agt>
+            <document:FinInstnId>
+              <document:Othr>
+                <document:Id>ZKBASOS0</document:Id>
+              </document:Othr>
+            </document:FinInstnId>
+          </document:Agt>
+        </document:Assgnr>
+        <document:Assgne>
+          <document:Agt>
+            <document:FinInstnId>
+              <document:Othr>
+                <document:Id>AGROSOS0</document:Id>
+              </document:Othr>
+            </document:FinInstnId>
+          </document:Agt>
+        </document:Assgne>
+      </document:Assgnmt>
+      <document:Vrfctn>
+        <document:Id>FP</document:Id>
+        <document:PtyAndAcctId>
+          <document:Acct>
+            <document:Id>
+              <document:Othr>
+                <document:Id>305005007605</document:Id>
+                <document:SchmeNm>
+                  <document:Prtry>ACCT</document:Prtry>
+                </document:SchmeNm>
+              </document:Othr>
+            </document:Id>
+          </document:Acct>
+        </document:PtyAndAcctId>
+      </document:Vrfctn>
+    </document:IdVrfctnReq>
+  </document:Document>
 </FPEnvelope>

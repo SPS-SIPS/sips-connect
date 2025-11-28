@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 keys/
 appsettings.Secrets.json
 *.backup.*
+
+# Test reports
+TestScripts/test-reports/
