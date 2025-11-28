@@ -1,8 +1,34 @@
-<FPEnvelope xmlns="urn:iso:std:iso:20022:tech:xsd:payment_request" xmlns:document="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.10" xmlns:header="urn:iso:std:iso:20022:tech:xsd:head.001.001.03"><header:AppHdr><header:Fr><header:FIId><header:FinInstnId><header:Othr><header:Id>FP</header:Id></header:Othr></header:FinInstnId></header:FIId></header:Fr><header:To><header:FIId><header:FinInstnId><header:Othr><header:Id>ZKBASOS0</header:Id></header:Othr></header:FinInstnId></header:FIId></header:To><header:BizMsgIdr>AGROSOS0528910268246517051407</header:BizMsgIdr><header:MsgDefIdr>pacs.008.001.10</header:MsgDefIdr><header:CreDt>2025-10-16T10:55:43.043Z</header:CreDt><document:Sgntr xmlns:document="urn:iso:std:iso:20022:tech:xsd:head.001.001.03"><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#_9947a75e-f784-42c7-a7ae-22d5a49c551f"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>ggRxKFk0weBT7OEN47yMYYWiVsF35TsYhGG9naDI1qc=</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903/v1.3.2#SignedProperties" URI="#_994bb711-1052-42af-96b3-961ccaeb270e-signedprops"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>XzOgStMSc1Z9AnUovHKIhOw9vINUziXkHybXfdWNTK4=</ds:DigestValue></ds:Reference><ds:Reference><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>UVFDtanCGOyfjGGZFSYPd/olYwHcDPXlstgkOtRx4bs=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>gZVI+bw/b4PKIoLN+hYqRDpA7QkTs4vB0nw28T29nW6IH++suawgAMHf5bXoL+KlSvPDQRXBhwNVWoNZBceTgz4g6voafvdTVYIaTfygDdKZOTQdxtOjxTlbTG+DIIoRQwj1FNLavjp8aXWK9g1oWMeFr2fN/H8iyaikc2TDOb9D18u2eRffOIocDGlo4322em3UeNig4bGX/e5ENxQanohdM7T2fFaXJ6GU19iXxnELwrTRg7aeQdsKxs21FiBSnbKDZtMxI9tL9a3uujSPs8WN9k5KMstVWOL4TjW/rqg/EGyVGbsrBU0zfVO2WqvH4NbjjkShe8qwTl0bZsE0Ww==</ds:SignatureValue><ds:KeyInfo Id="_9947a75e-f784-42c7-a7ae-22d5a49c551f"><ds:X509Data><ds:X509IssuerSerial><ds:X509IssuerName>CN=sps issuing CA, DC=sps, DC=local</ds:X509IssuerName><ds:X509SerialNumber>401413413662139118268941123216994289179426833</ds:X509SerialNumber></ds:X509IssuerSerial></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#"><xades:SignedProperties Id="_994bb711-1052-42af-96b3-961ccaeb270e-signedprops"><xades:SignedSignatureProperties><xades:SigningTime>2025-10-16T10:55:43Z</xades:SigningTime></xades:SignedSignatureProperties></xades:SignedProperties></xades:QualifyingProperties></ds:Object></ds:Signature></document:Sgntr></header:AppHdr><document:Document>
+<FPEnvelope xmlns:header="urn:iso:std:iso:20022:tech:xsd:head.001.001.03"
+  xmlns:document="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.10"
+  xmlns="urn:iso:std:iso:20022:tech:xsd:payment_request">
+  <header:AppHdr>
+    <header:Fr>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>ZKBASOS0</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:Fr>
+    <header:To>
+      <header:FIId>
+        <header:FinInstnId>
+          <header:Othr>
+            <header:Id>AGROSOS0</header:Id>
+          </header:Othr>
+        </header:FinInstnId>
+      </header:FIId>
+    </header:To>
+    <header:BizMsgIdr>ZKBASOS0533212638999283678364390</header:BizMsgIdr>
+    <header:MsgDefIdr>pacs.008.001.10</header:MsgDefIdr>
+    <header:CreDt>2025-11-28T12:06:07.838735Z</header:CreDt>
+  </header:AppHdr>
+  <document:Document>
     <document:FIToFICstmrCdtTrf>
       <document:GrpHdr>
-        <document:MsgId>AGROSOS0528910638962089436554664</document:MsgId>
-        <document:CreDtTm>2025-10-16T10:55:43.6555508Z</document:CreDtTm>
+        <document:MsgId>ZKBASOS0533212638999283678364430</document:MsgId>
+        <document:CreDtTm>2025-11-28T12:06:07.840346Z</document:CreDtTm>
         <document:NbOfTxs>1</document:NbOfTxs>
         <document:SttlmInf>
           <document:SttlmMtd>CLRG</document:SttlmMtd>
@@ -12,43 +38,46 @@
         </document:SttlmInf>
         <document:PmtTpInf>
           <document:LclInstrm>
-            <document:Prtry>QRCode</document:Prtry>
+            <document:Prtry>CRTRM</document:Prtry>
           </document:LclInstrm>
           <document:CtgyPurp>
-            <document:Prtry>C2BSQR</document:Prtry>
+            <document:Prtry>C2CCRT</document:Prtry>
           </document:CtgyPurp>
         </document:PmtTpInf>
         <document:InstgAgt>
           <document:FinInstnId>
             <document:Othr>
-              <document:Id>AGROSOS0</document:Id>
+              <document:Id>ZKBASOS0</document:Id>
             </document:Othr>
           </document:FinInstnId>
         </document:InstgAgt>
         <document:InstdAgt>
           <document:FinInstnId>
             <document:Othr>
-              <document:Id>ZKBASOS0</document:Id>
+              <document:Id>AGROSOS0</document:Id>
             </document:Othr>
           </document:FinInstnId>
         </document:InstdAgt>
       </document:GrpHdr>
       <document:CdtTrfTxInf>
         <document:PmtId>
-          <document:EndToEndId>ZKBASOS009957524</document:EndToEndId>
-          <document:TxId>AGROSOS0528910638962089436554484</document:TxId>
+          <document:EndToEndId>AGROSOS089538475</document:EndToEndId>
+          <document:TxId>ZKBASOS0533212638999283678329850</document:TxId>
         </document:PmtId>
-        <document:IntrBkSttlmAmt Ccy="USD">3000</document:IntrBkSttlmAmt>
-        <document:AccptncDtTm>2025-10-16T10:55:43.655+00:00</document:AccptncDtTm>
-        <document:InstdAmt Ccy="USD">3000</document:InstdAmt>
+        <document:IntrBkSttlmAmt Ccy="USD">9.88</document:IntrBkSttlmAmt>
+        <document:AccptncDtTm>2025-11-28T15:06:07.846+03:00</document:AccptncDtTm>
+        <document:InstdAmt Ccy="USD">9.88</document:InstdAmt>
         <document:ChrgBr>SLEV</document:ChrgBr>
         <document:Dbtr>
-          <document:Nm>SIPS Business (ZIRAT_S)</document:Nm>
+          <document:Nm>SIPS Business</document:Nm>
+          <document:PstlAdr>
+            <document:AdrLine>NA</document:AdrLine>
+          </document:PstlAdr>
         </document:Dbtr>
         <document:DbtrAcct>
           <document:Id>
             <document:Othr>
-              <document:Id>SO040014202305005007605</document:Id>
+              <document:Id>SO120010201402005007303</document:Id>
               <document:SchmeNm>
                 <document:Prtry>IBAN</document:Prtry>
               </document:SchmeNm>
@@ -59,24 +88,27 @@
         <document:DbtrAgt>
           <document:FinInstnId>
             <document:Othr>
-              <document:Id>AGROSOS0</document:Id>
+              <document:Id>ZKBASOS0</document:Id>
             </document:Othr>
           </document:FinInstnId>
         </document:DbtrAgt>
         <document:CdtrAgt>
           <document:FinInstnId>
             <document:Othr>
-              <document:Id>ZKBASOS0</document:Id>
+              <document:Id>AGROSOS0</document:Id>
             </document:Othr>
           </document:FinInstnId>
         </document:CdtrAgt>
         <document:Cdtr>
-          <document:Nm>SIPS Business (ZIRAT_S)</document:Nm>
+          <document:Nm>SIPS Business</document:Nm>
+          <document:PstlAdr>
+            <document:AdrLine>NA</document:AdrLine>
+          </document:PstlAdr>
         </document:Cdtr>
         <document:CdtrAcct>
           <document:Id>
             <document:Othr>
-              <document:Id>SO040014202305005007605</document:Id>
+              <document:Id>SO140010202305005007605</document:Id>
               <document:SchmeNm>
                 <document:Prtry>IBAN</document:Prtry>
               </document:SchmeNm>
@@ -85,8 +117,9 @@
           </document:Id>
         </document:CdtrAcct>
         <document:RmtInf>
-          <document:Ustrd>Test Transaction</document:Ustrd>
+          <document:Ustrd>Send Money</document:Ustrd>
         </document:RmtInf>
       </document:CdtTrfTxInf>
     </document:FIToFICstmrCdtTrf>
-  </document:Document></FPEnvelope>
+  </document:Document>
+</FPEnvelope>

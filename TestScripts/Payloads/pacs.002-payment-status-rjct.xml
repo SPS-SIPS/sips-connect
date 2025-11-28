@@ -1,11 +1,12 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<FPEnvelope xmlns="urn:iso:std:iso:20022:tech:xsd:payment_response" xmlns:document="urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12" xmlns:header="urn:iso:std:iso:20022:tech:xsd:head.001.001.03">
+<FPEnvelope xmlns:header="urn:iso:std:iso:20022:tech:xsd:head.001.001.03"
+  xmlns:document="urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12"
+  xmlns="urn:iso:std:iso:20022:tech:xsd:payment_response">
   <header:AppHdr>
     <header:Fr>
       <header:FIId>
         <header:FinInstnId>
           <header:Othr>
-            <header:Id>SENDERBIC</header:Id>
+            <header:Id>AGROSOS0</header:Id>
           </header:Othr>
         </header:FinInstnId>
       </header:FIId>
@@ -14,51 +15,100 @@
       <header:FIId>
         <header:FinInstnId>
           <header:Othr>
-            <header:Id>RECEIVERBIC</header:Id>
+            <header:Id>ZKBASOS0</header:Id>
           </header:Othr>
         </header:FinInstnId>
       </header:FIId>
     </header:To>
-    <header:BizMsgIdr>MSG-RJCT-001</header:BizMsgIdr>
+    <header:BizMsgIdr>ZKBASOS0533212638999283678364390</header:BizMsgIdr>
     <header:MsgDefIdr>pacs.002.001.12</header:MsgDefIdr>
-    <header:CreDt>2025-11-16T06:45:00.000Z</header:CreDt>
+    <header:CreDt>2025-11-28T12:06:07.928755Z</header:CreDt>
+    <header:Rltd>
+      <header:Fr>
+        <header:FIId>
+          <header:FinInstnId>
+            <header:Othr>
+              <header:Id>ZKBASOS0</header:Id>
+            </header:Othr>
+          </header:FinInstnId>
+        </header:FIId>
+      </header:Fr>
+      <header:To>
+        <header:FIId>
+          <header:FinInstnId>
+            <header:Othr>
+              <header:Id>AGROSOS0</header:Id>
+            </header:Othr>
+          </header:FinInstnId>
+        </header:FIId>
+      </header:To>
+      <header:BizMsgIdr>ZKBASOS0533212638999283678364390</header:BizMsgIdr>
+      <header:MsgDefIdr>pacs.008.001.10</header:MsgDefIdr>
+      <header:CreDt>2025-11-28T12:06:07.838735Z</header:CreDt>
+    </header:Rltd>
   </header:AppHdr>
   <document:Document>
     <document:FIToFIPmtStsRpt>
       <document:GrpHdr>
-        <document:MsgId>STATUS-RJCT-001</document:MsgId>
-        <document:CreDtTm>2025-11-16T06:45:00.000Z</document:CreDtTm>
+        <document:MsgId>AGROSOS0533212638999283679335800</document:MsgId>
+        <document:CreDtTm>2025-11-28T12:06:07.933709Z</document:CreDtTm>
+        <document:InstgAgt>
+          <document:FinInstnId>
+            <document:Othr>
+              <document:Id>AGROSOS0</document:Id>
+            </document:Othr>
+          </document:FinInstnId>
+        </document:InstgAgt>
+        <document:InstdAgt>
+          <document:FinInstnId>
+            <document:Othr>
+              <document:Id>ZKBASOS0</document:Id>
+            </document:Othr>
+          </document:FinInstnId>
+        </document:InstdAgt>
       </document:GrpHdr>
       <document:TxInfAndSts>
-        <document:OrgnlInstrId>ORIG-INSTR-RJCT</document:OrgnlInstrId>
-        <document:OrgnlEndToEndId>E2E-RJCT-001</document:OrgnlEndToEndId>
-        <document:OrgnlTxId>TX-RJCT-001</document:OrgnlTxId>
+        <document:OrgnlGrpInf>
+          <document:OrgnlMsgId>ZKBASOS0533212638999283678364430</document:OrgnlMsgId>
+          <document:OrgnlMsgNmId>pacs.008.001.10</document:OrgnlMsgNmId>
+          <document:OrgnlCreDtTm>2025-11-28T12:06:07.838735Z</document:OrgnlCreDtTm>
+        </document:OrgnlGrpInf>
+        <document:OrgnlEndToEndId>AGROSOS089538475</document:OrgnlEndToEndId>
+        <document:OrgnlTxId>ZKBASOS0533212638999283678329850</document:OrgnlTxId>
         <document:TxSts>RJCT</document:TxSts>
-        <document:StsRsnInf>
-          <document:Rsn>
-            <document:Cd>AM04</document:Cd>
-          </document:Rsn>
-          <document:AddtlInf>Insufficient funds in debtor account</document:AddtlInf>
-        </document:StsRsnInf>
+        <document:AccptncDtTm>2025-11-28T15:06:07.935+03:00</document:AccptncDtTm>
         <document:OrgnlTxRef>
-          <document:IntrBkSttlmAmt Ccy="USD">5000.00</document:IntrBkSttlmAmt>
+          <document:IntrBkSttlmAmt Ccy="USD">9.88</document:IntrBkSttlmAmt>
+          <document:Amt>
+            <document:InstdAmt Ccy="USD">9.88</document:InstdAmt>
+          </document:Amt>
           <document:Dbtr>
-            <document:Nm>Rejected Test Debtor</document:Nm>
+            <document:Pty>
+              <document:Nm>SIPS Business</document:Nm>
+              <document:PstlAdr>
+                <document:AdrLine>NA</document:AdrLine>
+              </document:PstlAdr>
+            </document:Pty>
           </document:Dbtr>
           <document:DbtrAcct>
             <document:Id>
               <document:Othr>
-                <document:Id>ACC-DEBTOR-RJCT</document:Id>
+                <document:Id>SO120010201402005007303</document:Id>
+                <document:SchmeNm>
+                  <document:Prtry>IBAN</document:Prtry>
+                </document:SchmeNm>
+                <document:Issr>C</document:Issr>
               </document:Othr>
             </document:Id>
           </document:DbtrAcct>
-          <document:Cdtr>
-            <document:Nm>Rejected Test Creditor</document:Nm>
-          </document:Cdtr>
           <document:CdtrAcct>
             <document:Id>
               <document:Othr>
-                <document:Id>ACC-CREDITOR-RJCT</document:Id>
+                <document:Id>SO140010202305005007605</document:Id>
+                <document:SchmeNm>
+                  <document:Prtry>IBAN</document:Prtry>
+                </document:SchmeNm>
+                <document:Issr>c</document:Issr>
               </document:Othr>
             </document:Id>
           </document:CdtrAcct>

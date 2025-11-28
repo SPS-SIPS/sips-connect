@@ -17,14 +17,19 @@
   },
   "payloads": {
     "directory": "./Payloads",
+    "description": "Real-world ISO 20022 messages from production",
     "files": {
       "transaction": "pacs.008.xml",
       "verification": "acmt.023.xml",
-      "status": "pacs.002-status.xml",
-      "paymentStatus": "pacs.002-payment-status.xml",
+      "verificationSuccess": "acmt.024-success.xml",
+      "verificationMiss": "acmt.024-miss.xml",
+      "confirmationNotification": "pacs.002-status.xml",
       "paymentStatusAcsc": "pacs.002-payment-status-acsc.xml",
       "paymentStatusRjct": "pacs.002-payment-status-rjct.xml",
-      "paymentStatusNotFound": "pacs.002-payment-status-notfound.xml"
+      "returnRequest": "pacs.004-return-request.xml",
+      "returnResponseAcsc": "pacs.004-return-response-acsc.xml",
+      "returnResponseRjct": "pacs.004-return-response-rjct.xml",
+      "statusRequest": "pacs.028-status-request.xml"
     }
   },
   "environments": {
