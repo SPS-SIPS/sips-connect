@@ -317,7 +317,10 @@ fi
 if [ "$REPORT_FORMAT" = "html" ] || [ "$REPORT_FORMAT" = "both" ]; then
     HTML_REPORT="${REPORT_FILE}.html"
     
-    cat > "$HTML_REPORT" <<'EOF'
+    # Build JSON data string for embedding
+    TEST_DATA_JSON="{\"summary\":{\"total\":$TOTAL_TESTS,\"passed\":$PASSED_TESTS,\"failed\":$FAILED_TESTS,\"skipped\":$SKIPPED_TESTS,\"success_rate\":$SUCCESS_RATE,\"duration\":$TOTAL_DURATION,\"start_time\":\"$(date -r $START_TIME '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')\",\"end_time\":\"$(date '+%Y-%m-%d %H:%M:%S')\",\"base_url\":\"$BASE_URL\",\"authentication\":$([ "$SKIP_AUTH" = true ] && echo "false" || echo "true")},\"tests\":[$(IFS=,; echo "${TEST_RESULTS[*]}")]}"
+    
+    cat > "$HTML_REPORT" <<EOF
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -399,53 +402,51 @@ if [ "$REPORT_FORMAT" = "html" ] || [ "$REPORT_FORMAT" = "both" ]; then
     </div>
     
     <script>
-        // Load test data from JSON
-        fetch('test-report-TIMESTAMP.json')
-            .then(response => response.json())
-            .then(data => {
-                // Update summary
-                document.getElementById('total-tests').textContent = data.summary.total;
-                document.getElementById('passed-tests').textContent = data.summary.passed;
-                document.getElementById('failed-tests').textContent = data.summary.failed;
-                document.getElementById('skipped-tests').textContent = data.summary.skipped;
-                document.getElementById('success-rate').textContent = data.summary.success_rate + '%';
-                document.getElementById('duration').textContent = data.summary.duration + 's';
-                document.getElementById('timestamp').textContent = data.summary.end_time;
-                document.getElementById('base-url').textContent = data.summary.base_url;
-                
-                // Group tests by category
-                const xmlTests = data.tests.filter(t => t.test.includes('pacs') || t.test.includes('acmt'));
-                const gatewayTests = data.tests.filter(t => t.test.includes('Gateway'));
-                const somqrTests = data.tests.filter(t => t.test.includes('SomQR'));
-                
-                // Render tests
-                const container = document.getElementById('test-results');
-                
-                if (xmlTests.length > 0) {
-                    container.innerHTML += renderTestSection('XML Message Tests', xmlTests);
-                }
-                if (gatewayTests.length > 0) {
-                    container.innerHTML += renderTestSection('Gateway API Tests', gatewayTests);
-                }
-                if (somqrTests.length > 0) {
-                    container.innerHTML += renderTestSection('SomQR API Tests', somqrTests);
-                }
-            });
+        // Embedded test data
+        const data = $TEST_DATA_JSON;
+        
+        // Update summary
+        document.getElementById('total-tests').textContent = data.summary.total;
+        document.getElementById('passed-tests').textContent = data.summary.passed;
+        document.getElementById('failed-tests').textContent = data.summary.failed;
+        document.getElementById('skipped-tests').textContent = data.summary.skipped;
+        document.getElementById('success-rate').textContent = data.summary.success_rate + '%';
+        document.getElementById('duration').textContent = data.summary.duration + 's';
+        document.getElementById('timestamp').textContent = data.summary.end_time;
+        document.getElementById('base-url').textContent = data.summary.base_url;
+        
+        // Group tests by category
+        const xmlTests = data.tests.filter(t => t.test.includes('pacs') || t.test.includes('acmt'));
+        const gatewayTests = data.tests.filter(t => t.test.includes('Gateway'));
+        const somqrTests = data.tests.filter(t => t.test.includes('SomQR'));
+        
+        // Render tests
+        const container = document.getElementById('test-results');
+        
+        if (xmlTests.length > 0) {
+            container.innerHTML += renderTestSection('XML Message Tests', xmlTests);
+        }
+        if (gatewayTests.length > 0) {
+            container.innerHTML += renderTestSection('Gateway API Tests', gatewayTests);
+        }
+        if (somqrTests.length > 0) {
+            container.innerHTML += renderTestSection('SomQR API Tests', somqrTests);
+        }
         
         function renderTestSection(title, tests) {
-            let html = `<div class="test-section"><h2>${title}</h2>`;
+            let html = \`<div class="test-section"><h2>\${title}</h2>\`;
             tests.forEach(test => {
-                html += `
-                    <div class="test-item ${test.status}">
-                        <div class="test-status ${test.status}">${test.status}</div>
-                        <div class="test-name">${test.test}</div>
+                html += \`
+                    <div class="test-item \${test.status}">
+                        <div class="test-status \${test.status}">\${test.status}</div>
+                        <div class="test-name">\${test.test}</div>
                         <div class="test-details">
-                            ${test.http_code ? `<span>HTTP ${test.http_code}</span>` : ''}
-                            ${test.duration ? `<span>${test.duration}s</span>` : ''}
-                            ${test.tx_id ? `<span>TxID: ${test.tx_id}</span>` : ''}
+                            \${test.http_code ? \`<span>HTTP \${test.http_code}</span>\` : ''}
+                            \${test.duration ? \`<span>\${test.duration}s</span>\` : ''}
+                            \${test.tx_id ? \`<span>TxID: \${test.tx_id}</span>\` : ''}
                         </div>
                     </div>
-                `;
+                \`;
             });
             html += '</div>';
             return html;
@@ -454,9 +455,6 @@ if [ "$REPORT_FORMAT" = "html" ] || [ "$REPORT_FORMAT" = "both" ]; then
 </body>
 </html>
 EOF
-    
-    # Replace TIMESTAMP placeholder
-    sed -i.bak "s/TIMESTAMP/$TIMESTAMP/g" "$HTML_REPORT" && rm "${HTML_REPORT}.bak"
     
     echo -e "${GREEN}✓ HTML report saved:${NC} $HTML_REPORT"
 fi
