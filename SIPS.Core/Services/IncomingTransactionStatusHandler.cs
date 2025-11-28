@@ -264,7 +264,7 @@ public sealed class IncomingTransactionStatusHandler(
                        ToBIC = request.To,
                        Message = Encoding.UTF8.GetBytes(message),
                        Status = TransactionStatus.Failed,
-                       Reason = "Failed to get the Message from the database.",
+                       Reason = "Failed to get message from DB",
                        BizMsgIdr = request.BizMsgIdr,
                        MsgDefIdr = request.MsgDefIdr,
                        MsgId = request.MsgId

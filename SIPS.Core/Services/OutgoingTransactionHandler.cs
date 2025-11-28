@@ -86,7 +86,7 @@ public sealed class OutgoingTransactionHandler(
                     Status = PDNG,
                     TxId = record.TxId ?? string.Empty,
                     EndToEndId = record.EndToEndId ?? string.Empty,
-                    Reason = "Transaction pending - IPS response parsing failed",
+                    Reason = "Pending - IPS parse failed",
                     AdditionalInfo = "IPS received request but returned invalid response. Transaction marked for status verification. Do not reverse."
                 });
             }
@@ -234,7 +234,7 @@ public sealed class OutgoingTransactionHandler(
                 Status = PDNG,
                 TxId = record.TxId ?? string.Empty,
                 EndToEndId = record.EndToEndId ?? string.Empty,
-                Reason = "Transaction pending - awaiting IPS confirmation",
+                Reason = "Pending - awaiting IPS confirm",
                 AdditionalInfo = $"Network error occurred. Transaction marked for status verification. Do not reverse. Status: {statusDescription}"
             });
         }

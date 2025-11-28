@@ -199,13 +199,13 @@ public sealed class IncomingReturnTransactionHandler(
             // Update original message status to ReadyForReturn and store ReturnId
             originalMessage.Status = TransactionStatus.ReadyForReturn;
             originalMessage.ReturnId = request.ReturnId; // Store ReturnId for audit trail
-            originalMessage.Reason = "Return request received - awaiting confirmation";
+            originalMessage.Reason = "Return received - awaiting confirm";
             originalMessage.AdditionalInfo = $"Return requested with ReturnId: {request.ReturnId}";
             await _persistence.ISOMessageResponseAsync(originalMessage, dbCt);
 
             // Build ACSC acknowledgment response
             response.Status = ACSC;
-            response.Reason = "Return request accepted - awaiting confirmation";
+            response.Reason = "Return accepted - awaiting confirm";
             response.AdditionalInfo = "Transaction marked as ReadyForReturn. Awaiting pacs.002 confirmation to complete return.";
 
             var rsp = ReturnPaymentResponseBuilder.Build(response);

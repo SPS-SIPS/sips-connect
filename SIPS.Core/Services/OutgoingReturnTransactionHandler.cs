@@ -129,7 +129,7 @@ public sealed class OutgoingReturnTransactionHandler(
             {
                 // IPS accepted the return (ACSC) - update original transaction
                 originalMessage.Status = PostgreSQL.Enums.TransactionStatus.Success;
-                originalMessage.Reason = "Outgoing return completed successfully";
+                originalMessage.Reason = "Return completed successfully";
                 originalMessage.AdditionalInfo = $"Return sent with ReturnId: {message.ReturnId}. IPS confirmed with ACSC.";
                 _logger.LogInformation("[{CorrelationId}] Outgoing return completed for TxId {TxId} with ReturnId {ReturnId}",
                     cid, message.OriginalTxId, message.ReturnId);
