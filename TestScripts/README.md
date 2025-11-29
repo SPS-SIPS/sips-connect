@@ -1,6 +1,6 @@
-# SIPS Handler Test Scripts - Enhanced
+# SIPS Handler Test Scripts
 
-This directory contains enhanced test scripts and sample payloads for testing SIPS handlers from the API project.
+This directory contains automated test scripts and sample payloads for testing SIPS handlers from the API project.
 
 ## Overview
 
@@ -11,12 +11,11 @@ These scripts allow you to test the following handlers:
 3. **IncomingTransactionStatusHandler** - Processes incoming pacs.002 status reports
 4. **IncomingPaymentStatusReportHandler** - Processes pacs.002 payment status reports
 
-## What's New in Enhanced Version
+## Key Features
 
-✨ **New Features:**
+✨ **Test Automation:**
 
-- ✅ Correct API endpoints (`/api/v1/incoming`)
-- ✅ Comprehensive test reporting with statistics
+- ✅ Automated test runner with comprehensive reporting
 - ✅ JSON output for CI/CD integration
 - ✅ Retry logic for failed tests
 - ✅ Response validation (XML structure, transaction IDs)
@@ -25,25 +24,36 @@ These scripts allow you to test the following handlers:
 - ✅ Color-coded output for better readability
 - ✅ Test duration tracking
 - ✅ Exit codes for automation
+- ✅ Health check utilities
 
 ## Directory Structure
 
-````
+```
 TestScripts/
 ├── README.md                           # This file
+├── QUICK_START.md                      # Quick start guide
+├── QUICK_REFERENCE.md                  # Quick reference for common commands
+├── TEST_RUNNER_GUIDE.md                # Detailed test runner documentation
+├── TROUBLESHOOTING.md                  # Troubleshooting guide
+├── AUTOMATED_TESTING_SUMMARY.md        # Automated testing overview
+├── JSON_PAYLOADS_SUMMARY.md            # JSON payload documentation
+├── PAYLOAD_UPDATE_SUMMARY.md           # Payload update history
 ├── test-config.json                    # Test configuration file
-├── Payloads/                          # Sample XML payloads
-│   ├── pacs.008.xml                   # Payment request
-│   ├── acmt.023.xml                   # Verification request
-│   ├── pacs.002-status.xml            # Transaction status
-│   ├── pacs.002-payment-status.xml    # Payment status report
-│   ├── pacs.002-payment-status-acsc.xml  # Success scenario
-│   ├── pacs.002-payment-status-rjct.xml  # Rejection scenario
-│   └── pacs.002-payment-status-notfound.xml  # Not found scenario
-├── curl-examples.sh                   # Enhanced bash test script
-├── test-handlers.ps1                  # Enhanced PowerShell test script
-├── postman-collection.json            # Postman collection
-└── test-scenarios.md                  # Detailed test scenarios
+├── test-scenarios.md                   # Detailed test scenarios
+├── Payloads/                           # Sample XML and JSON payloads
+│   ├── pacs.008.xml                    # Payment request
+│   ├── acmt.023.xml                    # Verification request
+│   ├── pacs.002-status.xml             # Transaction status
+│   ├── pacs.002-payment-status.xml     # Payment status report
+│   ├── pacs.002-payment-status-acsc.xml # Success scenario
+│   ├── pacs.002-payment-status-rjct.xml # Rejection scenario
+│   ├── pacs.002-payment-status-notfound.xml # Not found scenario
+│   └── [JSON payloads for Gateway APIs]
+├── run-all-tests.sh                    # Main test runner script
+├── check-api.sh                        # API health check script
+├── test-health.sh                      # Health endpoint test
+├── postman-collection.json             # Postman collection
+└── test-reports/                       # Generated test reports
 
 ## Quick Start
 
@@ -53,48 +63,39 @@ TestScripts/
 2. You have the necessary authentication/API keys configured (if required)
 3. The handlers are properly registered in your API project
 
-### Using Enhanced Bash Script
+### Using the Main Test Runner
 
 ```bash
-# Basic usage
-./curl-examples.sh http://localhost:5000
+# Basic usage - runs all tests
+./run-all-tests.sh
 
-# With JSON output for CI/CD
-./curl-examples.sh http://localhost:5000 --json-output
-
-# With verbose output for debugging
-./curl-examples.sh http://localhost:5000 --verbose
-
-# With retry logic (retry failed tests 3 times)
-./curl-examples.sh http://localhost:5000 --retry 3
-
-# With custom timeout (60 seconds)
-./curl-examples.sh http://localhost:5000 --timeout 60
-
-# All options combined
-./curl-examples.sh http://localhost:5000 --json-output --verbose --retry 3 --timeout 60
-````
-
-### Using Enhanced PowerShell Script
-
-```powershell
-# Basic usage
-.\test-handlers.ps1 -BaseUrl "http://localhost:5000"
-
-# With JSON output for CI/CD
-.\test-handlers.ps1 -BaseUrl "http://localhost:5000" -JsonOutput
+# Specify custom base URL
+./run-all-tests.sh http://localhost:5000
 
 # With verbose output for debugging
-.\test-handlers.ps1 -BaseUrl "http://localhost:5000" -VerboseOutput
+./run-all-tests.sh http://localhost:5000 --verbose
 
 # With retry logic (retry failed tests 3 times)
-.\test-handlers.ps1 -BaseUrl "http://localhost:5000" -RetryCount 3
+./run-all-tests.sh http://localhost:5000 --retry 3
 
 # With custom timeout (60 seconds)
-.\test-handlers.ps1 -BaseUrl "http://localhost:5000" -Timeout 60
+./run-all-tests.sh http://localhost:5000 --timeout 60
 
 # All options combined
-.\test-handlers.ps1 -BaseUrl "http://localhost:5000" -JsonOutput -VerboseOutput -RetryCount 3 -Timeout 60
+./run-all-tests.sh http://localhost:5000 --verbose --retry 3 --timeout 60
+```
+
+### Check API Health
+
+```bash
+# Check if API is running and healthy
+./check-api.sh
+
+# Check specific URL
+./check-api.sh https://localhost:443
+
+# Test health endpoint
+./test-health.sh https://localhost:443
 ```
 
 ### Using Individual cURL Commands
@@ -262,11 +263,10 @@ Edit `test-config.json` to:
 
 ### Adding New Tests
 
-To add new test scenarios:
-
-**In bash script (`curl-examples.sh`):**
+To add new test scenarios, edit `run-all-tests.sh` and add your test:
 
 ```bash
+# Add to the test runner script
 test_handler \
     "Your Test Name" \
     "/api/v1/incoming" \
@@ -274,15 +274,7 @@ test_handler \
     200
 ```
 
-**In PowerShell script (`test-handlers.ps1`):**
-
-```powershell
-Test-Handler `
-    -Name "Your Test Name" `
-    -Endpoint "/api/v1/incoming" `
-    -PayloadFile (Join-Path $PayloadsDir "your-payload.xml") `
-    -ExpectedStatus 200
-```
+Or create a new payload file in the `Payloads/` directory and the test runner will automatically detect it based on the configuration in `test-config.json`.
 
 ## CI/CD Integration
 
@@ -307,33 +299,32 @@ jobs:
       - name: Run Tests
         run: |
           cd TestScripts
-          chmod +x curl-examples.sh
-          ./curl-examples.sh http://localhost:5000 --json-output --retry 2
+          chmod +x run-all-tests.sh
+          ./run-all-tests.sh http://localhost:5000 --retry 2
 
       - name: Upload Test Report
         if: always()
         uses: actions/upload-artifact@v3
         with:
           name: test-report
-          path: TestScripts/test-report-*.json
+          path: TestScripts/test-reports/*.json
 ```
 
-### Azure DevOps Example
+### GitLab CI Example
 
 ```yaml
-steps:
-  - task: PowerShell@2
-    displayName: "Run API Tests"
-    inputs:
-      targetType: "filePath"
-      filePath: "TestScripts/test-handlers.ps1"
-      arguments: '-BaseUrl "http://localhost:5000" -JsonOutput -RetryCount 2'
-
-  - task: PublishTestResults@2
-    condition: always()
-    inputs:
-      testResultsFormat: "JUnit"
-      testResultsFiles: "TestScripts/test-report-*.json"
+test:
+  stage: test
+  script:
+    - cd TestScripts
+    - chmod +x run-all-tests.sh
+    - ./run-all-tests.sh http://localhost:5000 --retry 2
+  artifacts:
+    when: always
+    paths:
+      - TestScripts/test-reports/
+    reports:
+      junit: TestScripts/test-reports/*.xml
 ```
 
 ## Troubleshooting
@@ -374,34 +365,42 @@ steps:
 For detailed debugging:
 
 ```bash
-# Bash - verbose mode
-./curl-examples.sh http://localhost:5000 --verbose
+# Verbose mode with detailed output
+./run-all-tests.sh http://localhost:5000 --verbose
 
-# PowerShell - verbose mode
-.\test-handlers.ps1 -BaseUrl "http://localhost:5000" -VerboseOutput
+# Check API connectivity
+./check-api.sh http://localhost:5000
+
+# Test health endpoint
+./test-health.sh http://localhost:5000
 ```
 
 ## Additional Resources
 
+- **QUICK_START.md** - Quick start guide for getting started
+- **QUICK_REFERENCE.md** - Quick reference for common commands
+- **TEST_RUNNER_GUIDE.md** - Detailed test runner documentation
+- **TROUBLESHOOTING.md** - Comprehensive troubleshooting guide
 - **test-scenarios.md** - Detailed test scenarios and validation points
 - **test-config.json** - Configuration file for test settings
-- **CONTEXT_FOR_API_PROJECT.md** - Integration guide for API projects
-- **QUICK_START.md** - Quick start guide
-- **ENVIRONMENT_SETUP.md** - Environment setup instructions
+- **AUTOMATED_TESTING_SUMMARY.md** - Automated testing overview
+- **JSON_PAYLOADS_SUMMARY.md** - JSON payload documentation
+- **PAYLOAD_UPDATE_SUMMARY.md** - Payload update history
 
-## Features Comparison
+## Test Runner Features
 
-| Feature              | Basic Scripts | Enhanced Scripts |
-| -------------------- | ------------- | ---------------- |
-| Correct endpoints    | ❌            | ✅               |
-| Test statistics      | ❌            | ✅               |
-| JSON output          | ❌            | ✅               |
-| Retry logic          | ❌            | ✅               |
-| Response validation  | ❌            | ✅               |
-| Configurable timeout | ❌            | ✅               |
-| Verbose mode         | ❌            | ✅               |
-| Exit codes           | ❌            | ✅               |
-| CI/CD ready          | ❌            | ✅               |
+| Feature              | Status |
+| -------------------- | ------ |
+| Automated test execution | ✅ |
+| Test statistics & reporting | ✅ |
+| JSON output for CI/CD | ✅ |
+| Retry logic | ✅ |
+| Response validation | ✅ |
+| Configurable timeout | ✅ |
+| Verbose mode | ✅ |
+| Exit codes for automation | ✅ |
+| Health checks | ✅ |
+| XML & JSON payload support | ✅ |
 
 ## Support
 
