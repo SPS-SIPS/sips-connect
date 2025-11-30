@@ -55,6 +55,20 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         }
 
         entity.Response = message.Response;
+        entity.Status = message.Status;
+        entity.Reason = message.Reason;
+        entity.AdditionalInfo = message.AdditionalInfo;
+        
+        if (message.TxId != null)
+        {
+            entity.TxId = message.TxId;
+        }
+        
+        if (message.EndToEndId != null)
+        {
+            entity.EndToEndId = message.EndToEndId;
+        }
+        
         if (message.CoreBankResponse != null)
         {
             entity.CoreBankResponse = message.CoreBankResponse;
