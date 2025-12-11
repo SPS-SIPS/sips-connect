@@ -165,7 +165,16 @@ public class HealthCheckService : IHealthCheckService
 
         try
         {
-            var loginUrl = $"{_coreConfig.BaseUrl}/login";
+            var baseUrl = _coreConfig.BaseUrl?.TrimEnd('/') ?? string.Empty;
+            var endpoint = _configuration["Core:LoginEndpoint"];
+            // Default to /login if not configured
+            if (string.IsNullOrWhiteSpace(endpoint))
+            {
+                endpoint = "/login";
+            }
+            // Ensure endpoint starts with a single '/'
+            endpoint = endpoint.StartsWith("/") ? endpoint : "/" + endpoint;
+            var loginUrl = $"{baseUrl}{endpoint}";
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(5);
 
