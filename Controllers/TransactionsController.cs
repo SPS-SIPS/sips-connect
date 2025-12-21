@@ -20,6 +20,30 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
     {
         var query = _broker.ISOMessages.AsNoTracking().AsQueryable();
 
+        if (request.RelatedToISOMessageId > 0)
+        {
+            var related = await _broker.ISOMessages
+                .AsNoTracking()
+                .Where(t => t.Id == request.RelatedToISOMessageId)
+                .Select(t => new { t.TxId, t.EndToEndId })
+                .SingleOrDefaultAsync(ct);
+
+            if (related is null)
+            {
+                return NotFound($"ISO message {request.RelatedToISOMessageId} not found");
+            }
+
+            if (!string.IsNullOrEmpty(related.TxId))
+            {
+                query = query.Where(t => t.TxId == related.TxId);
+            }
+
+            if (!string.IsNullOrEmpty(related.EndToEndId))
+            {
+                query = query.Where(t => t.EndToEndId == related.EndToEndId);
+            }
+        }
+
         if (request.ISOMessageId > 0)
         {
             query = query.Where(t => t.Id == request.ISOMessageId);
@@ -190,6 +214,7 @@ public sealed class MessageQuery
 {
     public int Page { get; set; } = 0;
     public int PageSize { get; set; } = 10;
+    public int RelatedToISOMessageId { get; set; }
     public string? MsgId { get; set; }
     public string? BizMsgIdr { get; set; }
     public string? MsgDefIdr { get; set; }
@@ -203,6 +228,7 @@ public sealed class TransactionQuery
 {
     public int Page { get; set; } = 0;
     public int PageSize { get; set; } = 10;
+    public int RelatedToISOMessageId { get; set; }
     public int ISOMessageId { get; set; }
     public string? TransactionId { get; set; }
     public string? EndToEndId { get; set; }
