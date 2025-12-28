@@ -309,13 +309,21 @@ public class SecretManagementTool
 
     private static bool IsSecretField(string fieldName)
     {
+        var lowerFieldName = fieldName.ToLowerInvariant();
+        
+        // Exclude path fields - these are file paths, not secrets
+        if (lowerFieldName.EndsWith("path") || lowerFieldName.Contains("path"))
+        {
+            return false;
+        }
+        
         var secretFields = new[]
         {
             "password", "passphrase", "secret", "key", "token",
-            "clientsecret", "apikey", "connectionstring", "privatekey"
+            "clientsecret", "apikey", "connectionstring"
         };
 
-        return secretFields.Any(s => fieldName.ToLowerInvariant().Contains(s));
+        return secretFields.Any(s => lowerFieldName.Contains(s));
     }
 }
 
