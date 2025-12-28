@@ -311,8 +311,9 @@ public class SecretManagementTool
     {
         var lowerFieldName = fieldName.ToLowerInvariant();
         
-        // Exclude path fields - these are file paths, not secrets
-        if (lowerFieldName.EndsWith("path") || lowerFieldName.Contains("path"))
+        // Exclude non-secret fields - these are paths/URLs, not sensitive data
+        var excludedPatterns = new[] { "path", "url", "endpoint", "baseurl", "host" };
+        if (excludedPatterns.Any(pattern => lowerFieldName.Contains(pattern)))
         {
             return false;
         }
