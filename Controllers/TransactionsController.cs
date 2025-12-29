@@ -165,6 +165,26 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
             query = query.Where(t => t.Status.Equals(status));
         }
 
+        if (!string.IsNullOrEmpty(request.EndToEndId))
+        {
+            query = query.Where(t => t.EndToEndId == request.EndToEndId || t.Transactions.Any(tr => tr.EndToEndId == request.EndToEndId));
+        }
+
+        if (!string.IsNullOrEmpty(request.TransactionId))
+        {
+            query = query.Where(t => t.TxId == request.TransactionId || t.Transactions.Any(tr => tr.TxId == request.TransactionId));
+        }
+
+        if (!string.IsNullOrEmpty(request.DebtorAccount))
+        {
+            query = query.Where(t => t.Transactions.Any(tr => tr.DebtorAccount == request.DebtorAccount));
+        }
+
+        if (!string.IsNullOrEmpty(request.CreditorAccount))
+        {
+            query = query.Where(t => t.Transactions.Any(tr => tr.CreditorAccount == request.CreditorAccount));
+        }
+
         if (!string.IsNullOrEmpty(request.FromDate))
         {
             DateTime fromDate = DateTime.Parse(request.FromDate);
@@ -220,6 +240,10 @@ public sealed class MessageQuery
     public string? MsgDefIdr { get; set; }
     public string? Status { get; set; }
     public string? Type { get; set; }
+    public string? EndToEndId { get; set; }
+    public string? TransactionId { get; set; }
+    public string? DebtorAccount { get; set; }
+    public string? CreditorAccount { get; set; }
     public string? FromDate { get; set; }
     public string? ToDate { get; set; }
 }
