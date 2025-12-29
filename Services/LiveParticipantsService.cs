@@ -19,6 +19,7 @@ public class LiveParticipantsService : ILiveParticipantsService
     private readonly ILogger<LiveParticipantsService> _logger;
     private readonly IConfiguration _configuration;
     private readonly int _cacheDurationMinutes;
+    private readonly string _liveParticipantsEndpoint;
     private const string CacheKey = "live_participants_cache";
 
     public LiveParticipantsService(
@@ -32,6 +33,7 @@ public class LiveParticipantsService : ILiveParticipantsService
         _logger = logger;
         _configuration = configuration;
         _cacheDurationMinutes = _configuration.GetValue<int>("LiveParticipants:CacheDurationMinutes", 5);
+        _liveParticipantsEndpoint = _configuration["Core:LiveParticipantsEndpoint"] ?? "/v1/participants/live";
     }
 
     public async Task<List<ParticipantStatus>> GetLiveParticipantsAsync(bool? isLive = null, CancellationToken cancellationToken = default)
@@ -133,8 +135,7 @@ public class LiveParticipantsService : ILiveParticipantsService
     {
         try
         {
-            var endpoint = "/api/v1/participants/live";
-            var response = await _repositoryHttpClient.GetAsync<LiveParticipantsResponse>(endpoint, cancellationToken);
+            var response = await _repositoryHttpClient.GetAsync<LiveParticipantsResponse>(_liveParticipantsEndpoint, cancellationToken);
 
             if (response?.Data?.Succeeded == true && response.Data?.Data != null)
             {
