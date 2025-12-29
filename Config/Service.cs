@@ -33,6 +33,15 @@ public static class DI
         {
             var options = new CoreOptions();
             configuration.GetSection("Core").Bind(options);
+            
+            // Decrypt any encrypted configuration values
+            var dataProtectionProvider = sp.GetService<IDataProtectionProvider>();
+            var logger = sp.GetRequiredService<ILogger<CoreOptions>>();
+            if (dataProtectionProvider != null)
+            {
+                ConfigurationDecryptor.DecryptOptions(options, dataProtectionProvider, logger);
+            }
+            
             return options;
         });
 
@@ -47,12 +56,30 @@ public static class DI
         {
             var options = new XadesOptions();
             configuration.GetSection("Xades").Bind(options);
+            
+            // Decrypt any encrypted configuration values
+            var dataProtectionProvider = sp.GetService<IDataProtectionProvider>();
+            var logger = sp.GetRequiredService<ILogger<XadesOptions>>();
+            if (dataProtectionProvider != null)
+            {
+                ConfigurationDecryptor.DecryptOptions(options, dataProtectionProvider, logger);
+            }
+            
             return options;
         });
         services.AddSingleton(sp =>
         {
             var options = new ISO20022Options();
             configuration.GetSection("ISO20022").Bind(options);
+            
+            // Decrypt any encrypted configuration values
+            var dataProtectionProvider = sp.GetService<IDataProtectionProvider>();
+            var logger = sp.GetRequiredService<ILogger<ISO20022Options>>();
+            if (dataProtectionProvider != null)
+            {
+                ConfigurationDecryptor.DecryptOptions(options, dataProtectionProvider, logger);
+            }
+            
             return options;
         });
 
