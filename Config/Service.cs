@@ -316,6 +316,9 @@ public static class DI
         // Register Health Check Service
         services.AddScoped<IHealthCheckService, HealthCheckService>();
 
+        // Register Live Participants Service
+        services.AddScoped<ILiveParticipantsService, LiveParticipantsService>();
+
         services.AddCore(configuration);
     }
 }
