@@ -29,43 +29,10 @@ public sealed class StatusMessagesController(IStorageBroker broker) : Controller
             query = query.Where(s => s.ISOMessageId == request.RelatedToISOMessageId);
         }
 
-        if (!string.IsNullOrEmpty(request.MsgId))
-        {
-            query = query.Where(s => s.ISOMessage.MsgId == request.MsgId);
-        }
-
-        if (!string.IsNullOrEmpty(request.BizMsgIdr))
-        {
-            query = query.Where(s => s.ISOMessage.BizMsgIdr == request.BizMsgIdr);
-        }
-
-        if (!string.IsNullOrEmpty(request.MsgDefIdr))
-        {
-            query = query.Where(s => s.ISOMessage.MsgDefIdr == request.MsgDefIdr);
-        }
-
-        if (!string.IsNullOrEmpty(request.Type))
-        {
-            ISOMessageType type = Enum.Parse<ISOMessageType>(request.Type, true);
-            query = query.Where(s => s.ISOMessage.MessageType.Equals(type));
-        }
-
         if (!string.IsNullOrEmpty(request.Status))
         {
             TransactionStatus status = Enum.Parse<TransactionStatus>(request.Status, true);
             query = query.Where(s => s.Status.Equals(status));
-        }
-
-        if (!string.IsNullOrEmpty(request.FromDate))
-        {
-            DateTime fromDate = DateTime.Parse(request.FromDate);
-            query = query.Where(s => s.Date >= fromDate);
-        }
-
-        if (!string.IsNullOrEmpty(request.ToDate))
-        {
-            DateTime toDate = DateTime.Parse(request.ToDate);
-            query = query.Where(s => s.Date <= toDate);
         }
 
         var messages = await query
