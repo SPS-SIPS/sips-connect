@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SIPS.Connect.Models;
 using SIPS.Connect.Services;
-using static SIPS.Connect.Helpers.APIResponseRenderer;
 
 namespace SIPS.Connect.Controllers;
 
@@ -39,14 +38,14 @@ public class ParticipantsController : ControllerBase
             
             _logger.LogInformation("Successfully retrieved {Count} participants", participants.Count);
             
-            return Ok(SuccessResponse(participants));
+            return Ok(new { data = participants, succeeded = true, message = (string?)null, errors = (string[]?)null });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving live participants");
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
-                ErrorResponse("Internal server error", new[] { "An unexpected error occurred" })
+                new { data = (object?)null, succeeded = false, message = "Internal server error", errors = new[] { "An unexpected error occurred" } }
             );
         }
     }
@@ -64,7 +63,7 @@ public class ParticipantsController : ControllerBase
         {
             if (string.IsNullOrWhiteSpace(bic))
             {
-                return BadRequest(ErrorResponse("Invalid request", new[] { "BIC cannot be empty" }));
+                return BadRequest(new { data = (object?)null, succeeded = false, message = "Invalid request", errors = new[] { "BIC cannot be empty" } });
             }
 
             _logger.LogInformation("Checking if participant {BIC} is live", bic);
@@ -77,14 +76,14 @@ public class ParticipantsController : ControllerBase
                 isLive = isLive
             };
             
-            return Ok(SuccessResponse(result));
+            return Ok(new { data = result, succeeded = true, message = (string?)null, errors = (string[]?)null });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error checking if participant {BIC} is live", bic);
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
-                ErrorResponse("Internal server error", new[] { "An unexpected error occurred" })
+                new { data = (object?)null, succeeded = false, message = "Internal server error", errors = new[] { "An unexpected error occurred" } }
             );
         }
     }
@@ -103,14 +102,14 @@ public class ParticipantsController : ControllerBase
             
             _logger.LogInformation("Successfully retrieved {Count} available BICs", bics.Count);
             
-            return Ok(SuccessResponse(bics));
+            return Ok(new { data = bics, succeeded = true, message = (string?)null, errors = (string[]?)null });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving available participant BICs");
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
-                ErrorResponse("Internal server error", new[] { "An unexpected error occurred" })
+                new { data = (object?)null, succeeded = false, message = "Internal server error", errors = new[] { "An unexpected error occurred" } }
             );
         }
     }

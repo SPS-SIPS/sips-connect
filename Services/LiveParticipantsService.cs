@@ -136,10 +136,10 @@ public class LiveParticipantsService : ILiveParticipantsService
             var endpoint = "/api/v1/participants/live";
             var response = await _repositoryHttpClient.GetAsync<LiveParticipantsResponse>(endpoint, cancellationToken);
 
-            if (response?.Succeeded == true && response.Data != null)
+            if (response?.Data?.Succeeded == true && response.Data?.Data != null)
             {
-                _logger.LogInformation("Successfully fetched {Count} participants from API", response.Data.Count);
-                return response.Data;
+                _logger.LogInformation("Successfully fetched {Count} participants from API", response.Data.Data.Count);
+                return response.Data.Data;
             }
 
             _logger.LogWarning("API returned unsuccessful response or no data");
