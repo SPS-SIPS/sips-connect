@@ -72,6 +72,38 @@ public class RepositoryHttpClient(ILogger<RepositoryHttpClient> logger, HttpClie
         }
     }
 
+    public async Task<RepositoryResponse<T>> PostEmptyAsync<T>(string url, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _httpClient.BaseAddress + url);
+            // No content - truly empty body
+            requestMessage.Content = new StringContent(string.Empty);
+            requestMessage.Content.Headers.ContentLength = 0;
+            
+            // access token
+            if (_httpClient.DefaultRequestHeaders.Authorization != null)
+            {
+                requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _httpClient.DefaultRequestHeaders.Authorization?.Parameter);
+            }
+            var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url}", response.StatusCode, url);
+                return RepositoryResponse<T>.BadRequest("POST request failed");
+            }
+            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            var data = JsonSerializer.Deserialize<RepositoryResponse<T>>(responseContent, serializerOptions);
+            return data!;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "POST request to {Url} failed.", url);
+            return RepositoryResponse<T>.BadRequest(ex.Message);
+        }
+    }
+
     public void AddAuthHeaders(string accessToken)
     {
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
