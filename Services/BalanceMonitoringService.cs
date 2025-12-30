@@ -27,7 +27,7 @@ public class BalanceMonitoringService : IBalanceMonitoringService
         {
             _logger.LogInformation("Fetching balance status from API");
             
-            var response = await _repositoryHttpClient.GetAsync<BalanceStatus>(_balanceEndpoint, cancellationToken);
+            var response = await _repositoryHttpClient.PostAsync<object, BalanceStatus>(_balanceEndpoint, new { }, cancellationToken);
 
             if (response?.Data != null)
             {
