@@ -17,6 +17,7 @@ public class HealthCheckService : IHealthCheckService
     private readonly IConfiguration _configuration;
     private readonly CoreOptions _coreConfig;
     private readonly XadesOptions _xadesConfig;
+    private readonly IBalanceMonitoringService _balanceMonitoringService;
     private readonly ILogger<HealthCheckService> _logger;
 
     public HealthCheckService(
@@ -24,12 +25,14 @@ public class HealthCheckService : IHealthCheckService
         IConfiguration configuration,
         CoreOptions coreConfig,
         XadesOptions xadesConfig,
+        IBalanceMonitoringService balanceMonitoringService,
         ILogger<HealthCheckService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _coreConfig = coreConfig;
         _xadesConfig = xadesConfig;
+        _balanceMonitoringService = balanceMonitoringService;
         _logger = logger;
     }
 
@@ -56,6 +59,9 @@ public class HealthCheckService : IHealthCheckService
 
         // 5. Check Keycloak Availability
         tasks.Add(CheckKeycloakAsync(cancellationToken));
+
+        // 6. Check Balance Status
+        tasks.Add(CheckBalanceStatusAsync(cancellationToken));
 
         // Wait for all checks to complete
         var results = await Task.WhenAll(tasks);
@@ -382,6 +388,69 @@ public class HealthCheckService : IHealthCheckService
         }
 
         return Task.FromResult(component);
+    }
+
+    private async Task<ComponentHealth> CheckBalanceStatusAsync(CancellationToken cancellationToken)
+    {
+        var component = new ComponentHealth
+        {
+            Name = "balance-status",
+            LastChecked = DateTime.UtcNow
+        };
+
+        try
+        {
+            var balanceStatus = await _balanceMonitoringService.GetBalanceStatusAsync(cancellationToken);
+
+            if (balanceStatus != null)
+            {
+                component.Status = "ok";
+                component.EndpointStatus = "ok";
+                component.HttpResult = $"Zone: {balanceStatus.CurrentZone}, Balance: {balanceStatus.LastKnownBalance?.ToString("N2") ?? "N/A"} {balanceStatus.Currency}";
+                
+                // Add warning if in Amber or Red zone
+                if (balanceStatus.CurrentZone == "Red")
+                {
+                    component.ErrorMessage = "⚠️ CRITICAL: Balance is in RED zone!";
+                }
+                else if (balanceStatus.CurrentZone == "Amber")
+                {
+                    component.ErrorMessage = "⚠️ WARNING: Balance is in AMBER zone";
+                }
+            }
+            else
+            {
+                component.Status = "degraded";
+                component.EndpointStatus = "no-data";
+                component.HttpResult = "No balance data available";
+                component.ErrorMessage = "Balance status endpoint returned no data";
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            component.Status = "degraded";
+            component.EndpointStatus = "timeout";
+            component.HttpResult = "Timeout";
+            component.ErrorMessage = "Request timed out";
+        }
+        catch (HttpRequestException ex)
+        {
+            component.Status = "degraded";
+            component.EndpointStatus = "unreachable";
+            component.HttpResult = "Connection Failed";
+            component.ErrorMessage = ex.Message;
+            _logger.LogWarning(ex, "Balance status health check failed");
+        }
+        catch (Exception ex)
+        {
+            component.Status = "degraded";
+            component.EndpointStatus = "error";
+            component.HttpResult = "Error";
+            component.ErrorMessage = ex.Message;
+            _logger.LogError(ex, "Balance status health check failed");
+        }
+
+        return component;
     }
 
 }
