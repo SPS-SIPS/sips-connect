@@ -6,19 +6,16 @@ namespace SIPS.Connect.Services;
 public class BalanceMonitoringService : IBalanceMonitoringService
 {
     private readonly IRepositoryHttpClient _repositoryHttpClient;
-    private readonly IAuthService _authService;
     private readonly ILogger<BalanceMonitoringService> _logger;
     private readonly IConfiguration _configuration;
     private readonly string _balanceEndpoint;
 
     public BalanceMonitoringService(
         IRepositoryHttpClient repositoryHttpClient,
-        IAuthService authService,
         ILogger<BalanceMonitoringService> logger,
         IConfiguration configuration)
     {
         _repositoryHttpClient = repositoryHttpClient;
-        _authService = authService;
         _logger = logger;
         _configuration = configuration;
         _balanceEndpoint = _configuration["Core:BalanceStatusEndpoint"] ?? "/v1/participants/balance-status";
@@ -30,13 +27,6 @@ public class BalanceMonitoringService : IBalanceMonitoringService
         {
             _logger.LogInformation("Fetching balance status from API");
             
-            var (token, error) = await _authService.LoginAsync(cancellationToken);
-            if (token == null || !string.IsNullOrEmpty(error))
-            {
-                _logger.LogError("Authentication failed: {Error}", error);
-                return null;
-            }
-
             var response = await _repositoryHttpClient.GetAsync<BalanceStatus>(_balanceEndpoint, cancellationToken);
 
             if (response?.Data != null)
