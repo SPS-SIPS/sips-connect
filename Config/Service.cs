@@ -319,6 +319,9 @@ public static class DI
         // Register Live Participants Service
         services.AddScoped<ILiveParticipantsService, LiveParticipantsService>();
 
+        // Register Balance Monitoring Service
+        services.AddScoped<IBalanceMonitoringService, BalanceMonitoringService>();
+
         services.AddCore(configuration);
     }
 }
