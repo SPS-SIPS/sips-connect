@@ -12,13 +12,16 @@ namespace SIPS.Connect.Controllers;
 public class ParticipantsController : ControllerBase
 {
     private readonly ILiveParticipantsService _liveParticipantsService;
+    private readonly IBalanceMonitoringService _balanceMonitoringService;
     private readonly ILogger<ParticipantsController> _logger;
 
     public ParticipantsController(
         ILiveParticipantsService liveParticipantsService,
+        IBalanceMonitoringService balanceMonitoringService,
         ILogger<ParticipantsController> logger)
     {
         _liveParticipantsService = liveParticipantsService;
+        _balanceMonitoringService = balanceMonitoringService;
         _logger = logger;
     }
 
@@ -107,6 +110,41 @@ public class ParticipantsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving available participant BICs");
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new { data = (object?)null, succeeded = false, message = "Internal server error", errors = new[] { "An unexpected error occurred" } }
+            );
+        }
+    }
+
+    [HttpGet("balance-status")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetBalanceStatus(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogInformation("Fetching balance status");
+            
+            var balanceStatus = await _balanceMonitoringService.GetBalanceStatusAsync(cancellationToken);
+            
+            if (balanceStatus == null)
+            {
+                _logger.LogWarning("Balance status returned no data");
+                return StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    new { data = (object?)null, succeeded = false, message = "No balance data available", errors = new[] { "Balance status endpoint returned no data" } }
+                );
+            }
+
+            _logger.LogInformation("Successfully retrieved balance status - BIC: {Bic}, Zone: {Zone}", balanceStatus.Bic, balanceStatus.CurrentZone);
+            
+            return Ok(new { data = balanceStatus, succeeded = true, message = (string?)null, errors = (string[]?)null });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving balance status");
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
                 new { data = (object?)null, succeeded = false, message = "Internal server error", errors = new[] { "An unexpected error occurred" } }
