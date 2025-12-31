@@ -313,6 +313,9 @@ public static class DI
        .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
             ApiKeyDefaults.AuthenticationScheme, _ => { });
 
+        // Register Core Authentication Service
+        services.AddSingleton<ICoreAuthService, CoreAuthService>();
+
         // Register Health Check Service
         services.AddScoped<IHealthCheckService, HealthCheckService>();
 
