@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using SIPS.Core.Options;
 
 namespace SIPS.Connect.Services;
 
@@ -12,18 +13,18 @@ public interface ICoreAuthService
 public class CoreAuthService : ICoreAuthService
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _configuration;
+    private readonly CoreOptions _coreOptions;
     private readonly ILogger<CoreAuthService> _logger;
     private string? _cachedToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
 
     public CoreAuthService(
         IHttpClientFactory httpClientFactory,
-        IConfiguration configuration,
+        CoreOptions coreOptions,
         ILogger<CoreAuthService> logger)
     {
         _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
+        _coreOptions = coreOptions;
         _logger = logger;
     }
 
@@ -38,10 +39,10 @@ public class CoreAuthService : ICoreAuthService
 
         try
         {
-            var baseUrl = _configuration["Core:BaseUrl"];
-            var loginEndpoint = _configuration["Core:LoginEndpoint"];
-            var username = _configuration["Core:Username"];
-            var password = _configuration["Core:Password"];
+            var baseUrl = _coreOptions.BaseUrl;
+            var loginEndpoint = _coreOptions.LoginEndpoint;
+            var username = _coreOptions.Username;
+            var password = _coreOptions.Password;
 
             if (string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(loginEndpoint) || 
                 string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
