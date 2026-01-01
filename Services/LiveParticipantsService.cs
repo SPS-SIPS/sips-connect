@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Distributed;
 using SIPS.Connect.Models;
 using SIPS.Core.Interfaces;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace SIPS.Connect.Services;
@@ -14,26 +15,31 @@ public interface ILiveParticipantsService
 
 public class LiveParticipantsService : ILiveParticipantsService
 {
-    private readonly IRepositoryHttpClient _repositoryHttpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IDistributedCache _cache;
     private readonly ILogger<LiveParticipantsService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly ICoreAuthService _authService;
     private readonly int _cacheDurationMinutes;
     private readonly string _liveParticipantsEndpoint;
+    private readonly string _baseUrl;
     private const string CacheKey = "live_participants_cache";
 
     public LiveParticipantsService(
-        IRepositoryHttpClient repositoryHttpClient,
+        IHttpClientFactory httpClientFactory,
         IDistributedCache cache,
         ILogger<LiveParticipantsService> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ICoreAuthService authService)
     {
-        _repositoryHttpClient = repositoryHttpClient;
+        _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
         _configuration = configuration;
+        _authService = authService;
         _cacheDurationMinutes = _configuration.GetValue<int>("LiveParticipants:CacheDurationMinutes", 5);
         _liveParticipantsEndpoint = _configuration["Core:LiveParticipantsEndpoint"] ?? "/v1/participants/live";
+        _baseUrl = _configuration["Core:BaseUrl"] ?? "http://localhost:5004/api";
     }
 
     public async Task<List<ParticipantStatus>> GetLiveParticipantsAsync(bool? isLive = null, CancellationToken cancellationToken = default)
@@ -135,12 +141,43 @@ public class LiveParticipantsService : ILiveParticipantsService
     {
         try
         {
-            var response = await _repositoryHttpClient.GetAsync<List<ParticipantStatus>>(_liveParticipantsEndpoint, cancellationToken);
-
-            if (response?.Data != null && response.Data.Any())
+            // Get authentication token
+            var token = await _authService.GetAuthTokenAsync(cancellationToken);
+            if (string.IsNullOrEmpty(token))
             {
-                _logger.LogInformation("Successfully fetched {Count} participants from API", response.Data.Count);
-                return response.Data;
+                _logger.LogError("Failed to obtain authentication token");
+                return null;
+            }
+
+            // Create HTTP request with Bearer token
+            var client = _httpClientFactory.CreateClient();
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}{_liveParticipantsEndpoint}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            
+            var httpResponse = await client.SendAsync(request, cancellationToken);
+            
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                var errorContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Request failed with status {StatusCode}. Response: {Response}", 
+                    httpResponse.StatusCode, errorContent);
+                return null;
+            }
+
+            var responseContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
+            
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+            
+            var apiResponse = JsonSerializer.Deserialize<ApiResponse<List<ParticipantStatus>>>(responseContent, options);
+            
+            if (apiResponse?.Data != null && apiResponse.Data.Any())
+            {
+                _logger.LogInformation("Successfully fetched {Count} participants from API", apiResponse.Data.Count);
+                return apiResponse.Data;
             }
 
             _logger.LogWarning("API returned unsuccessful response or no data");
