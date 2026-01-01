@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace SIPS.Connect.Models;
 
 public class ParticipantStatus
@@ -10,4 +12,10 @@ public class ParticipantStatus
     public int ConsecutiveFailures { get; set; }
     public int ConsecutiveSuccesses { get; set; }
     public string? LastError { get; set; }
+    public decimal? CurrentBalance { get; set; }
+    public decimal? AvailableBalance { get; set; }
+    public bool? CanSend { get; set; }
+    [JsonIgnore]
+    public bool? EnforceSendRestriction { get; set; }
+    public decimal? MinimumSendBalance { get; set; }
 }
