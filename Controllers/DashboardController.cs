@@ -7,6 +7,7 @@ using SIPS.PostgreSQL.Interfaces;
 
 namespace SIPS.Connect.Controllers;
 
+[Authorize(Roles = KnownRoles.Dashboard)]
 [ApiController]
 [Route("api/v1/[controller]")]
 public sealed class DashboardController(
@@ -17,8 +18,6 @@ public sealed class DashboardController(
     private readonly IConfiguration _configuration = configuration;
 
     [HttpGet("TransactionTypeDistribution")]
-    
-    [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetTransactionTypeDistribution([FromQuery] DashboardQueryDto request,
         CancellationToken ct)
     {
@@ -47,7 +46,6 @@ public sealed class DashboardController(
     }
 
     [HttpGet("CashFlowOverview")]
-    [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetCashFlowOverview([FromQuery] DashboardQueryDto request, CancellationToken ct)
     {
         var query = _broker.Transactions
@@ -85,7 +83,6 @@ public sealed class DashboardController(
     }
 
     [HttpGet("ReturnExceptionMonitoring")]
-    [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetReturnAndExceptionMonitoring(
         [FromQuery] DashboardQueryDto request,
         CancellationToken ct)
@@ -127,7 +124,6 @@ public sealed class DashboardController(
 
 
     [HttpGet("IssuerActivity")]
-    [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetIssuerActivity(
         [FromQuery] DashboardQueryDto request,
         CancellationToken ct)
@@ -195,7 +191,6 @@ public sealed class DashboardController(
 
     
     [HttpGet("IsoRequestsSummary")]
-    [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetIsoRequestsSummary([FromQuery] DashboardQueryDto request, CancellationToken ct)
     {
         var query = _broker.ISOMessages.AsNoTracking().AsQueryable();
@@ -236,7 +231,6 @@ public sealed class DashboardController(
     
     
     [HttpGet("IsoStatusSummary")]
-    [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetIsoStatusSummary([FromQuery] DashboardQueryDto request, CancellationToken ct)
     {
         var query = _broker.ISOMessages.AsNoTracking().AsQueryable();
@@ -273,7 +267,6 @@ public sealed class DashboardController(
     }
 
     [HttpGet("IsoMsgdefSummary")]
-    [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetIsoMsgDefSummary([FromQuery] DashboardQueryDto request, CancellationToken ct)
     {
         var query = _broker.ISOMessages.AsNoTracking().AsQueryable();
