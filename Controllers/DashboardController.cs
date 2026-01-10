@@ -16,7 +16,8 @@ public sealed class DashboardController(
     private readonly IStorageBroker _broker = broker;
     private readonly IConfiguration _configuration = configuration;
 
-    [HttpGet("transaction-type-distribution")]
+    [HttpGet("TransactionTypeDistribution")]
+    
     [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetTransactionTypeDistribution([FromQuery] DashboardQueryDto request,
         CancellationToken ct)
@@ -45,7 +46,7 @@ public sealed class DashboardController(
         });
     }
 
-    [HttpGet("cash-flow-overview")]
+    [HttpGet("CashFlowOverview")]
     [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetCashFlowOverview([FromQuery] DashboardQueryDto request, CancellationToken ct)
     {
@@ -83,7 +84,7 @@ public sealed class DashboardController(
         });
     }
 
-    [HttpGet("return-exception-monitoring")]
+    [HttpGet("ReturnExceptionMonitoring")]
     [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetReturnAndExceptionMonitoring(
         [FromQuery] DashboardQueryDto request,
@@ -125,7 +126,7 @@ public sealed class DashboardController(
     }
 
 
-    [HttpGet("issuer-activity")]
+    [HttpGet("IssuerActivity")]
     [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetIssuerActivity(
         [FromQuery] DashboardQueryDto request,
@@ -193,7 +194,7 @@ public sealed class DashboardController(
     }
 
     
-    [HttpGet("iso-requests-summary")]
+    [HttpGet("IsoRequestsSummary")]
     [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetIsoRequestsSummary([FromQuery] DashboardQueryDto request, CancellationToken ct)
     {
@@ -234,7 +235,7 @@ public sealed class DashboardController(
     }
     
     
-    [HttpGet("iso-status-summary")]
+    [HttpGet("IsoStatusSummary")]
     [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetIsoStatusSummary([FromQuery] DashboardQueryDto request, CancellationToken ct)
     {
@@ -271,7 +272,7 @@ public sealed class DashboardController(
         return Ok(summary);
     }
 
-    [HttpGet("iso-msgdef-summary")]
+    [HttpGet("IsoMsgdefSummary")]
     [Authorize(Roles = KnownRoles.ManageTransactions)]
     public async Task<IActionResult> GetIsoMsgDefSummary([FromQuery] DashboardQueryDto request, CancellationToken ct)
     {
