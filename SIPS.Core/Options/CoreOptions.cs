@@ -14,4 +14,5 @@ public class CoreOptions
     public bool IncludeIdempotencyHeaders { get; set; } = false;
     public int HttpTimeoutSeconds { get; set; } = 15;
     public int DbPersistTimeoutSeconds { get; set; } = 10;
+    public bool IncludeCoreBankOnListing { get; set; } = false;
 }

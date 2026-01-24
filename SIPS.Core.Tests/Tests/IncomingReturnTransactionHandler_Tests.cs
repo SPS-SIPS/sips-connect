@@ -71,10 +71,9 @@ public class IncomingReturnTransactionHandler_Tests
     var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
     var inbound = new InboundMessageService(signature.Object);
     var isoService = new ISOMessageService(persistence);
-        var statusOrchestrator = new Mock<IStatusOrchestrator>().Object;
         var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
 
-        var sut = new IncomingReturnTransactionHandler(options, logger, signer, adapter.Object, recorder.Object, signature.Object, persistence, correlation, callback, parser, inbound, callbacks, isoService, statusOrchestrator, coreOptions);
+        var sut = new IncomingReturnTransactionHandler(options, logger, signer, adapter.Object, recorder.Object, signature.Object, persistence, correlation, callback, parser, inbound, callbacks, isoService, coreOptions);
         return (sut, recorder, http, adapter);
     }
 

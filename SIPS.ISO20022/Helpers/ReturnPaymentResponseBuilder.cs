@@ -168,9 +168,9 @@ public static class ReturnPaymentResponseBuilder
                 {
                     Rsn = new StatusReason6Choice
                     {
-                        Prtry = request.Reason ?? request.Status
+                        Prtry = request.Reason ?? request.Status ?? string.Empty
                     },
-                    AddtlInf = [request.AdditionalInfo ?? request.Status]
+                    AddtlInf = [request.AdditionalInfo ?? request.Status ?? string.Empty]
                 }
             ];
         }

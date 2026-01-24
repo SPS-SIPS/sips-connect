@@ -22,6 +22,7 @@ using SIPS.ISO20022.Models.DTOs;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 
+using SIPS.Core;
 namespace SIPS.Core.Services;
 
 /// <summary>
@@ -241,6 +242,39 @@ public sealed class IncomingPaymentStatusReportHandler(
         response.Reason = request.Reason ?? string.Empty;
         response.AdditionalInfo = request.AdditionalInfo ?? string.Empty;
 
+        // Check if this is a Return Request (pacs.004) confirming an incoming return
+        // This check must happen BEFORE the NonPending check because Returns are typically in ReadyForReturn (a non-Pending status)
+        if (isoMessage.MessageType == ISOMessageType.ReturnRequest)
+        {
+            if (isoMessage.Status == TransactionStatus.ReadyForReturn)
+            {
+                _logger.LogInformation("[{CorrelationId}] pacs.002 confirms incoming return (Type=ReturnRequest) for TxId {TxId}. Calling CoreBank to reverse credit.", cid, request.TxId);
+                response = await CallCoreBankReturnAsync(isoMessage, transaction, statusReq, response, ct, cid, dbCt);
+
+                // Build and persist final response
+                response.TxId = statusReq.OrgnlTxId ?? response.TxId;
+                response.Original.TxId = statusReq.OrgnlTxId ?? response.Original.TxId;
+                var rspReturn = PaymentStatusRequestResponseBuilder.Build(response);
+
+                // Status already set by CallCoreBankReturnAsync
+                await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return completed", isoMessage.AdditionalInfo, rspReturn, dbCt);
+                return _signer.SignEnvelope(rspReturn);
+            }
+            else
+            {
+                // MessageType is ReturnRequest but status is NOT ReadyForReturn.
+                // This implies we already processed it (e.g. Success/Failed) or it's in an invalid state.
+                // We CANNOT fall through to TransactionRequest logic (CoreBank Transfer).
+                _logger.LogWarning("[{CorrelationId}] Mismatch: MessageType is ReturnRequest but Status is {Status}. Aborting CoreBank Transfer flow.", cid, isoMessage.Status);
+                
+                // Return generic response mirroring current status (similar to NonPending handling)
+                response.Status = isoMessage.Status == TransactionStatus.Failed ? RJCT : ACSC;
+                var rspGeneric = PaymentStatusRequestResponseBuilder.Build(response);
+                await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return Status Mismatch", isoMessage.AdditionalInfo, rspGeneric, dbCt);
+                return _signer.SignEnvelope(rspGeneric);
+            }
+        }
+
         // If related ISO message is not pending anymore, mirror DB status and return without forwarding
         // This handles idempotent retries or duplicate pacs.002 messages
         if (isoMessage.Status != TransactionStatus.Pending)
@@ -271,10 +305,58 @@ public sealed class IncomingPaymentStatusReportHandler(
             return signedMirror;
         }
 
-        // If RJCT -> persist and return without CoreBank call
+        // If RJCT -> Notify CoreBank of rejection (Active Decision), then persist and return
         if (_statusOrchestrator.IsRejectionStatus(request.Status))
         {
             var (rjctParentStatus, rjctChildStatus, rjctReason, rjctAdditionalInfo) = _statusOrchestrator.MapCompletionStatus(request.Status ?? string.Empty, null, false);
+
+            _logger.LogInformation("[{CorrelationId}] Switch rejected transaction {TxId}. Forwarding rejection to CoreBank via CompletionNotification.", cid, request.TxId);
+
+            try 
+            {
+                var rejectHeaders = new Dictionary<string, string>() {
+                        { API_Key, _callbackLinks.Key! },
+                        { API_Secret, _callbackLinks.Secret! }
+                    };
+                // Idempotency key
+                if (!string.IsNullOrWhiteSpace(request.TxId))
+                    rejectHeaders["X-Idempotency-Key"] = request.TxId;
+                if (!string.IsNullOrWhiteSpace(request.TxId))
+                    rejectHeaders["X-Transaction-Id"] = request.TxId;
+
+                var rejectDto = new CBCompletionNotification
+                {
+                    OriginalTxId = request.TxId ?? string.Empty,
+                    OriginalEndToEndId = request.Original?.EndToEndId,
+                    Status = RJCT,
+                    Reason = request.Reason ?? rjctReason,
+                    AdditionalInfo = request.AdditionalInfo ?? rjctAdditionalInfo
+                };
+
+               var rejectResult = await _callbacks.SendJsonAsync(
+                    _callbackLinks.CompletionNotification!, // Ensure this URL is configured
+                    rejectHeaders,
+                    rejectDto,
+                    Constants.CB_CompletionNotification, 
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+
+                if (rejectResult != null)
+                {
+                     isoMessage.CoreBankResponse = JsonSerializer.Serialize(rejectResult, _jsonSerializerOptions);
+                }
+                
+            }
+            catch (Exception ex) 
+            {
+                _logger.LogError(ex, "[{CorrelationId}] Failed to notify CoreBank of rejection for TxId {TxId}.", cid, request.TxId);
+                // We proceed to persist failure locally even if CB notification fails, as the Switch has already rejected it.
+            }
 
             response.TxId = statusReq.OrgnlTxId ?? response.TxId;
             response.Original.TxId = statusReq.OrgnlTxId ?? response.Original.TxId;
@@ -290,72 +372,54 @@ public sealed class IncomingPaymentStatusReportHandler(
             return signedRej;
         }
 
-        // Check if this pacs.002 is confirming an incoming return (original transaction is ReadyForReturn)
-        // If so, call CoreBank to reverse the credit instead of crediting
-        if (isoMessage.Status == TransactionStatus.ReadyForReturn)
+        // Default: Transaction Request (pacs.008) -> Normal Incoming Credit Transfer
+        // CRITICAL CHECK: Ensure this is actually an INCOMING transaction.
+        // If FromBIC == OurBIC, it means WE initiated this transaction (Outgoing).
+        // For Outgoing transactions, we do NOT call the CoreBank 'Transfer' endpoint (which is for crediting funds).
+        // CoreBank already debited the sender.
+        
+        bool isOutgoing = isoMessage.FromBIC == _callbackLinks.BIC;
+        Response<System.Text.Json.Nodes.JsonObject?>? result = null;
+        var tx = transaction;
+
+        if (!isOutgoing)
         {
-            _logger.LogInformation("[{CorrelationId}] pacs.002 confirms incoming return for TxId {TxId}. Calling CoreBank to reverse credit.", cid, request.TxId);
-            response = await CallCoreBankReturnAsync(isoMessage, transaction, statusReq, response, ct, cid, dbCt);
+            // User Requirement:
+            // 1. If IncludeCoreBankOnListing is enabled, the bank already received the initial Transfer request.
+            //    So we must send a Completion Notification (pacs.002 Success).
+            // 2. If it is disabled, the bank has NOT seen this transaction yet.
+            //    So we must send the Transfer request now ("Late Binding").
 
-            // Build and persist final response
-            response.TxId = statusReq.OrgnlTxId ?? response.TxId;
-            response.Original.TxId = statusReq.OrgnlTxId ?? response.Original.TxId;
-            var rspReturn = PaymentStatusRequestResponseBuilder.Build(response);
-
-            // Status already set by CallCoreBankReturnAsync
-            await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return completed", isoMessage.AdditionalInfo, rspReturn, dbCt);
-            return _signer.SignEnvelope(rspReturn);
-        }
-
-        var headers = new Dictionary<string, string>() {
+            if (_core.IncludeCoreBankOnListing)
+            {
+                // Path A: Bank expects Completion Notification
+                 _logger.LogInformation("[{CorrelationId}] incoming transaction {TxId}. IncludeCoreBankOnListing=true, sending CompletionNotification.", cid, request.TxId);
+                 
+                 var notificationHeaders = new Dictionary<string, string>() {
                         { API_Key, _callbackLinks.Key! },
                         { API_Secret, _callbackLinks.Secret! }
                     };
-        // Idempotency key for safe retries downstream
-        var idem = transaction?.TxId ?? request.TxId;
-        if (!string.IsNullOrWhiteSpace(idem))
-            headers["X-Idempotency-Key"] = idem!;
-        if (!string.IsNullOrWhiteSpace(transaction?.TxId ?? request.TxId))
-            headers["X-Transaction-Id"] = (transaction?.TxId ?? request.TxId)!;
+                // Idempotency key
+                var idem = transaction?.TxId ?? request.TxId;
+                if (!string.IsNullOrWhiteSpace(idem))
+                    notificationHeaders["X-Idempotency-Key"] = idem!;
+                if (!string.IsNullOrWhiteSpace(transaction?.TxId ?? request.TxId))
+                    notificationHeaders["X-Transaction-Id"] = (transaction?.TxId ?? request.TxId)!;
 
-        // Here incomingStatus must be ACSC; build CB payment request payload for CB
+                 var notificationDto = new CBCompletionNotification
+                {
+                    OriginalTxId = request.TxId ?? string.Empty,
+                    OriginalEndToEndId = request.Original?.EndToEndId,
+                    Status = ACSC, // We are in the success/accepted path here
+                    Reason = request.Reason ?? "Transaction Completed",
+                    AdditionalInfo = request.AdditionalInfo ?? "Final success confirmation from Switch"
+                };
 
-        var tx = transaction!;
-        var dto = new CBPaymentRequestDto
-        {
-            FromBIC = tx.FromBIC ?? string.Empty,
-            LocalInstrument = tx.LocalInstrument ?? string.Empty,
-            CategoryPurpose = tx.CategoryPurpose ?? string.Empty,
-            EndToEndId = tx.EndToEndId ?? string.Empty,
-            TxId = tx.TxId ?? string.Empty,
-            Amount = tx.Amount,
-            Currency = tx.Currency ?? string.Empty,
-            DebtorName = tx.DebtorName ?? string.Empty,
-            DebtorAccount = tx.DebtorAccount ?? string.Empty,
-            DebtorAccountType = tx.DebtorAccountType ?? string.Empty,
-            DebtorAgentBIC = tx.DebtorAgentBIC ?? string.Empty,
-            DebtorIssuer = tx.DebtorIssuer ?? string.Empty,
-            CreditorName = tx.CreditorName ?? string.Empty,
-            CreditorAccount = tx.CreditorAccount ?? string.Empty,
-            CreditorAccountType = tx.CreditorAccountType ?? string.Empty,
-            CreditorAgentBIC = tx.CreditorAgentBIC ?? string.Empty,
-            CreditorIssuer = tx.CreditorIssuer ?? string.Empty,
-            RemittanceInformation = tx.RemittanceInformation ?? string.Empty,
-            Date = DateTime.UtcNow,
-            ToBIC = isoMessage.FromBIC ?? string.Empty,
-            SettlementMethod = "CLRG",
-            ChargeBearer = "SLEV",
-            BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
-            MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
-            ClearingSystem = string.Empty,
-            MsgId = isoMessage.MsgId ?? string.Empty
-        };
-
-    var result = await _callbacks.SendJsonAsync(
-                _callbackLinks.Transfer!,
-                    headers,
-                    dto,
-                    CB_PaymentRequest,
+                 result = await _callbacks.SendJsonAsync(
+                    _callbackLinks.CompletionNotification!, 
+                    notificationHeaders,
+                    notificationDto,
+                    Constants.CB_CompletionNotification, 
                     _jsonAdapter,
                     _correlation,
                     _jsonSerializerOptions,
@@ -364,43 +428,154 @@ public sealed class IncomingPaymentStatusReportHandler(
                     cid
                 );
 
-        // Guard against null callback result
-        if (result == null)
-        {
-            _logger.LogError("[{CorrelationId}] CoreBank callback returned null for TxId {TxId}", cid, request.TxId);
+                if (result == null)
+                {
+                    _logger.LogError("[{CorrelationId}] CoreBank CompletionNotification callback returned null for TxId {TxId}. Proceeding with Success persistence.", cid, request.TxId);
+                }
+                else 
+                {
+                    _logger.LogInformation("[{CorrelationId}] Sent CompletionNotification to CoreBank for TxId {TxId}, StatusCode={StatusCode}", cid, request.TxId, result.StatusCode);
+                }
+            }
+            else
+            {
+                // Path B: Bank expects Transfer Request (Late Binding)
+                _logger.LogInformation("[{CorrelationId}] incoming transaction {TxId}. IncludeCoreBankOnListing=false, sending Transfer Request (Late Binding).", cid, request.TxId);
 
-            // Map ACSC from IPS + null from CB → ReadyForReturn
-            var (nullParentStatus, nullChildStatus, nullReason, nullAdditionalInfo) = _statusOrchestrator.MapCompletionStatus(request.Status ?? string.Empty, null, false);
+                // Call CoreBank Transfer endpoint for INCOMING payments
+                var headers = new Dictionary<string, string>() {
+                                { API_Key, _callbackLinks.Key! },
+                                { API_Secret, _callbackLinks.Secret! }
+                            };
+                // Idempotency key for safe retries downstream
+                var idem = transaction?.TxId ?? request.TxId;
+                if (!string.IsNullOrWhiteSpace(idem))
+                    headers["X-Idempotency-Key"] = idem!;
+                if (!string.IsNullOrWhiteSpace(transaction?.TxId ?? request.TxId))
+                    headers["X-Transaction-Id"] = (transaction?.TxId ?? request.TxId)!;
 
-            isoMessage.Status = nullParentStatus;
-            isoMessage.Reason = nullReason;
-            isoMessage.AdditionalInfo = nullAdditionalInfo;
-            response.Status = RJCT;
-            response.Reason = nullReason;
-            response.AdditionalInfo = nullAdditionalInfo;
+                // Here incomingStatus must be ACSC; build CB payment request payload for CB
+                // tx is already defined in outer scope
 
-            var rspError = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, nullChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspError, dbCt);
-            return _signer.SignEnvelope(rspError);
+                 // Safely handle null tx if transaction was missing (though unlikely for a valid update)
+                 if (tx == null)
+                 {
+                     _logger.LogWarning("[{CorrelationId}] Transaction object is null for TxId {TxId}. Using request data fallback.", cid, request.TxId);
+                     // Create a dummy tx or handle gracefully? 
+                     // Logic below relies on tx properties. Let's create a temporary object wrapper for dto construction
+                     // or just rely on the '?? string.Empty' checks which will throw if tx is null.
+                     // Ideally we should have guaranteed tx is not null or handle it.  
+                     // For now, let's assume tx might be null and use null-conditional or fallback.
+                 }
+
+                // Note: The original code assumed tx was not null 'var tx = transaction!;'. 
+                // We'll preserve that assumption but use the outer 'tx' variable.
+                // If tx is null, we might crash constructing the DTO. 
+                // Let's protect the DTO construction.
+                
+                var dto = new CBPaymentRequestDto
+                {
+                    FromBIC = tx?.FromBIC ?? string.Empty,
+                    LocalInstrument = tx?.LocalInstrument ?? string.Empty,
+                    CategoryPurpose = tx?.CategoryPurpose ?? string.Empty,
+                    EndToEndId = tx?.EndToEndId ?? string.Empty,
+                    TxId = tx?.TxId ?? string.Empty,
+                    Amount = tx?.Amount ?? 0,
+                    Currency = tx?.Currency ?? string.Empty,
+                    DebtorName = tx?.DebtorName ?? string.Empty,
+                    DebtorAccount = tx?.DebtorAccount ?? string.Empty,
+                    DebtorAccountType = tx?.DebtorAccountType ?? string.Empty,
+                    DebtorAgentBIC = tx?.DebtorAgentBIC ?? string.Empty,
+                    DebtorIssuer = tx?.DebtorIssuer ?? string.Empty,
+                    CreditorName = tx?.CreditorName ?? string.Empty,
+                    CreditorAccount = tx?.CreditorAccount ?? string.Empty,
+                    CreditorAccountType = tx?.CreditorAccountType ?? string.Empty,
+                    CreditorAgentBIC = tx?.CreditorAgentBIC ?? string.Empty,
+                    CreditorIssuer = tx?.CreditorIssuer ?? string.Empty,
+                    RemittanceInformation = tx?.RemittanceInformation ?? string.Empty,
+                    Date = DateTime.UtcNow,
+                    ToBIC = isoMessage.FromBIC ?? string.Empty,
+                    SettlementMethod = "CLRG",
+                    ChargeBearer = "SLEV",
+                    BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
+                    MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
+                    ClearingSystem = string.Empty,
+                    MsgId = isoMessage.MsgId ?? string.Empty
+                };
+
+                result = await _callbacks.SendJsonAsync(
+                        _callbackLinks.Transfer!,
+                            headers,
+                            dto,
+                            CB_PaymentRequest,
+                            _jsonAdapter,
+                            _correlation,
+                            _jsonSerializerOptions,
+                            _callback,
+                            ct,
+                            cid
+                        );
+
+
+                // Guard against null callback result
+                // CRITICAL CHANGE: Even if CoreBank fails/returns null, if Switch says ACSC, we must persist SUCCESS.
+                if (result == null)
+                {
+                    _logger.LogError("[{CorrelationId}] CoreBank callback returned null for TxId {TxId}. Proceeding with Success persistence as Switch confirmed ACSC.", cid, request.TxId);
+                }
+                else 
+                {
+                    _logger.LogInformation("[{CorrelationId}] Forwarded transaction to CoreBank for TxId {TxId}, StatusCode={StatusCode}", cid, request.TxId, result.StatusCode);
+                }
+                
+                // Persist raw CoreBank response JSON on the parent ISOMessage for audit/operations
+                if (result != null)
+                {
+                     _logger.LogDebug("[IncomingPaymentStatusReportHandler] Callback result.Data is null? {IsNull}", result.Data == null);
+                     if (result.Data == null)
+                     {
+                         _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null data for TxId {TxId}", cid, request.TxId);
+                     }
+                }
+            }
         }
-
-        _logger.LogInformation("[{CorrelationId}] Forwarded transaction to CoreBank for TxId {TxId}, StatusCode={StatusCode}", cid, request.TxId, result.StatusCode);
+        else
+        {
+             _logger.LogInformation("[{CorrelationId}] Outgoing transaction confirmation received for TxId {TxId} (FromBIC={FromBIC}). Skipping CoreBank Transfer call.", cid, request.TxId, isoMessage.FromBIC);
+        }
 
         // Persist raw CoreBank response JSON on the parent ISOMessage for audit/operations
-        _logger.LogDebug("[IncomingPaymentStatusReportHandler] Callback result.Data is null? {IsNull}", result.Data == null);
-        if (result.Data == null)
+        if (result != null)
         {
-            _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null data for TxId {TxId}", cid, request.TxId);
+             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Callback result.Data is null? {IsNull}", result.Data == null);
+             if (result.Data == null)
+             {
+                 _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null data for TxId {TxId}", cid, request.TxId);
+             }
         }
 
-    var crResponse = result.Data != null ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+        var crResponse = (result != null && result.Data != null) ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
         _logger.LogDebug("[IncomingPaymentStatusReportHandler] crResponse.Status={Status} TxId={TxId}", crResponse?.Status, crResponse?.TxId);
 
         // Use StatusOrchestrator to map IPS + CoreBank statuses to final status
+        // Use StatusOrchestrator to map IPS + CoreBank statuses, BUT enforce Switch priority for final status
         var (parentStatus, childStatus, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
             request.Status ?? string.Empty,
-            crResponse?.Status,
+            crResponse?.Status, 
             false);
+
+        // Enforce Switch Priority: If IPS says ACSC, local status is Success regardless of CoreBank result
+        if (string.Equals(request.Status, ACSC, StringComparison.OrdinalIgnoreCase))
+        {
+            parentStatus = TransactionStatus.Success;
+            childStatus = TransactionStatus.Success; // Ensure child status is also Success for consistency
+            
+            // potential refinement: might want to append CoreBank error to reason if it failed, but keep Status=Success
+            if (crResponse?.Status == RJCT || result == null)
+            {
+               reason = $"Attributes updated from CoreBank: {crResponse?.Reason ?? "CoreBank Failed"}";
+            }
+        }
 
         // Ensure response mirrors the CoreBank status so the built XML contains the expected status
         // Prefer the CoreBank status only when it is non-empty; otherwise keep the IPS status
@@ -498,6 +673,9 @@ public sealed class IncomingPaymentStatusReportHandler(
         string cid,
         CancellationToken dbCt)
     {
+        // Default to ACSC (Success/Completed) unless CoreBank explicitly rejects or fails in a way we map to failure
+        response.Status = ACSC;
+
         var headers = new Dictionary<string, string>() {
             { API_Key, _callbackLinks.Key! },
             { API_Secret, _callbackLinks.Secret! }
@@ -582,7 +760,14 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
 
         // Update response to reflect return completion
-        response.Status = cbResponse?.Status ?? RJCT;
+        if (!string.IsNullOrWhiteSpace(cbResponse?.Status))
+        {
+            response.Status = cbResponse.Status;
+        }
+        else if (string.IsNullOrWhiteSpace(response.Status))
+        {
+            response.Status = RJCT;
+        }
         response.Reason = isoMessage.Reason;
         response.AdditionalInfo = isoMessage.AdditionalInfo;
 

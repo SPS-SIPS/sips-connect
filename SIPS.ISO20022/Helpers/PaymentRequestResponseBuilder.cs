@@ -162,9 +162,9 @@ public static class PaymentRequestResponseBuilder
                         StsRsnInf = request.Status != "ACSC"? [
                             new StatusReasonInformation12 {
                                 Rsn = new StatusReason6Choice {
-                                    Prtry = request.Reason
+                                    Prtry = request.Reason ?? string.Empty
                                 },
-                                AddtlInf = [request.AdditionalInfo]
+                                AddtlInf = [request.AdditionalInfo ?? string.Empty]
                             }
                         ]: null,
                         AccptncDtTm = DateTime.UtcNow,

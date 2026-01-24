@@ -23,6 +23,7 @@ using SIPS.Core.Services.Implementations;
 using SIPS.PostgreSQL.Enums;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using SIPS.Core;
 namespace SIPS.Core.Services;
 public sealed class IncomingReturnTransactionHandler(
     ISO20022Options options,
@@ -38,7 +39,6 @@ public sealed class IncomingReturnTransactionHandler(
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
     IISOMessageService isoService,
-    IStatusOrchestrator statusOrchestrator,
     IOptions<CoreOptions> coreOptions
     ) : IIncomingReturnTransactionHandler
 {
@@ -55,7 +55,6 @@ public sealed class IncomingReturnTransactionHandler(
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
-    private readonly IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
@@ -80,7 +79,6 @@ public sealed class IncomingReturnTransactionHandler(
               new InboundMessageService(signature),
               new CallbackOrchestrator(),
               new ISOMessageService(persistence),
-              new StatusOrchestrator(logger as ILogger<StatusOrchestrator> ?? throw new ArgumentNullException("StatusOrchestrator logger")),
               coreOptions)
     {
     }
@@ -189,6 +187,71 @@ public sealed class IncomingReturnTransactionHandler(
             }
         }
 
+
+        // CoreBank Integration (Optional)
+        // If configured, we notify CoreBank about the return request.
+        // We propagate rejection (RJCT) if CoreBank rejects it (Active Decision).
+        // Otherwise, we accept as ACSC (locally Pending/ReadyForReturn) and await pacs.002.
+        if (_core.IncludeCoreBankOnListing)
+        {
+            try
+            {
+                var cbRequest = new CBReturnRequestDto
+                {
+                    OrgnlTxId = request.OrgnlTxId,
+                    ReturnId = request.ReturnId,
+                    Reason = request.ReturnReason,
+                    AdditionalInfo = request.AdditionalInfo,
+                    OriginalEndToEnd = request.OriginalEndToEnd,
+                    FromBIC = request.From
+                };
+
+                var headers = new Dictionary<string, string>() {
+                        { Constants.API_Key, _callbackLinks.Key! },
+                        { Constants.API_Secret, _callbackLinks.Secret! }
+                    };
+
+                var result = await _callbacks.SendJsonAsync(
+                    _callbackLinks.Return!,
+                    headers,
+                    cbRequest,
+                    Constants.CB_ReturnRequest,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+
+                if (result?.Data != null)
+                {
+                    var cbResult = ParseCallbackResult(result.Data, originalMessage);
+                    if (cbResult != null && cbResult.Status == RJCT)
+                    {
+                        // Active Decision: CoreBank rejected the return
+                        _logger.LogWarning("[{CorrelationId}] Return rejected by CoreBank for TxId {TxId}. Reason: {Reason}", cid, request.OrgnlTxId, cbResult.Reason);
+                        response.Status = RJCT;
+                        response.Reason = cbResult.Reason ?? MISS;
+                        response.AdditionalInfo = cbResult.AdditionalInfo ?? "Rejected by CoreBank";
+
+                        // We still persist the return request, but mark it as rejected.
+                        
+                        var rspReject = ReturnPaymentResponseBuilder.Build(response);
+                        // User Requirement: Return RJCT to switch, but persist as Pending (PDNG) locally
+                        // to allow for downsteam/manual resolution or waiting for switch confirmation (if applicable).
+                        await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspReject, dbCt);
+                        return _signer.SignEnvelope(rspReject);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[{CorrelationId}] Error communicating with CoreBank for Return {TxId}. Proceeding with default flow.", cid, request.OrgnlTxId);
+                // Fallback: Proceed to accept locally if CoreBank fails (don't block return on transient CB errors)
+            }
+        }
+
         try
         {
             // Step 7: Mark original transaction as ReadyForReturn and return ACSC
@@ -273,43 +336,12 @@ public sealed class IncomingReturnTransactionHandler(
     {
         return AdminMessage.Generate(message);
     }
-    private void ParseCallbackResult(JsonObject data, ReturnPaymentResponseBuilder.Response response, PostgreSQL.Models.ISOMessage originalMessage)
+    private CBReturnResponseDto? ParseCallbackResult(JsonObject data, PostgreSQL.Models.ISOMessage originalMessage)
     {
         var js = JsonSerializer.Deserialize<JsonObject>(data, _jsonSerializerOptions);
 
         var md = _jsonAdapter.Transform(js!, CB_ReturnResponse);
 
-        var deserializedContent = _jsonAdapter.ToObject<CBReturnResponseDto>(md);
-
-        if (deserializedContent == null)
-        {
-            response.Status = RJCT;
-            response.Reason = MISS;
-            response.AdditionalInfo = "Failed to parse the message.";
-            return;
-        }
-
-        var originalTransaction = originalMessage.Transactions.FirstOrDefault();
-
-        response.Status = deserializedContent.Status ?? RJCT;
-        response.Reason = deserializedContent.Reason ?? string.Empty;
-        response.AdditionalInfo = deserializedContent.AdditionalInfo ?? string.Empty;
-        response.TxId = deserializedContent.OrgnlTxId ?? string.Empty;
-
-        response.Original.From = originalMessage.FromBIC ?? string.Empty;
-        response.Original.To = originalMessage.ToBIC ?? string.Empty;
-        response.Original.BizMsgIdr = originalMessage.BizMsgIdr ?? string.Empty;
-        response.Original.MsgId = originalMessage.MsgId ?? string.Empty;
-        response.Original.ClearingSystem = "FP";
-        response.Original.CreDt = originalMessage.Date.UtcDateTime;
-        if (originalTransaction != null)
-        {
-            response.Original.LocalInstrument = originalTransaction.LocalInstrument ?? string.Empty;
-            response.Original.CategoryPurpose = originalTransaction.CategoryPurpose ?? string.Empty;
-            response.Original.OriginalEndToEnd = originalTransaction.EndToEndId ?? string.Empty;
-            response.Original.OrgnlTxId = originalTransaction.TxId ?? string.Empty;
-            response.Original.OriginalAmount = originalTransaction.Amount;
-            response.Original.OriginalCurrency = originalTransaction.Currency ?? string.Empty;
-        }
+        return _jsonAdapter.ToObject<CBReturnResponseDto>(md);
     }
 }

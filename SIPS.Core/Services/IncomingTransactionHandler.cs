@@ -17,6 +17,9 @@ using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
 using SIPS.PostgreSQL.Enums;
+using System.Text.Json.Nodes;
+using SIPS.ISO20022.Models.DTOs;
+using SIPS.ISO20022.Models.DTOs.CB;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 namespace SIPS.Core.Services;
@@ -58,16 +61,11 @@ namespace SIPS.Core.Services;
 public sealed class IncomingTransactionHandler(
     ISO20022Options options,
     ILogger<IncomingTransactionHandler> logger,
-    IInterfaceHttpClient httpClient,
     INativeSigner signer,
-    INativeVerifier verifier,
     IJsonAdapter jsonAdapter,
-    IIncomingRecorder record,
-    ISignatureService signature,
     IPaymentRequestParser parser,
     ICallbackClient callback,
     IResponseFactory responseFactory,
-    IPersistenceGateway persistence,
     ICorrelationService correlation,
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
@@ -76,17 +74,12 @@ public sealed class IncomingTransactionHandler(
     ) : IIncomingTransactionHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
-    private readonly IInterfaceHttpClient _httpClient = httpClient;
     private readonly ILogger<IncomingTransactionHandler> _logger = logger;
     private readonly INativeSigner _signer = signer;
-    private readonly INativeVerifier _verifier = verifier;
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
-    private readonly IIncomingRecorder _record = record;
-    private readonly ISignatureService _signature = signature;
     private readonly IPaymentRequestParser _parser = parser;
     private readonly ICallbackClient _callback = callback;
     private readonly IResponseFactory _responses = responseFactory;
-    private readonly IPersistenceGateway _persistence = persistence;
     private readonly ICorrelationService _correlation = correlation;
     private readonly IInboundMessageService _inbound = inbound;
     private readonly ICallbackOrchestrator _callbacks = callbacks;
@@ -99,7 +92,7 @@ public sealed class IncomingTransactionHandler(
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
-    // Compatibility constructor for tests and existing code paths
+    // Compatibility constructor for tests and existing code paths (14 args)
     public IncomingTransactionHandler(
         ISO20022Options options,
         ILogger<IncomingTransactionHandler> logger,
@@ -115,11 +108,34 @@ public sealed class IncomingTransactionHandler(
         IPersistenceGateway persistence,
         ICorrelationService correlation,
         IOptions<CoreOptions> coreOptions)
-        : this(options, logger, httpClient, signer, verifier, jsonAdapter, record, signature, parser, callback, responseFactory, persistence, correlation,
+        : this(options, logger, signer, jsonAdapter, parser, callback, responseFactory, correlation,
               new InboundMessageService(signature),
               new CallbackOrchestrator(),
               new ISOMessageService(persistence),
               coreOptions)
+    {
+    }
+
+    // Legacy Primary Constructor (17 args) - Restored for test compatibility
+    public IncomingTransactionHandler(
+        ISO20022Options options,
+        ILogger<IncomingTransactionHandler> logger,
+        IInterfaceHttpClient httpClient,
+        INativeSigner signer,
+        INativeVerifier verifier,
+        IJsonAdapter jsonAdapter,
+        IIncomingRecorder record,
+        ISignatureService signature,
+        IPaymentRequestParser parser,
+        ICallbackClient callback,
+        IResponseFactory responseFactory,
+        IPersistenceGateway persistence,
+        ICorrelationService correlation,
+        IInboundMessageService inbound,
+        ICallbackOrchestrator callbacks,
+        IISOMessageService isoService,
+        IOptions<CoreOptions> coreOptions)
+        : this(options, logger, signer, jsonAdapter, parser, callback, responseFactory, correlation, inbound, callbacks, isoService, coreOptions)
     {
     }
     public async Task<string> HandleAsync(string message, CancellationToken ct)
@@ -145,29 +161,119 @@ public sealed class IncomingTransactionHandler(
         // Step 3: Prepare response object
         var response = _responses.BuildPaymentInitial(request);
 
+        // CoreBank Integration (Optional)
+        if (_core.IncludeCoreBankOnListing)
+        {
+            try
+            {
+                var headers = new Dictionary<string, string>() {
+                        { API_Key, _callbackLinks.Key! },
+                        { API_Secret, _callbackLinks.Secret! }
+                    };
+                // Idempotency key
+                if (!string.IsNullOrWhiteSpace(request.TxId))
+                    headers["X-Idempotency-Key"] = request.TxId;
+                if (!string.IsNullOrWhiteSpace(request.TxId))
+                    headers["X-Transaction-Id"] = request.TxId;
+
+                var dto = new CBPaymentRequestDto
+                {
+                    FromBIC = request.From ?? string.Empty,
+                    LocalInstrument = string.Empty, 
+                    CategoryPurpose = string.Empty,
+                    EndToEndId = request.EndToEndId ?? string.Empty,
+                    TxId = request.TxId ?? string.Empty,
+                    Amount = request.Amount,
+                    Currency = request.Currency ?? string.Empty,
+                    DebtorName = request.Debtor?.Name ?? string.Empty,
+                    DebtorAccount = request.Debtor?.Account ?? string.Empty,
+                    DebtorAccountType = request.Debtor?.AccountType ?? string.Empty,
+                    DebtorAgentBIC = string.Empty,
+                    DebtorIssuer = string.Empty,
+                    CreditorName = request.Creditor?.Name ?? string.Empty,
+                    CreditorAccount = request.Creditor?.Account ?? string.Empty,
+                    CreditorAccountType = request.Creditor?.AccountType ?? string.Empty,
+                    CreditorAgentBIC = string.Empty,
+                    CreditorIssuer = string.Empty,
+                    RemittanceInformation = string.Empty,
+                    Date = DateTime.UtcNow,
+                    ToBIC = request.To ?? string.Empty,
+                    SettlementMethod = "CLRG",
+                    ChargeBearer = "SLEV",
+                    BizMsgIdr = request.BizMsgIdr ?? string.Empty,
+                    MsgDefIdr = request.MsgDefIdr ?? string.Empty,
+                    ClearingSystem = string.Empty,
+                    MsgId = request.MsgId ?? string.Empty
+                };
+
+                var result = await _callbacks.SendJsonAsync(
+                    _callbackLinks.Transfer!,
+                    headers,
+                    dto,
+                    CB_PaymentRequest,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+
+                if (result?.Data != null)
+                {
+                    var cbResponse = ParseCallbackResult(result.Data);
+                    if (cbResponse.Status == RJCT)
+                    {
+                        _logger.LogWarning("[{CorrelationId}] CoreBank rejected transaction {TxId}. Returning RJCT.", cid, request.TxId);
+                        response.Status = RJCT;
+                        response.Reason = cbResponse.Reason;
+                        response.AdditionalInfo = cbResponse.AdditionalInfo;
+                    }
+                    else
+                    {
+                        _logger.LogInformation("[{CorrelationId}] CoreBank returned status {Status} for transaction {TxId}. Proceeding with ACSC.", cid, cbResponse.Status, request.TxId);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null or empty data for TxId {TxId}. Proceeding with ACSC.", cid, request.TxId);
+                }
+            }
+            catch (Exception ex)
+            {
+                 _logger.LogError(ex, "[{CorrelationId}] Failed to call CoreBank for TxId {TxId}. Proceeding with ACSC.", cid, request.TxId);
+            }
+        }
+
         try
         {
             using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
-            // Step 4: Immediately acknowledge with ACSC to the sender
-            // CoreBank processing and final status determination will occur upon pacs.002 completion
-            response.Status = ACSC;
-            response.Reason = null;
-            response.AdditionalInfo = null;
+            
+            // Step 4: Determine final status
+            // If response.Status was set to RJCT by CoreBank logic, use it.
+            // Otherwise default to ACSC (Pending).
+            if (response.Status != RJCT)
+            {
+                response.Status = ACSC;
+                response.Reason = string.Empty;
+                response.AdditionalInfo = string.Empty;
+            }
 
             // Step 5: Build and persist initial ACK response
-            // Transaction remains in Pending state until pacs.002 (ACSC) is received from IPS
+            // Transaction remains in Pending state regardless of RJCT/ACSC return to switch, 
+            // as downstream completion/reversal will finalize the state.
             var rsp = PaymentRequestResponseBuilder.Build(response);
             await _isoService.PersistTransactionResponseAsync(record,
                 TransactionStatus.Pending,
-                "Transaction Is Pending For Approval",
-                null,
+                !string.IsNullOrEmpty(response.Reason) ? response.Reason : "Transaction Is Pending For Approval",
+                response.AdditionalInfo,
                 rsp,
                 request.TxId ?? string.Empty,
                 request.EndToEndId ?? string.Empty,
                 dbCt);
 
-            _logger.LogInformation("[{CorrelationId}] pacs.008 initiation complete for TxId {TxId}. Awaiting pacs.002 completion from IPS.", cid, request.TxId);
+            _logger.LogInformation("[{CorrelationId}] pacs.008 initiation complete for TxId {TxId}. Status={Status}. Awaiting pacs.002 completion from IPS.", cid, request.TxId, response.Status);
 
             return _signer.SignEnvelope(rsp);
         }
@@ -189,4 +295,22 @@ public sealed class IncomingTransactionHandler(
         }
     }
 
+    private PaymentResponseDto ParseCallbackResult(JsonObject data)
+    {
+        var js = data;
+        var md = _jsonAdapter.Transform(js!, "CB_PaymentResponse");
+        var cb = _jsonAdapter.ToObject<SIPS.ISO20022.Models.DTOs.CB.CBPaymentStatusResponseDto>(md);
+        if (cb == null)
+            return new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+
+        return new PaymentResponseDto
+        {
+            Status = cb.Status ?? string.Empty,
+            TxId = cb.TxId ?? string.Empty,
+            AcceptanceDate = cb.AcceptanceDate,
+            AdditionalInfo = cb.AdditionalInfo,
+            Reason = cb.Reason,
+            EndToEndId = cb.EndToEndId ?? string.Empty
+        };
+    }
 }

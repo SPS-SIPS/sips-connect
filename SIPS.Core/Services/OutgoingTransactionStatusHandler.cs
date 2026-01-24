@@ -155,6 +155,9 @@ public sealed class OutgoingTransactionStatusHandler(
             // This resolves the timeout scenario where CoreBank received PDNG and is waiting for final status
             if (isOriginalPayment && (finalStatus == TransactionStatus.Success || finalStatus == TransactionStatus.Failed))
             {
+                // User Feedback: Outgoing payments do not require CoreBank completion notification (banks already debited).
+                // Existing notification logic disabled.
+                /*
                 _logger.LogInformation("[{CorrelationId}] SAF resolved status for outgoing transaction {TxId}. Notifying CoreBank of completion.", cid, isoMessage.TxId);
                 var notificationSuccess = await NotifyCoreBankCompletionAsync(isoMessage, rs.Status ?? RJCT, rs.Reason, rs.AdditionalInfo, ct, cid);
 
@@ -176,6 +179,8 @@ public sealed class OutgoingTransactionStatusHandler(
                         AdditionalInfo = $"Final status: {rs.Status}. Notification will be retried."
                     });
                 }
+                */
+                _logger.LogInformation("[{CorrelationId}] SAF resolved status for outgoing transaction {TxId}. CoreBank notification disabled by policy.", cid, isoMessage.TxId);
             }
 
             // If this was a ReadyForReturn payment (incoming return scenario) and status is now confirmed,
