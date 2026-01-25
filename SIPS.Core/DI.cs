@@ -89,6 +89,9 @@ public static class DI
 
         services.AddCronJob<SAFWorker>(new JobConfiguration { Expression = expression, TimeZoneInfo = timeZoneInfo });
 
+        var timeoutSchedule = configuration.GetSection("Core:TimeoutWorkerSchedule").Value ?? "*/15 * * * *";
+        services.AddCronJob<TimeoutWorker>(new JobConfiguration { Expression = timeoutSchedule, TimeZoneInfo = timeZoneInfo });
+
         return services;
     }
 }

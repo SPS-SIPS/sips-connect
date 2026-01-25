@@ -135,68 +135,92 @@ public sealed class ReturnRetryHandler(
                 };
             }
 
-            // Step 4: Prepare headers for CoreBank call
-            var headers = new Dictionary<string, string>
-            {
-                { API_Key, _callbackLinks.Key! },
-                { API_Secret, _callbackLinks.Secret! }
-            };
-
-            if (!string.IsNullOrWhiteSpace(transaction.TxId))
-                headers["X-Transaction-Id"] = transaction.TxId;
+            Response<System.Text.Json.Nodes.JsonObject?>? result = null;
             var retryId = $"{transaction.TxId}-retry-{DateTime.UtcNow:yyyyMMddHHmmss}";
-            if (!string.IsNullOrWhiteSpace(transaction.TxId))
-                headers["X-Idempotency-Key"] = retryId;
-            if (!string.IsNullOrWhiteSpace(retryId))
-                headers["X-Retry-Id"] = retryId;
 
-            // Step 5: Build payment request payload for CoreBank with full transaction data
-            var paymentDto = new CBPaymentRequestDto
+            if (_core.IncludeCoreBankOnListing)
             {
-                FromBIC = transaction.FromBIC ?? string.Empty,
-                LocalInstrument = transaction.LocalInstrument ?? string.Empty,
-                CategoryPurpose = transaction.CategoryPurpose ?? string.Empty,
-                EndToEndId = transaction.EndToEndId ?? string.Empty,
-                TxId = transaction.TxId ?? string.Empty,
-                Amount = transaction.Amount,
-                Currency = transaction.Currency ?? string.Empty,
-                DebtorName = transaction.DebtorName ?? string.Empty,
-                DebtorAccount = transaction.DebtorAccount ?? string.Empty,
-                DebtorAccountType = transaction.DebtorAccountType ?? string.Empty,
-                DebtorAgentBIC = transaction.DebtorAgentBIC ?? string.Empty,
-                DebtorIssuer = transaction.DebtorIssuer ?? string.Empty,
-                CreditorName = transaction.CreditorName ?? string.Empty,
-                CreditorAccount = transaction.CreditorAccount ?? string.Empty,
-                CreditorAccountType = transaction.CreditorAccountType ?? string.Empty,
-                CreditorAgentBIC = transaction.CreditorAgentBIC ?? string.Empty,
-                CreditorIssuer = transaction.CreditorIssuer ?? string.Empty,
-                RemittanceInformation = transaction.RemittanceInformation ?? string.Empty,
-                Date = DateTime.UtcNow,
-                ToBIC = isoMessage.FromBIC ?? string.Empty,
-                SettlementMethod = "CLRG",
-                ChargeBearer = "SLEV",
-                BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
-                MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
-                ClearingSystem = string.Empty,
-                MsgId = isoMessage.MsgId ?? string.Empty
-            };
+                // Path A: Permission enabled. Bank already saw the request. Send Completion Notification.
+                var notificationHeaders = new Dictionary<string, string>
+                {
+                    { API_Key, _callbackLinks.Key! },
+                    { API_Secret, _callbackLinks.Secret! }
+                };
+                if (!string.IsNullOrWhiteSpace(transaction.TxId))
+                {
+                    notificationHeaders["X-Transaction-Id"] = transaction.TxId;
+                    notificationHeaders["X-Idempotency-Key"] = $"{transaction.TxId}-compl-{isoMessage.Round}";
+                }
 
-            _logger.LogInformation("[{CorrelationId}] Calling CoreBank transfer endpoint for TxId {TxId} with RetryId {RetryId}",
-                cid, txId, retryId);
+                var notificationDto = new CBCompletionNotification
+                {
+                    OriginalTxId = transaction.TxId ?? string.Empty,
+                    OriginalEndToEndId = transaction.EndToEndId,
+                    Status = ACSC,
+                    Reason = isoMessage.Reason ?? "Return retry confirmed",
+                    AdditionalInfo = isoMessage.AdditionalInfo ?? "Retry successful"
+                };
 
-            // Step 6: Call CoreBank transfer endpoint to retry the return request
-            var result = await _callbacks.SendJsonAsync(
-                _callbackLinks.Transfer!,
-                headers,
-                paymentDto,
-                CB_PaymentRequest,
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                ct,
-                cid
-            );
+                _logger.LogInformation("[{CorrelationId}] Calling CoreBank CompletionNotification endpoint for TxId {TxId} (Retry Flow)", cid, txId);
+                result = await _callbacks.SendJsonAsync(
+                    _callbackLinks.CompletionNotification!,
+                    notificationHeaders,
+                    notificationDto,
+                    Constants.CB_CompletionNotification,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+            }
+            else
+            {
+                // Path B: Permission disabled. Bank has not executed this yet. Send Return Request (Execution).
+                // Aligns with IncomingPaymentStatusReportHandler logic.
+                
+                var headers = new Dictionary<string, string>
+                {
+                    { API_Key, _callbackLinks.Key! },
+                    { API_Secret, _callbackLinks.Secret! }
+                };
+
+                if (!string.IsNullOrWhiteSpace(transaction.TxId))
+                    headers["X-Transaction-Id"] = transaction.TxId;
+                
+                if (!string.IsNullOrWhiteSpace(transaction.TxId))
+                    headers["X-Idempotency-Key"] = retryId;
+                if (!string.IsNullOrWhiteSpace(retryId))
+                    headers["X-Retry-Id"] = retryId;
+                if (!string.IsNullOrWhiteSpace(isoMessage.ReturnId))
+                    headers["X-Return-Id"] = isoMessage.ReturnId;
+
+                var returnDto = new CBReturnRequestDto
+                {
+                    FromBIC = isoMessage.FromBIC ?? string.Empty,
+                    OriginalEndToEnd = transaction.EndToEndId ?? string.Empty,
+                    OrgnlTxId = transaction.TxId ?? string.Empty,
+                    ReturnId = isoMessage.ReturnId ?? string.Empty,
+                    Reason = isoMessage.Reason ?? "Return retry",
+                    AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty
+                };
+
+                _logger.LogInformation("[{CorrelationId}] Calling CoreBank Return endpoint for TxId {TxId} with RetryId {RetryId}", cid, txId, retryId);
+
+                result = await _callbacks.SendJsonAsync(
+                    _callbackLinks.Return!,
+                    headers,
+                    returnDto,
+                    CB_ReturnRequest,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+            }
 
             // Step 7: Handle CoreBank response
             if (result == null)

@@ -116,6 +116,8 @@ public class ReturnRetryHandler_Tests
                   .Returns((TransactionStatus.ReadyForReturn, TransactionStatus.Failed, "Rejected", "Failed"));
         statusOrch.Setup(s => s.MapCompletionStatus(It.IsAny<string>(), "", It.IsAny<bool>()))
                   .Returns((TransactionStatus.ReadyForReturn, TransactionStatus.Failed, "No response", "Empty status"));
+        statusOrch.Setup(s => s.IsSuccessStatus(It.IsAny<string>()))
+                  .Returns((string s) => s == "ACSC");
 
         var correlation = new CorrelationService();
         var persistence = new PersistenceGateway(recorder.Object);
@@ -153,7 +155,7 @@ public class ReturnRetryHandler_Tests
         // Assert
         result.Should().NotBeNull();
         result.Success.Should().BeTrue();
-        result.Message.Should().Be("Return completed successfully");
+        result.Message.Should().Be("CoreBank processing completed successfully");
         result.TxId.Should().Be("TX123");
         result.Status.Should().Be("Success");
 
@@ -188,7 +190,7 @@ public class ReturnRetryHandler_Tests
         // Assert
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
-        result.Message.Should().Be("Return retry failed");
+        result.Message.Should().Be("CoreBank retry failed");
         result.Status.Should().Be("ReadyForReturn");
 
         // Verify round was incremented
@@ -236,7 +238,7 @@ public class ReturnRetryHandler_Tests
         var isoMessage = new ISOMessage
         {
             TxId = "TX123",
-            Status = TransactionStatus.Success, // Not ReadyForReturn
+            Status = TransactionStatus.Pending, // Not ReadyForReturn
             Round = 1,
             Transactions = new List<Transaction> { new() { TxId = "TX123" } }
         };
@@ -250,7 +252,7 @@ public class ReturnRetryHandler_Tests
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
         result.Message.Should().Contain("not in ReadyForReturn status");
-        result.Status.Should().Be("Success");
+        result.Status.Should().Be("Pending");
     }
 
     [Fact]
@@ -278,7 +280,7 @@ public class ReturnRetryHandler_Tests
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
         result.Message.Should().Contain("Maximum retry attempts (2) reached");
-        result.Status.Should().Be("MaxRetriesExceeded");
+        result.Status.Should().Be("ReadyForReturn");
         result.AdditionalInfo.Should().Contain("Current round: 3");
 
         // Verify CoreBank was NOT called

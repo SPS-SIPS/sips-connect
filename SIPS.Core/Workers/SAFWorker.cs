@@ -36,10 +36,10 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
         // Exclude terminal statuses (Success, Failed, ReadyForReturn) to prevent reprocessing completed transactions
         var query = storage.ISOMessages
             .Where(x
-                => x.Status == TransactionStatus.CheckStatus &&
-                    x.Round < options.SAFMaxRetries &&
-                    x.FromBIC == bic
+                => (x.Status == TransactionStatus.CheckStatus && (x.FromBIC == bic || x.ToBIC == bic)) ||
+                   (x.Status == TransactionStatus.ReadyForReturn)
                 )
+            .Where(x => x.Round < options.SAFMaxRetries)
             .AsQueryable();
 
         var count = await query.CountAsync(cancellationToken);
@@ -61,8 +61,7 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
                 // Double-check status before processing (prevent race conditions)
                 // If status changed to terminal state between query and processing, skip it
                 if (transaction.Status == TransactionStatus.Success ||
-                    transaction.Status == TransactionStatus.Failed ||
-                    transaction.Status == TransactionStatus.ReadyForReturn)
+                    transaction.Status == TransactionStatus.Failed)
                 {
                     _logger.LogWarning("SAF Job: Transaction {txId} has terminal status {status}. Skipping SAF processing.",
                         transaction.TxId, transaction.Status);

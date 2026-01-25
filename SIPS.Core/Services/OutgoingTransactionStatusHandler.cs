@@ -136,56 +136,112 @@ public sealed class OutgoingTransactionStatusHandler(
             // This happens when IncomingReturnTransactionHandler received pacs.004 but pacs.002 never arrived
             // If confirmed via SAF, we need to trigger CoreBank callback to complete the return
             var wasReadyForReturn = isoMessage.Status == TransactionStatus.ReadyForReturn;
-            var isOriginalPayment = isoMessage.MessageType == PostgreSQL.Enums.ISOMessageType.TransactionRequest;
+            var isTransferRequest = isoMessage.MessageType == PostgreSQL.Enums.ISOMessageType.TransactionRequest;
+            var isIncoming = isoMessage.ToBIC == fromBIC; 
 
-            // Single persist: update child status and response
-            record.Response = Encoding.UTF8.GetBytes(responseMessage!.Data!);
-            record.Status = finalStatus;
-            record.Reason = rs.Reason ?? MISS;
-            record.AdditionalInfo = rs.AdditionalInfo ?? string.Empty;
-
-            // Update parent ISOMessage status to match
-            isoMessage.Status = finalStatus;
-            isoMessage.Reason = rs.Reason ?? MISS;
-            isoMessage.AdditionalInfo = rs.AdditionalInfo ?? string.Empty;
-
-            await _persistence.ISOMessageStatusResponseAsync(record, dbCt);
-
-            // Notify CoreBank of completion for OUTGOING transactions that were previously in CheckStatus
-            // This resolves the timeout scenario where CoreBank received PDNG and is waiting for final status
-            if (isOriginalPayment && (finalStatus == TransactionStatus.Success || finalStatus == TransactionStatus.Failed))
+            // Handle completion for Transaction Requests (Payments) resolved via SAF
+            if (isTransferRequest && (finalStatus == TransactionStatus.Success || finalStatus == TransactionStatus.Failed))
             {
-                // User Feedback: Outgoing payments do not require CoreBank completion notification (banks already debited).
-                // Existing notification logic disabled.
-                /*
-                _logger.LogInformation("[{CorrelationId}] SAF resolved status for outgoing transaction {TxId}. Notifying CoreBank of completion.", cid, isoMessage.TxId);
-                var notificationSuccess = await NotifyCoreBankCompletionAsync(isoMessage, rs.Status ?? RJCT, rs.Reason, rs.AdditionalInfo, ct, cid);
-
-                // If notification fails, mark for retry so SAF tries again
-                if (!notificationSuccess)
+                if (isIncoming)
                 {
-                    _logger.LogWarning("[{CorrelationId}] CoreBank completion notification failed for TxId {TxId}. Marking for retry.", cid, isoMessage.TxId);
-                    await _isoService.MarkForCheckStatusAsync(
-                        isoMessage,
-                        $"CoreBank callback failed - will retry notification. Final status: {rs.Status}",
-                        ct);
-                    // Don't update the final status yet - keep it in CheckStatus for retry
-                    return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                    if (_core.IncludeCoreBankOnListing)
                     {
-                        Status = PDNG,
-                        TxId = isoMessage.TxId ?? string.Empty,
-                        EndToEndId = isoMessage.EndToEndId ?? string.Empty,
-                        Reason = "Status resolved but CoreBank notification pending",
-                        AdditionalInfo = $"Final status: {rs.Status}. Notification will be retried."
-                    });
+                        // Path A: Bank previously received the payment (Pending). Send Completion Notification.
+                        _logger.LogInformation("[{CorrelationId}] SAF resolved status for INCOMING transaction {TxId}. Notifying CoreBank.", cid, isoMessage.TxId);
+                        
+                        // For Incoming, if finalStatus is Failed, we likely don't need to notify if it was never accepted by CoreBank?
+                        // But if it was Pending in CoreBank, we MUST tell them it failed (RJCT).
+                        // If Success, we tell them ACSC.
+                        
+                        var notificationSuccess = await NotifyCoreBankCompletionAsync(isoMessage, rs.Status ?? RJCT, rs.Reason, rs.AdditionalInfo, ct, cid);
+
+                        if (!notificationSuccess)
+                        {
+                            _logger.LogWarning("[{CorrelationId}] CoreBank completion notification failed for TxId {TxId}. Marking for retry.", cid, isoMessage.TxId);
+                            await _isoService.MarkForCheckStatusAsync(
+                                 isoMessage,
+                                 $"CoreBank callback failed - will retry notification. Final status: {rs.Status}",
+                                 ct);
+                            
+                            return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                            {
+                                Status = PDNG,
+                                TxId = isoMessage.TxId ?? string.Empty,
+                                EndToEndId = isoMessage.EndToEndId ?? string.Empty,
+                                Reason = "Status resolved but CoreBank notification pending",
+                                AdditionalInfo = $"Final status: {rs.Status}. Notification will be retried. Notification Failure."
+                            });
+                        }
+                    }
+                    else
+                    {
+                        // Path B: Bank has NOT seen this payment. "Late Binding".
+                        // If Success: Send Transfer Request.
+                        // If Failed: Do nothing (Bank never knew about it).
+                        
+                        if (finalStatus == TransactionStatus.Success)
+                        {
+                            _logger.LogInformation("[{CorrelationId}] SAF resolved status for INCOMING transaction {TxId}. IncludeCoreBankOnListing=false, sending Transfer Request (Late Binding).", cid, isoMessage.TxId);
+                            var transferSuccess = await CallCoreBankTransferAsync(isoMessage, ct, cid, dbCt);
+
+                            if (!transferSuccess)
+                            {
+                                _logger.LogWarning("[{CorrelationId}] CoreBank transfer failed for TxId {TxId}. Marking for retry.", cid, isoMessage.TxId);
+                                await _isoService.MarkForCheckStatusAsync(
+                                     isoMessage,
+                                     "CoreBank transfer failed after SAF status resolution",
+                                     ct);
+                                
+                                return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                                {
+                                    Status = PDNG,
+                                    TxId = isoMessage.TxId ?? string.Empty,
+                                    EndToEndId = isoMessage.EndToEndId ?? string.Empty,
+                                    Reason = "Status resolved but CoreBank transfer pending",
+                                    AdditionalInfo = "Transfer Request failed. Will be retried."
+                                });
+                            }
+                        }
+                        else
+                        {
+                             _logger.LogInformation("[{CorrelationId}] SAF resolved status for INCOMING transaction {TxId} as Failed. IncludeCoreBankOnListing=false, so skipping CoreBank notification (never persisted).", cid, isoMessage.TxId);
+                        }
+                    }
                 }
-                */
-                _logger.LogInformation("[{CorrelationId}] SAF resolved status for outgoing transaction {TxId}. CoreBank notification disabled by policy.", cid, isoMessage.TxId);
+                else
+                {
+                    // OUTGOING Payment
+                     _logger.LogInformation("[{CorrelationId}] SAF resolved status for OUTGOING transaction {TxId}. Always Permissive: Notifying CoreBank.", cid, isoMessage.TxId);
+
+                    // Outgoing Transactions ALWAYS notify CoreBank of completion (Permissive Mode),
+                    // because the Bank initiated them and is holding funds/state.
+                    
+                    var notificationSuccess = await NotifyCoreBankCompletionAsync(isoMessage, rs.Status ?? RJCT, rs.Reason, rs.AdditionalInfo, ct, cid);
+
+                    if (!notificationSuccess)
+                    {
+                        _logger.LogWarning("[{CorrelationId}] CoreBank completion notification failed for Outgoing TxId {TxId} during SAF. Marking for retry.", cid, isoMessage.TxId);
+                        
+                        await _isoService.MarkForCheckStatusAsync(
+                             isoMessage,
+                             $"CoreBank callback failed - will retry notification. Final status: {rs.Status}",
+                             ct);
+                        
+                        return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                        {
+                            Status = PDNG,
+                            TxId = isoMessage.TxId ?? string.Empty,
+                            EndToEndId = isoMessage.EndToEndId ?? string.Empty,
+                            Reason = "Status resolved but CoreBank notification pending",
+                            AdditionalInfo = $"Final status: {rs.Status}. Notification will be retried (Outgoing)."
+                        });
+                    }
+                }
             }
 
             // If this was a ReadyForReturn payment (incoming return scenario) and status is now confirmed,
             // trigger CoreBank callback to complete the return (reverse the credit)
-            if (wasReadyForReturn && isOriginalPayment && finalStatus == TransactionStatus.Success)
+            if (wasReadyForReturn && isTransferRequest && finalStatus == TransactionStatus.Success)
             {
                 _logger.LogInformation("[{CorrelationId}] Incoming return for payment {TxId} confirmed via SAF. Calling CoreBank to process return.", cid, isoMessage.TxId);
 
@@ -233,7 +289,7 @@ public sealed class OutgoingTransactionStatusHandler(
         request = PaymentStatusRequestBuilder.Build(new PaymentStatusRequestBuilder.Request
         {
             From = fromBIC,
-            To = isoMessage.FromBIC,
+            To = isoMessage.FromBIC == fromBIC ? isoMessage.ToBIC : isoMessage.FromBIC,
             MsgDefIdr = SupportedMessageTypes.CreditTransferStatusRequest.Id,
             OriginalEndToEnd = isoMessage.EndToEndId!,
             OrgnlTxId = message.TxId,
@@ -397,32 +453,62 @@ public sealed class OutgoingTransactionStatusHandler(
             if (!string.IsNullOrWhiteSpace(isoMessage.ReturnId))
                 headers["X-Return-Id"] = isoMessage.ReturnId;
 
-            // Get transaction details for the return
             var transaction = isoMessage.Transactions.FirstOrDefault();
+            Response<System.Text.Json.Nodes.JsonObject?>? result = null;
 
-            // Build return request payload for CoreBank
-            var returnDto = new CBReturnRequestDto
+            if (_core.IncludeCoreBankOnListing)
             {
-                FromBIC = isoMessage.FromBIC ?? string.Empty,
-                OriginalEndToEnd = transaction?.EndToEndId ?? string.Empty,
-                OrgnlTxId = isoMessage.TxId ?? string.Empty,
-                ReturnId = isoMessage.ReturnId ?? string.Empty,
-                Reason = "Return confirmed by IPS via SAF",
-                AdditionalInfo = isoMessage.AdditionalInfo ?? "Return processed via Store-and-Forward mechanism"
-            };
+                 // Path A: Bank previously approved the return (Permission Step). 
+                 // Send Completion Notification to confirm finality.
+                 var notificationDto = new CBCompletionNotification
+                 {
+                     OriginalTxId = isoMessage.TxId ?? string.Empty,
+                     OriginalEndToEndId = transaction?.EndToEndId,
+                     Status = ACSC,
+                     Reason = "Return confirmed by IPS via SAF",
+                     AdditionalInfo = isoMessage.AdditionalInfo ?? "Final return success via SAF"
+                 };
 
-            var result = await _callbacks.SendJsonAsync(
-                _configuration.Return!,
-                headers,
-                returnDto,
-                CB_ReturnRequest,
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                ct,
-                cid
-            );
+                 result = await _callbacks.SendJsonAsync(
+                    _configuration.CompletionNotification!,
+                    headers,
+                    notificationDto,
+                    CB_CompletionNotification,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+            }
+            else
+            {
+                // Path B: Bank has NOT seen this return yet. Use "Late Binding" logic.
+                // Send Return Request to execute the reversal.
+                var returnDto = new CBReturnRequestDto
+                {
+                    FromBIC = isoMessage.FromBIC ?? string.Empty,
+                    OriginalEndToEnd = transaction?.EndToEndId ?? string.Empty,
+                    OrgnlTxId = isoMessage.TxId ?? string.Empty,
+                    ReturnId = isoMessage.ReturnId ?? string.Empty,
+                    Reason = "Return confirmed by IPS via SAF",
+                    AdditionalInfo = isoMessage.AdditionalInfo ?? "Return processed via Store-and-Forward mechanism"
+                };
+
+                result = await _callbacks.SendJsonAsync(
+                    _configuration.Return!,
+                    headers,
+                    returnDto,
+                    CB_ReturnRequest,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+            }
 
             // Guard against null callback result
             if (result == null)
@@ -433,14 +519,13 @@ public sealed class OutgoingTransactionStatusHandler(
 
             _logger.LogInformation("[{CorrelationId}] CoreBank return callback completed for TxId {TxId}, StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
 
-            // Parse CoreBank response
             if (result.Data == null)
             {
                 _logger.LogWarning("[{CorrelationId}] CoreBank return callback returned null data for TxId {TxId}", cid, isoMessage.TxId);
                 return false;
             }
 
-            // Transform and parse the response
+            // Transform and parse the response (Structure is same for both Notification and Return Request responses: CB_PaymentResponse)
             var js = result.Data;
             var md = _jsonAdapter.Transform(js, "CB_PaymentResponse");
             var cbResponse = _jsonAdapter.ToObject<CBPaymentStatusResponseDto>(md);
@@ -451,15 +536,12 @@ public sealed class OutgoingTransactionStatusHandler(
                 return false;
             }
 
-            // Check if CBS successfully reversed the credit
-            // Map the CBS status - if it indicates success, the return is complete
+            // Check if CBS successfully reversed the credit (or processed notification)
             var (parentStatus, _, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
                 ACSC,  // IPS confirmed the return
-                cbResponse.Status,  // CBS return result
+                cbResponse.Status,  // CBS result
                 false);
 
-            // If CBS reversal succeeded, keep the Success status
-            // If CBS reversal failed, the caller will revert to ReadyForReturn
             if (parentStatus == TransactionStatus.Success)
             {
                 isoMessage.Reason = reason;
@@ -558,6 +640,129 @@ public sealed class OutgoingTransactionStatusHandler(
             // Network errors, timeouts, etc. should trigger retry
             _logger.LogError(ex, "[{CorrelationId}] Exception sending CoreBank completion notification for TxId {TxId}", cid, isoMessage.TxId);
             return false; // Exception = failure, should retry
+        }
+    }
+
+    /// <summary>
+    /// Calls CoreBank to execute a Transfer (Late Binding) for an incoming payment.
+    /// This is triggered by SAF when an Incoming Payment (Pending) is confirmed as Success via pacs.028,
+    /// AND IncludeCoreBankOnListing is false (meaning Bank hasn't seen it yet).
+    /// </summary>
+    private async Task<bool> CallCoreBankTransferAsync(
+        ISOMessage isoMessage,
+        CancellationToken ct,
+        string cid,
+        CancellationToken dbCt)
+    {
+        try
+        {
+            var headers = new Dictionary<string, string>() {
+                { API_Key, _configuration.Key! },
+                { API_Secret, _configuration.Secret! }
+            };
+
+            var transaction = isoMessage.Transactions.FirstOrDefault();
+            
+            var idem = isoMessage.TxId;
+            if (!string.IsNullOrWhiteSpace(idem))
+                headers["X-Idempotency-Key"] = idem!;
+            if (!string.IsNullOrWhiteSpace(isoMessage.TxId))
+                headers["X-Transaction-Id"] = isoMessage.TxId!;
+
+            // Build Transfer Request DTO
+            // Use properties from the stored Transaction, falling back to empty strings if missing
+            var dto = new CBPaymentRequestDto
+            {
+                FromBIC = transaction?.FromBIC ?? string.Empty,
+                LocalInstrument = transaction?.LocalInstrument ?? string.Empty,
+                CategoryPurpose = transaction?.CategoryPurpose ?? string.Empty,
+                EndToEndId = transaction?.EndToEndId ?? string.Empty,
+                TxId = transaction?.TxId ?? isoMessage.TxId ?? string.Empty,
+                Amount = transaction?.Amount ?? 0,
+                Currency = transaction?.Currency ?? string.Empty,
+                DebtorName = transaction?.DebtorName ?? string.Empty,
+                DebtorAccount = transaction?.DebtorAccount ?? string.Empty,
+                DebtorAccountType = transaction?.DebtorAccountType ?? string.Empty,
+                DebtorAgentBIC = transaction?.DebtorAgentBIC ?? string.Empty,
+                DebtorIssuer = transaction?.DebtorIssuer ?? string.Empty,
+                CreditorName = transaction?.CreditorName ?? string.Empty,
+                CreditorAccount = transaction?.CreditorAccount ?? string.Empty,
+                CreditorAccountType = transaction?.CreditorAccountType ?? string.Empty,
+                CreditorAgentBIC = transaction?.CreditorAgentBIC ?? string.Empty,
+                CreditorIssuer = transaction?.CreditorIssuer ?? string.Empty,
+                RemittanceInformation = transaction?.RemittanceInformation ?? string.Empty,
+                Date = DateTime.UtcNow,
+                ToBIC = isoMessage.ToBIC ?? string.Empty, // Target is Us (Receiver)
+                SettlementMethod = "CLRG",
+                ChargeBearer = "SLEV",
+                BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
+                MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
+                ClearingSystem = string.Empty,
+                MsgId = isoMessage.MsgId ?? string.Empty
+            };
+
+            var result = await _callbacks.SendJsonAsync(
+                _configuration.Transfer!,
+                headers,
+                dto,
+                CB_PaymentRequest,
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                ct,
+                cid
+            );
+
+            // Guard against null callback result
+            if (result == null)
+            {
+                _logger.LogError("[{CorrelationId}] CoreBank transfer callback returned null for TxId {TxId}", cid, isoMessage.TxId);
+                return false;
+            }
+
+            _logger.LogInformation("[{CorrelationId}] CoreBank transfer callback completed for TxId {TxId}, StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
+
+            if (result.Data == null)
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank transfer callback returned null data for TxId {TxId}", cid, isoMessage.TxId);
+                return false;
+            }
+
+            // Transform and parse the response
+            var js = result.Data;
+            var md = _jsonAdapter.Transform(js, "CB_PaymentResponse");
+            var cbResponse = _jsonAdapter.ToObject<CBPaymentStatusResponseDto>(md);
+
+            if (cbResponse == null || string.IsNullOrWhiteSpace(cbResponse.Status))
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank transfer response has no status for TxId {TxId}", cid, isoMessage.TxId);
+                return false;
+            }
+
+            // Check if CBS processed the transfer successfully
+            // We use MapCompletionStatus to check if the CBS status maps to Success
+            var (parentStatus, _, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
+                ACSC,  // IPS confirmed Success
+                cbResponse.Status,  // CBS result
+                false);
+
+            if (parentStatus == TransactionStatus.Success)
+            {
+                isoMessage.Reason = reason;
+                isoMessage.AdditionalInfo = additionalInfo ?? "Transfer completed via SAF";
+                return true;
+            }
+            else
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank transfer failed for TxId {TxId}. CBS Status={Status}", cid, isoMessage.TxId, cbResponse.Status);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[{CorrelationId}] Exception calling CoreBank transfer callback for TxId {TxId}", cid, isoMessage.TxId);
+            return false;
         }
     }
 }

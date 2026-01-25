@@ -229,7 +229,7 @@ public sealed class OutgoingTransactionHandler_Timeout_Tests
         result.IsSuccess.Should().BeTrue("timeout should return success with PDNG status, not failure");
         result.Data.Should().NotBeNull();
         result.Data!.Status.Should().Be(PDNG, "timeout should return PDNG status to prevent auto-reversal");
-        result.Data.Reason.Should().Contain("pending", "reason should indicate pending status");
+        result.Data.Reason.Should().Contain("Pending", "reason should indicate pending status");
         result.Data.AdditionalInfo.Should().Contain("Timeout", "additional info should mention timeout");
         result.Data.AdditionalInfo.Should().Contain("Do not reverse", "should warn CoreBank not to reverse");
         result.Data.TxId.Should().NotBeNullOrEmpty("TxId should be populated");

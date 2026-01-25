@@ -242,9 +242,12 @@ public sealed class IncomingPaymentStatusReportHandler(
         response.Reason = request.Reason ?? string.Empty;
         response.AdditionalInfo = request.AdditionalInfo ?? string.Empty;
 
+        bool isOutgoing = isoMessage.FromBIC == _callbackLinks.BIC;
+
         // Check if this is a Return Request (pacs.004) confirming an incoming return
         // This check must happen BEFORE the NonPending check because Returns are typically in ReadyForReturn (a non-Pending status)
-        if (isoMessage.MessageType == ISOMessageType.ReturnRequest)
+        // CRITICAL: Only apply this logic for INCOMING returns. Outgoing returns (initiated by us) should fall through to standard handling.
+        if (isoMessage.MessageType == ISOMessageType.ReturnRequest && !isOutgoing)
         {
             if (isoMessage.Status == TransactionStatus.ReadyForReturn)
             {
@@ -378,7 +381,6 @@ public sealed class IncomingPaymentStatusReportHandler(
         // For Outgoing transactions, we do NOT call the CoreBank 'Transfer' endpoint (which is for crediting funds).
         // CoreBank already debited the sender.
         
-        bool isOutgoing = isoMessage.FromBIC == _callbackLinks.BIC;
         Response<System.Text.Json.Nodes.JsonObject?>? result = null;
         var tx = transaction;
 
@@ -541,7 +543,53 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
         else
         {
-             _logger.LogInformation("[{CorrelationId}] Outgoing transaction confirmation received for TxId {TxId} (FromBIC={FromBIC}). Skipping CoreBank Transfer call.", cid, request.TxId, isoMessage.FromBIC);
+             _logger.LogInformation("[{CorrelationId}] Outgoing transaction confirmation received for TxId {TxId}. Always Permissive: Sending CompletionNotification.", cid, request.TxId);
+             
+             // Outgoing Transactions ALWAYS notify CoreBank of completion (Permissive Mode), 
+             // because the Bank initiated them and is holding funds/state.
+             
+              var notificationHeaders = new Dictionary<string, string>() {
+                    { API_Key, _callbackLinks.Key! },
+                    { API_Secret, _callbackLinks.Secret! }
+                };
+             
+             // Idempotency key
+            var idem = transaction?.TxId ?? request.TxId;
+            if (!string.IsNullOrWhiteSpace(idem))
+                notificationHeaders["X-Idempotency-Key"] = idem!;
+            if (!string.IsNullOrWhiteSpace(transaction?.TxId ?? request.TxId))
+                notificationHeaders["X-Transaction-Id"] = (transaction?.TxId ?? request.TxId)!;
+
+             var notificationDto = new CBCompletionNotification
+            {
+                OriginalTxId = request.TxId ?? string.Empty,
+                OriginalEndToEndId = request.Original?.EndToEndId,
+                Status = request.Status ?? ACSC,
+                Reason = request.Reason ?? "Transaction Completed",
+                AdditionalInfo = request.AdditionalInfo ?? "Final confirmation from Switch"
+            };
+
+             result = await _callbacks.SendJsonAsync(
+                _callbackLinks.CompletionNotification!, 
+                notificationHeaders,
+                notificationDto,
+                Constants.CB_CompletionNotification, 
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                ct,
+                cid
+            );
+
+            if (result == null)
+            {
+                _logger.LogError("[{CorrelationId}] CoreBank CompletionNotification callback returned null for Outgoing TxId {TxId}.", cid, request.TxId);
+            }
+            else 
+            {
+                _logger.LogInformation("[{CorrelationId}] Sent CompletionNotification to CoreBank for Outgoing TxId {TxId}, StatusCode={StatusCode}", cid, request.TxId, result.StatusCode);
+            }
         }
 
         // Persist raw CoreBank response JSON on the parent ISOMessage for audit/operations
@@ -689,29 +737,63 @@ public sealed class IncomingPaymentStatusReportHandler(
         if (!string.IsNullOrWhiteSpace(isoMessage.ReturnId))
             headers["X-Return-Id"] = isoMessage.ReturnId;
 
-        // Build return request payload for CoreBank
-        var returnDto = new CBReturnRequestDto
-        {
-            FromBIC = isoMessage.FromBIC ?? string.Empty,
-            OriginalEndToEnd = transaction?.EndToEndId ?? string.Empty,
-            OrgnlTxId = transaction?.TxId ?? string.Empty,
-            ReturnId = isoMessage.ReturnId ?? string.Empty,
-            Reason = isoMessage.Reason ?? "Return confirmed by IPS",
-            AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty
-        };
+        Response<System.Text.Json.Nodes.JsonObject?>? result = null;
 
-        var result = await _callbacks.SendJsonAsync(
-            _callbackLinks.Return!,
-            headers,
-            returnDto,
-            CB_ReturnRequest,
-            _jsonAdapter,
-            _correlation,
-            _jsonSerializerOptions,
-            _callback,
-            ct,
-            cid
-        );
+        if (_core.IncludeCoreBankOnListing)
+        {
+             // Path A: Bank previously approved the return (Permission Step). 
+             // Now we send Completion Notification to confirm finality.
+             var notificationDto = new CBCompletionNotification
+             {
+                 OriginalTxId = transaction?.TxId ?? string.Empty,
+                 OriginalEndToEndId = transaction?.EndToEndId,
+                 Status = ACSC,
+                 Reason = isoMessage.Reason ?? "Return confirmed by IPS",
+                 AdditionalInfo = isoMessage.AdditionalInfo ?? "Final return success"
+             };
+
+             result = await _callbacks.SendJsonAsync(
+                _callbackLinks.CompletionNotification!,
+                headers,
+                notificationDto,
+                Constants.CB_CompletionNotification,
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                ct,
+                cid
+            );
+        }
+        else
+        {
+            // Path B: Bank has NOT seen this return yet. Use "Late Binding" logic.
+            // Send Return Request to execute the reversal.
+            
+            // Build return request payload for CoreBank
+            var returnDto = new CBReturnRequestDto
+            {
+                FromBIC = isoMessage.FromBIC ?? string.Empty,
+                OriginalEndToEnd = transaction?.EndToEndId ?? string.Empty,
+                OrgnlTxId = transaction?.TxId ?? string.Empty,
+                ReturnId = isoMessage.ReturnId ?? string.Empty,
+                Reason = isoMessage.Reason ?? "Return confirmed by IPS",
+                AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty
+            };
+
+            result = await _callbacks.SendJsonAsync(
+                _callbackLinks.Return!,
+                headers,
+                returnDto,
+                CB_ReturnRequest,
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                ct,
+                cid
+            );
+        }
 
         // Guard against null callback result
         if (result == null)

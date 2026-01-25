@@ -15,4 +15,6 @@ public class CoreOptions
     public int HttpTimeoutSeconds { get; set; } = 15;
     public int DbPersistTimeoutSeconds { get; set; } = 10;
     public bool IncludeCoreBankOnListing { get; set; } = false;
+    public int TransactionTimeoutMinutes { get; set; } = 60;
+    public string TimeoutWorkerSchedule { get; set; } = "*/15 * * * *";
 }
