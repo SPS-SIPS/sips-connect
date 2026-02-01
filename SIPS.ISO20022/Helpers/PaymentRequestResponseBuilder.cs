@@ -159,14 +159,7 @@ public static class PaymentRequestResponseBuilder
                         OrgnlEndToEndId = orig.EndToEndId,
                         OrgnlTxId = orig.TxId,
                         TxSts = request.Status,
-                        StsRsnInf = request.Status != "ACSC"? [
-                            new StatusReasonInformation12 {
-                                Rsn = new StatusReason6Choice {
-                                    Prtry = request.Reason ?? string.Empty
-                                },
-                                AddtlInf = [request.AdditionalInfo ?? string.Empty]
-                            }
-                        ]: null,
+                        StsRsnInf = GetStatusReasonInformation(request),
                         AccptncDtTm = DateTime.UtcNow,
                         OrgnlTxRef = new OriginalTransactionReference35 {
                             IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {
@@ -280,5 +273,25 @@ public static class PaymentRequestResponseBuilder
             rsp.Original.Creditor = creditor;
         }
         return rsp;
+    }
+
+    private static List<StatusReasonInformation12>? GetStatusReasonInformation(Response request)
+    {
+        if (request.Status == "ACSC") return null;
+
+        var statusReason = new StatusReasonInformation12
+        {
+            Rsn = new StatusReason6Choice
+            {
+                Prtry = request.Reason ?? string.Empty
+            }
+        };
+
+        if (!string.IsNullOrEmpty(request.AdditionalInfo))
+        {
+            statusReason.AddtlInf.Add(request.AdditionalInfo);
+        }
+
+        return [statusReason];
     }
 }
