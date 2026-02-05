@@ -33,8 +33,8 @@ public class ResponseFactoryTests
         rs.MsgId.Should().Be(req.MsgId);
         rs.CreDt.Should().Be(req.CreDt);
         rs.Original.Should().BeSameAs(req);
-        rs.Status.Should().Be(SIPS.Core.Constants.RJCT);
-        rs.Reason.Should().Be(SIPS.Core.Constants.MISS);
+        rs.Status.Should().Be(SIPS.Core.Constants.ACSC);
+        rs.Reason.Should().Be(string.Empty);
     }
 
     [Fact]
@@ -61,8 +61,8 @@ public class ResponseFactoryTests
         rs.BizMsgIdr.Should().Be(req.BizMsgIdr);
         rs.MsgId.Should().Be(req.MsgId);
         rs.CreDt.Should().Be(req.CreDt);
-        rs.Status.Should().Be(SIPS.Core.Constants.RJCT);
-        rs.Reason.Should().Be(SIPS.Core.Constants.MISS);
+        rs.Status.Should().Be(SIPS.Core.Constants.ACSC);
+        rs.Reason.Should().Be(string.Empty);
         rs.Original.Should().NotBeNull();
         rs.Original.From.Should().Be(req.From);
         rs.Original.To.Should().Be(req.To);
