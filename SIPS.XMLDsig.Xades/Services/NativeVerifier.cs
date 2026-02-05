@@ -44,7 +44,13 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             ns.AddNamespace("document", GetDocumentNamespace(envelope));
             ns.AddNamespace("ds", GetDocumentNamespace(envelope, "ds"));
             ns.AddNamespace(XadesPrefix, GetDocumentNamespace(envelope, XadesPrefix));
-            XmlElement signatureElement = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "ds:Signature");
+            XmlElement? signatureElement = GetFirstOfXmlElementsByTagOrNull(envelope.DocumentElement!, "ds:Signature");
+            if (signatureElement == null)
+            {
+                _logger.LogWarning("The message does not contain a signature.");
+                vr.SignatureStatus = "Signature element missing";
+                return (false, vr);
+            }
             XmlElement signedInfoElement = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "ds:SignedInfo");
             XmlElement signatureAlgorithm = GetFirstOfXmlElementsByTagWithPrefix(signedInfoElement, "ds:SignatureMethod");
             XmlElement SigningTime = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "xades:SigningTime");
