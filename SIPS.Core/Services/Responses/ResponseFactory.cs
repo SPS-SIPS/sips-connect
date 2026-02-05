@@ -23,8 +23,8 @@ public sealed class ResponseFactory : IResponseFactory
             MsgId = request.MsgId,
             CreDt = request.CreDt,
             Original = request,
-            Status = RJCT,
-            Reason = MISS,
+            Status = ACSC,
+            Reason = string.Empty,
         };
     }
 
@@ -38,8 +38,8 @@ public sealed class ResponseFactory : IResponseFactory
             BizMsgIdr = request.BizMsgIdr,
             MsgId = request.MsgId,
             CreDt = request.CreDt,
-            Status = RJCT,
-            Reason = MISS,
+            Status = ACSC,
+            Reason = string.Empty,
             Original = new PaymentRequestBuilder.Request
             {
                 From = request.From,

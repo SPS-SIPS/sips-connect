@@ -307,9 +307,9 @@ public sealed class IncomingReturnTransactionHandler(
             BizMsgIdr = request.BizMsgIdr,
             MsgId = request.MsgId,
             CreDt = request.CreDt,
-            Status = RJCT,
-            Reason = MISS,
-            AdditionalInfo = "Failed to get the Message.",
+            Status = ACSC,
+            Reason = string.Empty,
+            AdditionalInfo = string.Empty,
             Original = new ReturnPaymentRequestBuilder.Request
             {
                 From = request.From,

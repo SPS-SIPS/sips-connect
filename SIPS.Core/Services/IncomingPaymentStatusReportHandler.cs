@@ -689,7 +689,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             // Final safety: schema requires TxSts (status) to be at least length 1
             if (string.IsNullOrWhiteSpace(response.Status))
             {
-                response.Status = string.IsNullOrWhiteSpace(request.Status) ? RJCT : request.Status;
+                response.Status = string.IsNullOrWhiteSpace(request.Status) ? ACSC : request.Status;
             }
             var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
 
@@ -804,7 +804,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             isoMessage.Status = TransactionStatus.ReadyForReturn;
             isoMessage.Reason = "CoreBank return callback failed";
             isoMessage.AdditionalInfo = "Manual intervention required to complete return";
-            response.Status = RJCT;
+            response.Status = ACSC;
             response.Reason = isoMessage.Reason;
             response.AdditionalInfo = isoMessage.AdditionalInfo;
 
@@ -848,7 +848,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
         else if (string.IsNullOrWhiteSpace(response.Status))
         {
-            response.Status = RJCT;
+            response.Status = ACSC;
         }
         response.Reason = isoMessage.Reason;
         response.AdditionalInfo = isoMessage.AdditionalInfo;

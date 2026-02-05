@@ -251,14 +251,8 @@ public sealed class IncomingTransactionHandler(
             var dbCt = dbCts.Token;
             
             // Step 4: Determine final status
-            // If response.Status was set to RJCT by CoreBank logic, use it.
-            // Otherwise default to ACSC (Pending).
-            if (response.Status != RJCT)
-            {
-                response.Status = ACSC;
-                response.Reason = string.Empty;
-                response.AdditionalInfo = string.Empty;
-            }
+            // If response.Status was set to RJCT by CoreBank logic, it will be persisted as such.
+            // Otherwise it already defaults to ACSC (Accepted).
 
             // Step 5: Build and persist initial ACK response
             // Transaction remains in Pending state regardless of RJCT/ACSC return to switch, 

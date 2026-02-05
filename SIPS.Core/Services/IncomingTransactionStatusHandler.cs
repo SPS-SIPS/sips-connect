@@ -187,7 +187,7 @@ public sealed class IncomingTransactionStatusHandler(
 
             // Step 6: Build, persist, and sign response (single persist)
             // Use StatusOrchestrator to map status consistently
-            var finalStatus = _statusOrchestrator.MapSingleStatus(response.Status ?? RJCT, "CoreBank");
+            var finalStatus = _statusOrchestrator.MapSingleStatus(response.Status ?? ACSC, "CoreBank");
             var rsp = PaymentStatusRequestResponseBuilder.Build(response);
             await _isoService.PersistStatusResponseAsync(record, finalStatus, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
             return _signer.SignEnvelope(rsp);
