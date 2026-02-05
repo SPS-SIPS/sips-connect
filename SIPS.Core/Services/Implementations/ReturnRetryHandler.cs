@@ -166,7 +166,7 @@ public sealed class ReturnRetryHandler(
                     _callbackLinks.CompletionNotification!,
                     notificationHeaders,
                     notificationDto,
-                    Constants.CB_CompletionNotification,
+                    CB_CompletionNotification,
                     _jsonAdapter,
                     _correlation,
                     _jsonSerializerOptions,

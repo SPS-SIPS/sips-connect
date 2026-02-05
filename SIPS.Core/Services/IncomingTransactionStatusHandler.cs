@@ -24,7 +24,7 @@ using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
-
+using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 
 public sealed class IncomingTransactionStatusHandler(
@@ -168,7 +168,7 @@ public sealed class IncomingTransactionStatusHandler(
             // Guard against null callback result
             if (responseMessage == null)
             {
-                _logger.LogError("[{CorrelationId}] CoreBank status callback returned null for TxId {TxId}", cid, request.OrgnlTxId);
+                _logger.LogInformation("[{CorrelationId}] CoreBank status callback returned null for TxId {TxId}. Defaulting to RJCT.", cid, request.OrgnlTxId);
                 response.Status = RJCT;
                 response.Reason = "CoreBank callback failed";
                 response.AdditionalInfo = "Null response from CoreBank";
@@ -176,10 +176,11 @@ public sealed class IncomingTransactionStatusHandler(
             else if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
             {
                 ParseCallbackResult(responseMessage.Data, response);
+                _logger.LogInformation("[{CorrelationId}] CoreBank status request for TxId {TxId} returned {Status}", cid, request.OrgnlTxId, response.Status);
             }
             else
             {
-                _logger.LogWarning("[{CorrelationId}] Failed to get response from CB. Status: {Status}", cid, responseMessage.StatusCode);
+                _logger.LogInformation("[{CorrelationId}] CoreBank status request for TxId {TxId} failed with {StatusCode}. Defaulting to RJCT.", cid, request.OrgnlTxId, responseMessage.StatusCode);
                 response.Status = RJCT;
                 response.Reason = "CoreBank callback failed";
                 response.AdditionalInfo = $"Failed to get response from CB. Status: {responseMessage.StatusCode}";

@@ -18,11 +18,11 @@ using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Services;
 using SIPS.Core.Services.ISOParsers;
 using SIPS.PostgreSQL.Enums;
-using SIPS.ISO20022.Models.DTOs;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using SIPS.ISO20022.Models.DTOs;
+using static SIPS.Core.Constants;
 
-using SIPS.Core;
 namespace SIPS.Core.Services;
 
 /// <summary>
@@ -139,7 +139,10 @@ public sealed class IncomingPaymentStatusReportHandler(
                 catch { /* ignore fallback errors */ }
 
                 if (request == null)
+                {
+                    _logger.LogWarning("[{CorrelationId}] Failed to verify signature or parse TxId from message: {Message}", cid, message);
                     return AdminMessage.Generate("Failed to verify signature or parse TxId.");
+                }
             }
 
         _logger.LogInformation("INCOMING pacs.002 Handler for data {Data}",
@@ -157,6 +160,7 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         if (isoMessage == null)
         {
+            _logger.LogWarning("[{CorrelationId}] Status report received for non-existent TxId {TxId}", cid, request.TxId);
             return AdminMessage.Generate("Failed to get the Message.");
         }
 
@@ -421,7 +425,7 @@ public sealed class IncomingPaymentStatusReportHandler(
                     _callbackLinks.CompletionNotification!, 
                     notificationHeaders,
                     notificationDto,
-                    Constants.CB_CompletionNotification, 
+                    CB_CompletionNotification, 
                     _jsonAdapter,
                     _correlation,
                     _jsonSerializerOptions,
@@ -756,7 +760,7 @@ public sealed class IncomingPaymentStatusReportHandler(
                 _callbackLinks.CompletionNotification!,
                 headers,
                 notificationDto,
-                Constants.CB_CompletionNotification,
+                CB_CompletionNotification,
                 _jsonAdapter,
                 _correlation,
                 _jsonSerializerOptions,

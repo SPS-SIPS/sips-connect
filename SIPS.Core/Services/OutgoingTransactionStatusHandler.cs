@@ -17,6 +17,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 
 public sealed class OutgoingTransactionStatusHandler(
@@ -371,12 +372,22 @@ public sealed class OutgoingTransactionStatusHandler(
         var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
         if (!ok)
         {
-            _logger.LogError("[{CorrelationId}] Failed to verify IPS signature: {Verbose}", correlationId, verbose);
+            _logger.LogWarning("[{CorrelationId}] Failed to verify IPS status signature: {Verbose}. Marking for SAF status check retry.", correlationId, verbose);
             await _isoService.MarkForCheckStatusAsync(
                 isoMessage,
                 "Failed to verify IPS signature on status response",
                 ct);
-            return Response<PaymentResponseDto>.Fail("Failed to verify the signature from IPS.", System.Net.HttpStatusCode.BadRequest);
+            
+            // Return PDNG instead of FAIL - request reached IPS, but status response signature is suspect.
+            // SAF will retry the status inquiry on the next run.
+            return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+            {
+                Status = PDNG,
+                TxId = isoMessage.TxId ?? string.Empty,
+                EndToEndId = isoMessage.EndToEndId ?? string.Empty,
+                Reason = "Pending - IPS status signature verification failed",
+                AdditionalInfo = "IPS status inquiry received but response signature is invalid. Marked for retry."
+            });
         }
 
         // If all checks pass, return a successful response.

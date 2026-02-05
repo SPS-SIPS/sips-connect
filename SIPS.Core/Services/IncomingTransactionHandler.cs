@@ -22,6 +22,7 @@ using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Models.DTOs.CB;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 
 /// <summary>
@@ -224,7 +225,7 @@ public sealed class IncomingTransactionHandler(
                     var cbResponse = ParseCallbackResult(result.Data);
                     if (cbResponse.Status == RJCT)
                     {
-                        _logger.LogWarning("[{CorrelationId}] CoreBank rejected transaction {TxId}. Returning RJCT.", cid, request.TxId);
+                        _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}. Reason: {Reason}", cid, request.TxId, cbResponse.Reason);
                         response.Status = RJCT;
                         response.Reason = cbResponse.Reason;
                         response.AdditionalInfo = cbResponse.AdditionalInfo;
@@ -236,12 +237,12 @@ public sealed class IncomingTransactionHandler(
                 }
                 else
                 {
-                    _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null or empty data for TxId {TxId}. Proceeding with ACSC.", cid, request.TxId);
+                    _logger.LogInformation("[{CorrelationId}] CoreBank callback returned null or empty data for TxId {TxId}. Proceeding with ACSC (Permissive).", cid, request.TxId);
                 }
             }
             catch (Exception ex)
             {
-                 _logger.LogError(ex, "[{CorrelationId}] Failed to call CoreBank for TxId {TxId}. Proceeding with ACSC.", cid, request.TxId);
+                 _logger.LogWarning(ex, "[{CorrelationId}] Failed to call CoreBank for TxId {TxId} (Connectivity issue). Proceeding with ACSC (Permissive).", cid, request.TxId);
             }
         }
 

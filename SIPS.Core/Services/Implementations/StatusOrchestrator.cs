@@ -69,7 +69,6 @@ public sealed class StatusOrchestrator : IStatusOrchestrator
                 "Transaction is ready for return", 
                 "Queued For Return!");
         }
-
         // Rule 3: Unknown or missing IPS status → treat as failure
         _logger.LogWarning("[StatusOrchestrator] Unknown IPS status code: {IpsCode}. Treating as failure.", ipsCode);
         var failedStatus = TransactionStatus.Failed;
@@ -83,7 +82,7 @@ public sealed class StatusOrchestrator : IStatusOrchestrator
     {
         var code = NormalizeStatusCode(statusCode);
 
-        _logger.LogDebug("[StatusOrchestrator] Mapping single status: Code={Code}, Source={Source}", code, source);
+        _logger.LogInformation("[StatusOrchestrator] Mapping single status: Code={Code}, Source={Source}", code, source);
 
         return code switch
         {
@@ -99,6 +98,7 @@ public sealed class StatusOrchestrator : IStatusOrchestrator
     /// <inheritdoc/>
     public string MapToIsoStatusCode(TransactionStatus status)
     {
+        _logger.LogInformation("[StatusOrchestrator] Mapping internal status to ISO: Status={Status}", status);
         return status switch
         {
             TransactionStatus.Success => ACSC,

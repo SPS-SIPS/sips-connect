@@ -13,6 +13,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using static SIPS.Core.Constants;
 
 namespace SIPS.Core.Services;
 
@@ -92,9 +93,9 @@ public sealed class OutgoingVerificationHandler(
             var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
             if (!ok)
             {
-                var failedStatus = _statusOrchestrator.MapSingleStatus("RJCT", "IPS");
+                var failedStatus = _statusOrchestrator.MapSingleStatus(RJCT, "IPS");
                 await PersistISOMessageAsync(record, failedStatus, "Failed to verify the signature from IPS", "Signature verification failed", responseMessage.Data, string.Empty, dbCt);
-                _logger.LogError("[{CorrelationId}] Failed to verify the signature: verbose {Verbose}", cid, verbose);
+                _logger.LogWarning("[{CorrelationId}] Failed to verify the IPS response signature: {Verbose}", cid, verbose);
                 return Response<VerificationResponseDto>.Fail("Failed to verify the signature from IPS.", System.Net.HttpStatusCode.BadRequest);
             }
 
@@ -103,7 +104,7 @@ public sealed class OutgoingVerificationHandler(
 
             // Use StatusOrchestrator to map verification result consistently
             // Verified=true → SUCC, Verified=false → MISS
-            var statusCode = parsedResponse.Verified ? "SUCC" : "MISS";
+            var statusCode = parsedResponse.Verified ? SUCC : MISS;
             var finalStatus = _statusOrchestrator.MapSingleStatus(statusCode, "IPS");
 
             await PersistISOMessageAsync(record, finalStatus, parsedResponse.Reason ?? string.Empty, string.Empty, responseMessage.Data, parsedResponse.VerificationId ?? string.Empty, dbCt);

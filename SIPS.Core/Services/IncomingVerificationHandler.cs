@@ -22,6 +22,7 @@ using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using static SIPS.Core.Constants;
 
 namespace SIPS.Core.Services;
 
@@ -141,7 +142,7 @@ public sealed class IncomingVerificationHandler(
                 ct,
                 cid);
 
-            _logger.LogDebug("[IncomingVerificationHandler] callback status={StatusCode} dataNull={IsNull}", responseMessage?.StatusCode, responseMessage?.Data == null);
+            _logger.LogInformation("[IncomingVerificationHandler] Callback for ReqId={ReqId} returned StatusCode={StatusCode}", request.SIPSRequestId, responseMessage?.StatusCode);
             if (responseMessage != null && responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
             {
                 ParseCallbackResult(responseMessage.Data, response);
@@ -201,7 +202,7 @@ public sealed class IncomingVerificationHandler(
 
         // Deserialize into our DTO with case-insensitive property matching
         var deserializedContent = _jsonAdapter.ToObject<VerificationResponseDto>(mapped);
-        _logger.LogInformation("[ParseCallbackResult] Yasalaam {DeserializedContent}", JsonSerializer.Serialize(deserializedContent, _jsonSerializerOptions));
+        _logger.LogInformation("[ParseCallbackResult] Verification result for {Alias}: Verified={Verified}", response.Original?.Alias, deserializedContent?.IsVerified);
 
         response.Verified = deserializedContent?.IsVerified ?? false;
         response.Reason = response.Verified ? SUCC : MISS;

@@ -12,6 +12,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionHandler(
     ISO20022Options options,
@@ -270,12 +271,22 @@ public sealed class OutgoingTransactionHandler(
         var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
         if (!ok)
         {
-            _logger.LogError("[{CorrelationId}] Failed to verify IPS signature: {Verbose}", correlationId, verbose);
+            _logger.LogWarning("[{CorrelationId}] Failed to verify IPS signature: {Verbose}. Marking for SAF status check.", correlationId, verbose);
             await _isoService.MarkForCheckStatusAsync(
                 record,
                 "Failed to verify IPS signature",
                 ct);
-            return Response<PaymentResponseDto>.Fail("Failed to verify the signature from IPS.", System.Net.HttpStatusCode.BadRequest);
+            
+            // Return PDNG instead of FAIL - request reached IPS, but response signature is suspect.
+            // SAF will reconcile the actual status later.
+            return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+            {
+                Status = PDNG,
+                TxId = record.TxId ?? string.Empty,
+                EndToEndId = record.EndToEndId ?? string.Empty,
+                Reason = "Pending - IPS signature verification failed",
+                AdditionalInfo = "IPS received request but response signature is invalid. Marked for status verification."
+            });
         }
 
         // If all checks pass, return a successful response.

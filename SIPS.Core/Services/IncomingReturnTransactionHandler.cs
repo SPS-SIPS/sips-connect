@@ -20,10 +20,10 @@ using SIPS.Core.Services.Responses;
 using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
-using SIPS.PostgreSQL.Enums;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
-using SIPS.Core;
+using SIPS.PostgreSQL.Enums;
+using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 public sealed class IncomingReturnTransactionHandler(
     ISO20022Options options,
@@ -112,7 +112,7 @@ public sealed class IncomingReturnTransactionHandler(
         // Step 4: Validate original message exists and is a transaction request
         if (originalMessage == null)
         {
-            _logger.LogWarning("[{CorrelationId}] Return rejected: Original transaction {TxId} not found", cid, request.OrgnlTxId);
+            _logger.LogInformation("[{CorrelationId}] Return rejected: Original transaction {TxId} not found", cid, request.OrgnlTxId);
             response.AdditionalInfo = "Original transaction not found.";
             response.Reason = MISS;
             response.Status = RJCT;
@@ -207,15 +207,15 @@ public sealed class IncomingReturnTransactionHandler(
                 };
 
                 var headers = new Dictionary<string, string>() {
-                        { Constants.API_Key, _callbackLinks.Key! },
-                        { Constants.API_Secret, _callbackLinks.Secret! }
+                        { API_Key, _callbackLinks.Key! },
+                        { API_Secret, _callbackLinks.Secret! }
                     };
 
                 var result = await _callbacks.SendJsonAsync(
                     _callbackLinks.Return!,
                     headers,
                     cbRequest,
-                    Constants.CB_ReturnRequest,
+                    CB_ReturnRequest,
                     _jsonAdapter,
                     _correlation,
                     _jsonSerializerOptions,
