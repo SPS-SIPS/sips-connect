@@ -39,7 +39,10 @@ public class IncomingTransactionHandlerTests
         };
 
         var logger = Mock.Of<ILogger<IncomingTransactionHandler>>();
-        var signer = Mock.Of<INativeSigner>();
+        var signerMock = new Mock<INativeSigner>();
+        signerMock.Setup(s => s.SignEnvelope(It.IsAny<string>(), It.IsAny<string>()))
+                  .Returns((string message, string _) => message);
+        var signer = signerMock.Object;
         var jsonAdapter = Mock.Of<IJsonAdapter>();
         var recorderMock = new Mock<SIPS.PostgreSQL.Interfaces.IIncomingRecorder>();
         var recorder = recorderMock.Object;
@@ -61,10 +64,10 @@ public class IncomingTransactionHandlerTests
         var parser = (parserMock ?? new Mock<IPaymentRequestParser>()).Object;
         var inbound = new InboundMessageService(signature);
     var isoMessageService = new ISOMessageService(persistence);
-        var iptions = Mock.Of<Microsoft.Extensions.Options.IOptions<CoreOptions>>();
+        var coreOptions = Microsoft.Extensions.Options.Options.Create(new CoreOptions());
         // SIPS.Core.Services.Abstractions.IInboundMessageService
         return new IncomingTransactionHandler(options, logger, httpClient, signer, verifier, jsonAdapter, recorder,
-            signature, parser, callback, responses, persistence, correlation, inbound, callbacks, isoMessageService, iptions);
+            signature, parser, callback, responses, persistence, correlation, inbound, callbacks, isoMessageService, coreOptions);
     }
 
     [Fact]

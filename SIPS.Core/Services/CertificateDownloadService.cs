@@ -14,7 +14,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
     private readonly IAuthService _authService = authService;
     private readonly ICacheService _cacheService = cacheService;
 
-    public async Task<(CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string sn, CancellationToken cancellationToken = default)
+    public async Task<(CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string sn, string issuerDN, CancellationToken cancellationToken = default)
     {
         // Step 1: Validate configuration
         var url = _options.PublicKeysRepUrl;
@@ -25,7 +25,8 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
         }
 
         // Step 2: Check if the certificates are already cached
-        var certificates = await GetCertificatesFromCacheAsync(sn, cancellationToken);
+        // BPC Specification: Cache keying should be (issuer/serial)
+        var certificates = await GetCertificatesFromCacheAsync(sn, issuerDN, cancellationToken);
         if (certificates != null)
             return (certificates, null);
 
@@ -35,7 +36,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
             return (null, loginResult.Error);
 
         // Step 4: Build request and call API
-        var request = new CertificateRequest(sn, "");
+        var request = new CertificateRequest(sn, issuerDN);
         var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(url, request, cancellationToken);
 
         if (!response.IsSuccess)
@@ -45,25 +46,28 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
         }
 
         // Step 5: Cache the certificates for future use
-        await _cacheService.SetAsync($"certificates:{sn}", response.Data, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
+        // BPC Specification: Mandatory cache/refresh only when missing or older than 1 hour.
+        var cacheDurationMins = Math.Max(response.CacheInMins, 60);
+
+        await _cacheService.SetAsync($"certificates:{sn}:{issuerDN}", response.Data, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
         {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(response.CacheInMins)
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(cacheDurationMins)
         }, cancellationToken);
 
         // Step 6: Return the certificates
         return (response.Data, null);
     }
 
-    private async Task<CertificateDownloadResponse?> GetCertificatesFromCacheAsync(string sn, CancellationToken cancellationToken = default)
+    private async Task<CertificateDownloadResponse?> GetCertificatesFromCacheAsync(string sn, string issuerDN, CancellationToken cancellationToken = default)
     {
-        var response = await _cacheService.GetAsync<CertificateDownloadResponse>($"certificates:{sn}", cancellationToken);
+        var response = await _cacheService.GetAsync<CertificateDownloadResponse>($"certificates:{sn}:{issuerDN}", cancellationToken);
         if (response == null)
         {
-            _logger.LogWarning("Certificates not found in cache SN: {SN}.", sn);
+            _logger.LogWarning("Certificates not found in cache SN: {SN}, Issuer: {Issuer}.", sn, issuerDN);
             return null;
         }
 
-        _logger.LogInformation("Certificates found in cache SN: {SN}.", sn);
+        _logger.LogInformation("Certificates found in cache SN: {SN}, Issuer: {Issuer}.", sn, issuerDN);
         return response;
     }
 }

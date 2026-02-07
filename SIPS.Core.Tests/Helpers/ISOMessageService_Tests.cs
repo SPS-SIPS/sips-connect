@@ -14,13 +14,13 @@ namespace SIPS.Core.Tests.Helpers;
 public class ISOMessageService_Tests
 {
     [Fact]
-    public async Task PersistResponseAsync_Maps_SUCC_To_Success()
+    public async Task PersistResponseAsync_Updates_Status_To_Success()
     {
         var pg = new Mock<IPersistenceGateway>();
         var svc = new ISOMessageService(pg.Object);
         var iso = new ISOMessage { Status = TransactionStatus.Pending };
 
-        await svc.PersistResponseAsync(iso, "SUCC", "Reason", null, "<rsp/>", CancellationToken.None);
+        await svc.PersistResponseAsync(iso, TransactionStatus.Success, "Reason", null, "<rsp/>", CancellationToken.None);
 
         Assert.Equal(TransactionStatus.Success, iso.Status);
         Assert.Equal("Reason", iso.Reason);
@@ -44,13 +44,13 @@ public class ISOMessageService_Tests
     }
 
     [Fact]
-    public async Task PersistResponseAsync_Maps_RJCT_To_Failed()
+    public async Task PersistResponseAsync_Updates_Status_To_Failed()
     {
         var pg = new Mock<IPersistenceGateway>();
         var svc = new ISOMessageService(pg.Object);
         var iso = new ISOMessage { Status = TransactionStatus.Pending };
 
-        await svc.PersistResponseAsync(iso, "RJCT", "Reason", null, "<rsp/>", CancellationToken.None);
+        await svc.PersistResponseAsync(iso, TransactionStatus.Failed, "Reason", null, "<rsp/>", CancellationToken.None);
 
         Assert.Equal(TransactionStatus.Failed, iso.Status);
         pg.Verify(p => p.ISOMessageResponseAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()), Times.Once);

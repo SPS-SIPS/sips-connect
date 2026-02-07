@@ -14,12 +14,17 @@ public interface IISOMessageService
         string rawXml,
         CancellationToken ct);
 
+    Task<(ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy)>
+    TryRecordIncomingVerificationAsync(
+        ISOMessage entity,
+        CancellationToken ct);
+
     Task PersistResponseAsync(
         ISOMessage isoMessage,
-        string status,
+        TransactionStatus status,
         string reason,
         string? additionalInfo,
-        string responseXml,
+        string response,
         CancellationToken ct);
 
     Task<ISOMessageStatus> RecordIncomingStatusAsync(
@@ -39,6 +44,15 @@ public interface IISOMessageService
     Task<ISOMessage> RecordIncomingTransactionAsync(
         PaymentRequestBuilder.Request request,
         string rawXml,
+        CancellationToken ct);
+
+    Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(
+        PaymentRequestBuilder.Request request,
+        string rawXml,
+        CancellationToken ct);
+
+    Task<ISOMessage?> GetInboundMessageByTxIdAsync(
+        string txId,
         CancellationToken ct);
 
     Task PersistTransactionResponseAsync(
@@ -81,5 +95,14 @@ public interface IISOMessageService
     Task FinalizeAfterMaxRetriesAsync(
         ISOMessage isoMessage,
         string reason,
+        CancellationToken ct);
+
+    /// <summary>
+    /// Appends a structured audit event to the CoreBankResponse (auditLedger).
+    /// Uses optimistic concurrency (xmin) to ensure no lost updates.
+    /// </summary>
+    Task<bool> AppendAuditLedgerEventAsync(
+        int isoMessageId,
+        object ledgerEvent,
         CancellationToken ct);
 }

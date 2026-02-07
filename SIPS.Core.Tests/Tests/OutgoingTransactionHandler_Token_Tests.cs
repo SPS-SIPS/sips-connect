@@ -15,6 +15,7 @@ using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Options;
 using SIPS.Core.Services.Persistence;
 using SIPS.PostgreSQL.Models;
+using SIPS.PostgreSQL.Enums;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.Core.Services.Verification;
 using Xunit;
@@ -44,8 +45,13 @@ namespace SIPS.Core.Tests.Tests
             public Task<ISOMessage> ISOMessageResponseAsync(ISOMessage message, CancellationToken ct) { LastToken = ct; return Task.FromResult(message); }
             public Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus status, CancellationToken ct) { LastToken = ct; return Task.FromResult(status); }
             public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
+            public Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
             public Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
             public Task<System.Collections.Generic.List<ISOMessage>> GetISOMessagesByStatusAsync(SIPS.PostgreSQL.Enums.TransactionStatus status, CancellationToken ct) => Task.FromResult(new System.Collections.Generic.List<ISOMessage>());
+            public Task<int> AppendAuditLedgerEventAsync(int isoMessageId, object entry, uint expectedXmin, CancellationToken ct) => Task.FromResult(1);
+            public Task<ISOMessage?> GetISOMessageByTxIdAndTypeAsync(string txId, ISOMessageType type, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
+            public Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(ISOMessage entity, CancellationToken ct) => Task.FromResult((default(ISOMessage?), true));
+            public Task<(ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy)> TryRecordIncomingVerificationAsync(ISOMessage entity, CancellationToken ct) => Task.FromResult((entity, SIPS.PostgreSQL.Enums.DedupOutcome.Owner, default(string?)));
         }
         private sealed class FakeSipsSender : ISipsRequestSender
         {

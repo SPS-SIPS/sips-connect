@@ -40,7 +40,7 @@ public sealed class OutgoingTransactionHandler(
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
         _logger.LogInformation("Processing Outgoing Transaction Request");
-    _logger.LogDebug("[OutgoingTransactionHandler] HandleAsync start");
+        _logger.LogDebug("[OutgoingTransactionHandler] HandleAsync start");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var ourAgentBic = _configuration.Agent ?? throw new InvalidOperationException("Agent BIC not found in configuration.");

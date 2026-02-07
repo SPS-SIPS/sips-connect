@@ -3,6 +3,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -68,6 +69,9 @@ public class IncomingVerificationHandler_Tests
                 .ReturnsAsync((ISOMessage m, CancellationToken _) => m);
         recorder.Setup(r => r.ISOMessageResponseAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((ISOMessage m, CancellationToken _) => m);
+        recorder.Setup(r => r.TryRecordIncomingVerificationAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ISOMessage m, CancellationToken _) => (m, DedupOutcome.Owner, null));
+
 
         var parser = new SIPS.Core.Tests.Parsers.PayeeVerificationRequestParserShim();
         var signature = new Mock<SIPS.Core.Services.Verification.ISignatureService>();
@@ -140,6 +144,8 @@ public class IncomingVerificationHandler_Tests
                 .ReturnsAsync((ISOMessage m, CancellationToken _) => m);
         recorder.Setup(r => r.ISOMessageResponseAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((ISOMessage m, CancellationToken _) => m);
+        recorder.Setup(r => r.TryRecordIncomingVerificationAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ISOMessage m, CancellationToken _) => (m, DedupOutcome.Owner, null));
 
         var parser = new Mock<IPayeeVerificationRequestParser>();
         parser.Setup(p => p.TryParse(It.IsAny<string>(), out req)).Returns(true);
@@ -314,5 +320,35 @@ public class IncomingVerificationHandler_Tests
         var typeVal = (captured!["type"]?.GetValue<string>()) ?? (captured!["Type"]?.GetValue<string>());
         aliasVal.Should().Be("SO040014202305005007605");
         typeVal.Should().Be("IBAN");
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenDuplicateFollower_ReturnsStoredResponse()
+    {
+        var xml = LoadFixture();
+        var (sut, recorder, _, _) = CreateSut(() => new Response<JsonObject?>(new JsonObject { ["ok"] = true }) { StatusCode = HttpStatusCode.OK });
+        
+        // Setup recorder to simulate EXISTING record (Follower) with a response
+        var existingMsg = new ISOMessage 
+        { 
+            Id = 999,
+            MsgId = "MSG",
+            Response = Encoding.UTF8.GetBytes("replay-response"),
+            Status = TransactionStatus.Success // Ensure it's not pending to avoid wait
+        };
+
+        recorder.Setup(r => r.TryRecordIncomingVerificationAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((existingMsg, DedupOutcome.Follower, "MsgId"));
+        recorder.Setup(r => r.GetISOMessageByIdAsync(999, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(existingMsg);
+        recorder.Setup(r => r.AppendAuditLedgerEventAsync(999, It.IsAny<object>(), It.IsAny<uint>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(1);
+
+        var rsp = await sut.HandleAsync(xml, CancellationToken.None);
+
+        rsp.Should().Be("replay-response");
+        
+        // Verify we logged the duplicate event
+        recorder.Verify(r => r.AppendAuditLedgerEventAsync(999, It.Is<object>(o => o.ToString().Contains("VerificationFollowerDuplicate") || o.GetType().GetProperty("event") != null), It.IsAny<uint>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 }

@@ -90,11 +90,20 @@ public sealed class OutgoingTransactionHandler_Timeout_Tests
         public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct)
             => Task.FromResult<ISOMessage?>(null);
 
+        public Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct)
+            => Task.FromResult<ISOMessage?>(null);
+
         public Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct)
             => Task.FromResult<ISOMessage?>(null);
 
-        public Task<System.Collections.Generic.List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct)
-            => Task.FromResult(new System.Collections.Generic.List<ISOMessage>());
+        public Task<List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct)
+            => Task.FromResult(new List<ISOMessage>());
+
+        public Task<int> AppendAuditLedgerEventAsync(int isoMessageId, object ledgerEvent, uint xmin, CancellationToken ct)
+            => Task.FromResult(1);
+        public Task<ISOMessage?> GetISOMessageByTxIdAndTypeAsync(string txId, ISOMessageType type, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
+        public Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(ISOMessage entity, CancellationToken ct) => Task.FromResult((default(ISOMessage?), true));
+        public Task<(ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy)> TryRecordIncomingVerificationAsync(ISOMessage entity, CancellationToken ct) => Task.FromResult((entity, SIPS.PostgreSQL.Enums.DedupOutcome.Owner, default(string?)));
     }
 
     private sealed class TimeoutSipsSender : ISipsRequestSender

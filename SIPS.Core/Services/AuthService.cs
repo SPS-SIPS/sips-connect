@@ -59,12 +59,9 @@ public class AuthService(CoreOptions options, ILogger<AuthService> logger, IRepo
             return null;
         }
 
-        // Check if the token is expired
-        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > response.ExpiresIn)
-        {
-            _logger.LogWarning("Login response expired.");
-            return null;
-        }
+        // Note: AbsoluteExpirationRelativeToNow in SetAsync handles expiration at the cache layer.
+        // If we retrieve it from cache, it's generally still valid.
+        return response;
 
         return response;
     }

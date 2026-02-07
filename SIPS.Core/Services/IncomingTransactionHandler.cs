@@ -141,152 +141,333 @@ public sealed class IncomingTransactionHandler(
     }
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
-        // correlation id
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        string path = "Normal";
         string cid = _correlation.Create();
 
-        // Step 1: Verify signature and parse message via helper
-        var (isValid, request) = await _inbound.VerifyAndParseAsync(
-            message,
-            (xml) =>
-            {
-                if (!_parser.TryParse(xml, out var req)) return (false, (PaymentRequestBuilder.Request?)null);
-                return (true, req);
-            },
-            ct,
-            cid);
-        if (!isValid || request == null)
-            return AdminMessage.Generate("Failed to verify the signature or parse the message.");
-        // Step 2: Record the incoming ISO message via service
-        var record = await _isoService.RecordIncomingTransactionAsync(request, message, ct);
+        // [CHANGE GUARD]: Internal watchdog budget ensures contractual Compliance with BPC 10s SLA.
+        using var globalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        globalCts.CancelAfter(TimeSpan.FromSeconds(_core.CallbackInternalBudgetSeconds > 0 ? _core.CallbackInternalBudgetSeconds : 9));
+        var gct = globalCts.Token;
 
-        // Step 3: Prepare response object
-        var response = _responses.BuildPaymentInitial(request);
-
-        // CoreBank Integration (Optional)
-        if (_core.IncludeCoreBankOnListing)
+        PaymentRequestBuilder.Request? request = null;
+        SIPS.PostgreSQL.Models.ISOMessage? record = null;
+        try
         {
+            // Step 1: Verify signature and parse message via helper
+            var (isValid, parsedRequest) = await _inbound.VerifyAndParseAsync(
+                message,
+                (xml) =>
+                {
+                    if (!_parser.TryParse(xml, out var req)) return (false, (PaymentRequestBuilder.Request?)null);
+                    return (true, req);
+                },
+                gct,
+                cid);
+            request = parsedRequest;
+            if (!isValid || request == null)
+            {
+                path = "ParseFail";
+                // [PROTOCOL]: admi.002 for technical/protocol errors (SmartVista spec)
+                var err = AdminMessageBuilder.Generate(
+                    AdminRejectReasonCodes.InvalidXML,
+                    "Failed to verify signature or parse ISO20022 message.",
+                    request?.MsgId);
+                return FinalizeResponse(err, cid, sw, path);
+            }
+
+            // [INVARIANT A]: Hard-reject missing TxId (required for de-duplication)
+            if (string.IsNullOrWhiteSpace(request.TxId))
+            {
+                path = "MissingTxId";
+                _logger.LogWarning("[{CorrelationId}] [METRIC:ISO_PATH=MissingTxId] Rejecting message with missing TxId. MsgId={MsgId}", cid, request.MsgId);
+                // [PROTOCOL]: admi.002 for mandatory element missing (SmartVista spec)
+                var err = AdminMessageBuilder.Generate(
+                    AdminRejectReasonCodes.MandatoryElementMissing,
+                    "Transaction ID (TxId) is mandatory for de-duplication.",
+                    request.MsgId);
+                return FinalizeResponse(err, cid, sw, path);
+            }
+
+            // Step 2: [GOLD PATTERN] INSERT-First De-duplication
+            var tryRecordResult = await _isoService.TryRecordIncomingTransactionAsync(request, message, gct);
+            record = tryRecordResult.Message;
+            bool isNew = tryRecordResult.IsNew;
+
+            if (record == null)
+            {
+                path = "DbInsertFailed";
+                _logger.LogError("[{CorrelationId}] Failed to insert or retrieve ISOMessage for TxId {TxId}. Rejecting for safety.", cid, request.TxId);
+                // [PROTOCOL]: admi.002 for infrastructure/persistence failure (SmartVista spec)
+                var err = AdminMessageBuilder.Generate(
+                    AdminRejectReasonCodes.TechnicalError,
+                    "Infrastructure failure: unable to record transaction.",
+                    request.MsgId);
+                return FinalizeResponse(err, cid, sw, path);
+            }
+
+            // [FOLLOWER LOGIC]: Check if this is a duplicate (existing record from concurrent/retry request)
+            if (!isNew)
+            {
+                if (record.Response != null && record.Response.Length > 0)
+                {
+                    path = "ReplayStored";
+                    _logger.LogInformation("[{CorrelationId}] [METRIC:ISO_PATH=ReplayStored] Structural de-duplication: Replaying stored response for TxId {TxId}. Status={Status}", cid, request.TxId, record.Status);
+                    var storedResponse = System.Text.Encoding.UTF8.GetString(record.Response);
+                    return FinalizeResponse(storedResponse, cid, sw, path);
+                }
+
+                // [FOLLOWER WAIT LOGIC]: If Pending or CheckStatus, wait briefly then re-check
+                if (record.Status == TransactionStatus.Pending || record.Status == TransactionStatus.CheckStatus)
+                {
+                    path = "ConcurrentPending";
+                    _logger.LogInformation("[{CorrelationId}] [METRIC:ISO_PATH=ConcurrentPending] Duplicate arrived while Status={Status}. Waiting 500ms for owner to complete...", cid, record.Status);
+                    
+                    await Task.Delay(500, gct);
+                    
+                    // Re-fetch to see if owner completed
+                    var refreshed = await _isoService.GetInboundMessageByTxIdAsync(request.TxId, gct);
+                    if (refreshed?.Response != null && refreshed.Response.Length > 0)
+                    {
+                        path = "ReplayAfterWait";
+                        _logger.LogInformation("[{CorrelationId}] [METRIC:ISO_PATH=ReplayAfterWait] Owner completed. Replaying stored response for TxId {TxId}.", cid, request.TxId);
+                        var storedResponse = System.Text.Encoding.UTF8.GetString(refreshed.Response);
+                        return FinalizeResponse(storedResponse, cid, sw, path);
+                    }
+                    
+                    // Still pending after wait → return admi.002 (duplicate in-process)
+                    path = "DuplicatePending";
+                    _logger.LogWarning("[{CorrelationId}] [METRIC:ISO_PATH=DuplicatePending] Owner still processing after 500ms. Returning admi.002(DuplicateInProcess) for TxId {TxId}.", cid, request.TxId);
+                    
+                    var ev = new
+                    {
+                        schemaVersion = 1,
+                        eventId = Guid.NewGuid(),
+                        actor = "System",
+                        @event = "DuplicateReceivedWhilePending",
+                        timestampUtc = DateTimeOffset.UtcNow,
+                        correlation = new { transactionId = request.TxId, msgId = request.MsgId, uetr = request.UETR, endToEndId = request.EndToEndId },
+                        duplicateBy = "TxId"  // Track which constraint would have fired
+                    };
+                    await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, gct);
+                    
+                    // [PROTOCOL]: admi.002 for duplicate message in-process (SmartVista spec)
+                    var err = AdminMessageBuilder.Generate(
+                        AdminRejectReasonCodes.DuplicateMessageInProcess,
+                        "Duplicate transaction is being processed by another request.",
+                        request.MsgId);
+                    return FinalizeResponse(err, cid, sw, path);
+                }
+            }
+
+            // [OWNER LOGIC]: We successfully inserted the record. We are the owner and must call CoreBank.
+
+            // Step 3: Prepare response object
+            var response = _responses.BuildPaymentInitial(request);
+
             try
             {
-                var headers = new Dictionary<string, string>() {
-                        { API_Key, _callbackLinks.Key! },
-                        { API_Secret, _callbackLinks.Secret! }
-                    };
-                // Idempotency key
-                if (!string.IsNullOrWhiteSpace(request.TxId))
-                    headers["X-Idempotency-Key"] = request.TxId;
-                if (!string.IsNullOrWhiteSpace(request.TxId))
-                    headers["X-Transaction-Id"] = request.TxId;
-
-                var dto = new CBPaymentRequestDto
+                // CoreBank Integration (Optional)
+                if (_core.IncludeCoreBankOnListing)
                 {
-                    FromBIC = request.From ?? string.Empty,
-                    LocalInstrument = string.Empty, 
-                    CategoryPurpose = string.Empty,
-                    EndToEndId = request.EndToEndId ?? string.Empty,
-                    TxId = request.TxId ?? string.Empty,
-                    Amount = request.Amount,
-                    Currency = request.Currency ?? string.Empty,
-                    DebtorName = request.Debtor?.Name ?? string.Empty,
-                    DebtorAccount = request.Debtor?.Account ?? string.Empty,
-                    DebtorAccountType = request.Debtor?.AccountType ?? string.Empty,
-                    DebtorAgentBIC = string.Empty,
-                    DebtorIssuer = string.Empty,
-                    CreditorName = request.Creditor?.Name ?? string.Empty,
-                    CreditorAccount = request.Creditor?.Account ?? string.Empty,
-                    CreditorAccountType = request.Creditor?.AccountType ?? string.Empty,
-                    CreditorAgentBIC = string.Empty,
-                    CreditorIssuer = string.Empty,
-                    RemittanceInformation = string.Empty,
-                    Date = DateTime.UtcNow,
-                    ToBIC = request.To ?? string.Empty,
-                    SettlementMethod = "CLRG",
-                    ChargeBearer = "SLEV",
-                    BizMsgIdr = request.BizMsgIdr ?? string.Empty,
-                    MsgDefIdr = request.MsgDefIdr ?? string.Empty,
-                    ClearingSystem = string.Empty,
-                    MsgId = request.MsgId ?? string.Empty
-                };
-
-                var result = await _callbacks.SendJsonAsync(
-                    _callbackLinks.Transfer!,
-                    headers,
-                    dto,
-                    CB_PaymentRequest,
-                    _jsonAdapter,
-                    _correlation,
-                    _jsonSerializerOptions,
-                    _callback,
-                    ct,
-                    cid
-                );
-
-                if (result?.Data != null)
-                {
-                    var cbResponse = ParseCallbackResult(result.Data);
-                    if (cbResponse.Status == RJCT)
+                    try
                     {
-                        _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}. Reason: {Reason}", cid, request.TxId, cbResponse.Reason);
+                        var headers = new Dictionary<string, string>() {
+                            { API_Key, _callbackLinks.Key! },
+                            { API_Secret, _callbackLinks.Secret! }
+                        };
+                        // Idempotency key
+                        if (!string.IsNullOrWhiteSpace(request.TxId))
+                            headers["X-Idempotency-Key"] = request.TxId;
+                        if (!string.IsNullOrWhiteSpace(request.TxId))
+                            headers["X-Transaction-Id"] = request.TxId;
+
+                        var dto = new CBPaymentRequestDto
+                        {
+                            FromBIC = request.From ?? string.Empty,
+                            LocalInstrument = string.Empty, 
+                            CategoryPurpose = string.Empty,
+                            EndToEndId = request.EndToEndId ?? string.Empty,
+                            TxId = request.TxId ?? string.Empty,
+                            Amount = request.Amount,
+                            Currency = request.Currency ?? string.Empty,
+                            DebtorName = request.Debtor?.Name ?? string.Empty,
+                            DebtorAccount = request.Debtor?.Account ?? string.Empty,
+                            DebtorAccountType = request.Debtor?.AccountType ?? string.Empty,
+                            DebtorAgentBIC = string.Empty,
+                            DebtorIssuer = string.Empty,
+                            CreditorName = request.Creditor?.Name ?? string.Empty,
+                            CreditorAccount = request.Creditor?.Account ?? string.Empty,
+                            CreditorAccountType = request.Creditor?.AccountType ?? string.Empty,
+                            CreditorAgentBIC = string.Empty,
+                            CreditorIssuer = string.Empty,
+                            RemittanceInformation = string.Empty,
+                            Date = DateTime.UtcNow,
+                            ToBIC = request.To ?? string.Empty,
+                            SettlementMethod = "CLRG",
+                            ChargeBearer = "SLEV",
+                            BizMsgIdr = request.BizMsgIdr ?? string.Empty,
+                            MsgDefIdr = request.MsgDefIdr ?? string.Empty,
+                            ClearingSystem = string.Empty,
+                            MsgId = request.MsgId ?? string.Empty
+                        };
+
+                        // Create a bounded cancellation token for CoreBank callback
+                        using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(gct);
+                        coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
+
+                        var result = await _callbacks.SendJsonAsync(
+                            _callbackLinks.Transfer!,
+                            headers,
+                            dto,
+                            CB_PaymentRequest,
+                            _jsonAdapter,
+                            _correlation,
+                            _jsonSerializerOptions,
+                            _callback,
+                            coreBankCts.Token,
+                            cid
+                        );
+
+                        if (result?.Data != null)
+                        {
+                            var cbResponse = ParseCallbackResult(result.Data);
+                            if (cbResponse.Status == RJCT)
+                            {
+                                _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}. Reason: {Reason}", cid, request.TxId, cbResponse.Reason);
+                                response.Status = RJCT;
+                                response.Reason = cbResponse.Reason;
+                                response.AdditionalInfo = cbResponse.AdditionalInfo;
+                            }
+                            else
+                            {
+                                _logger.LogInformation("[{CorrelationId}] CoreBank returned status {Status} for transaction {TxId}. Proceeding with ACSC.", cid, cbResponse.Status, request.TxId);
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null or empty data for TxId {TxId}. Fast-failing with RJCT (Safe mode).", cid, request.TxId);
+                            response.Status = RJCT;
+                            response.Reason = "System Unavailable";
+                            response.AdditionalInfo = "CoreBank returned empty response.";
+                        }
+                    }
+                    catch (TaskCanceledException ex) when (!gct.IsCancellationRequested)
+                    {
+                        path = "CoreBankTimeout";
+                        _logger.LogWarning(ex, "[{CorrelationId}] [MANUAL_RECONCILIATION_REQUIRED:POTENTIAL_PHANTOM_CREDIT] CoreBank callback timed out for TxId {TxId} (>{Timeout}s). Raising CheckStatus for audit trail.", cid, request.TxId, _core.CoreBankTimeoutSeconds);
+                        
                         response.Status = RJCT;
-                        response.Reason = cbResponse.Reason;
-                        response.AdditionalInfo = cbResponse.AdditionalInfo;
+                        response.Reason = "System Unavailable";
+                        response.AdditionalInfo = "CoreBank response exceeded internal SLA.";
+
+                        // [AUDIT-GRADE INTEGRITY]: Record "in-doubt" state in immutable ledger
+                        var ev = new
+                        {
+                            schemaVersion = 1,
+                            eventId = Guid.NewGuid(),
+                            actor = "System",
+                            @event = "CheckStatusRaised",
+                            reason = "CoreBankTimeout",
+                            timestampUtc = DateTimeOffset.UtcNow,
+                            slaContext = new { elapsedMs = sw.ElapsedMilliseconds, isoPath = path },
+                            correlation = new { transactionId = request.TxId, msgId = request.MsgId, uetr = request.UETR, endToEndId = request.EndToEndId },
+                            coreBank = new { idempotencyKey = request.TxId, timeoutSeconds = _core.CoreBankTimeoutSeconds },
+                            reconciliationState = "Open"
+                        };
+                        
+                        await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, gct);
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        _logger.LogInformation("[{CorrelationId}] CoreBank returned status {Status} for transaction {TxId}. Proceeding with ACSC.", cid, cbResponse.Status, request.TxId);
+                        path = "CoreBankError";
+                        _logger.LogWarning(ex, "[{CorrelationId}] Failed to call CoreBank for TxId {TxId} (Connectivity issue). Rejecting for safety.", cid, request.TxId);
+                        response.Status = RJCT;
+                        response.Reason = "System Unavailable";
+                        response.AdditionalInfo = "Failed to reach CoreBank for authorization.";
                     }
                 }
-                else
-                {
-                    _logger.LogInformation("[{CorrelationId}] CoreBank callback returned null or empty data for TxId {TxId}. Proceeding with ACSC (Permissive).", cid, request.TxId);
-                }
+
+                // [PERSIST-BEFORE-RETURN INVARIANT]: Build response XML and persist BEFORE returning
+                var rsp = PaymentRequestResponseBuilder.Build(response);
+                var finalStatus = path == "CoreBankTimeout" ? TransactionStatus.CheckStatus : TransactionStatus.Pending;
+                
+                // DB persistence should also respect the global deadline
+                using var dbCts = CancellationTokenSource.CreateLinkedTokenSource(gct);
+                dbCts.CancelAfter(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                
+                await _isoService.PersistTransactionResponseAsync(record,
+                    finalStatus,
+                    !string.IsNullOrEmpty(response.Reason) ? response.Reason : (finalStatus == TransactionStatus.CheckStatus ? "CoreBank Timeout - Verification Required" : "Transaction Is Pending For Approval"),
+                    response.AdditionalInfo,
+                    rsp,
+                    request.TxId ?? string.Empty,
+                    request.EndToEndId ?? string.Empty,
+                    dbCts.Token);
+
+                _logger.LogInformation("[{CorrelationId}] pacs.008 initiation complete for TxId {TxId}. Status={Status}. Response persisted. Awaiting pacs.002 completion from IPS.", cid, request.TxId, response.Status);
+
+                return FinalizeResponse(rsp, cid, sw, path);
+
             }
             catch (Exception ex)
             {
-                 _logger.LogWarning(ex, "[{CorrelationId}] Failed to call CoreBank for TxId {TxId} (Connectivity issue). Proceeding with ACSC (Permissive).", cid, request.TxId);
+                path = path == "Normal" ? "DbFail" : path;
+                _logger.LogError(ex, "[{CorrelationId}] Internal catch for TxId {TxId}. Path={Path}. Always returning signed ISO response for SLA compliance.", cid, request?.TxId, path);
+                
+                if (response.Status != RJCT) 
+                {
+                    response.Status = RJCT;
+                    response.Reason = "Internal System Error";
+                    response.AdditionalInfo = "Service failed to process callback within SLA.";
+                }
+                
+                var rspBody = PaymentRequestResponseBuilder.Build(response);
+                
+                // Final attempt to record the failure in DB (brief timeout)
+                try {
+                    using var dbCts2 = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+                    await _isoService.PersistTransactionResponseAsync(record,
+                        TransactionStatus.Failed,
+                        "Internal System Error during processing",
+                        response.AdditionalInfo,
+                        rspBody,
+                        request?.TxId ?? string.Empty,
+                        request?.EndToEndId ?? string.Empty,
+                        dbCts2.Token);
+                } catch { /* suppress DB logging errors in emergency fallback */ }
+                
+                return FinalizeResponse(rspBody, cid, sw, path);
             }
-        }
-
-        try
-        {
-            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-            var dbCt = dbCts.Token;
-            
-            // Step 4: Determine final status
-            // If response.Status was set to RJCT by CoreBank logic, it will be persisted as such.
-            // Otherwise it already defaults to ACSC (Accepted).
-
-            // Step 5: Build and persist initial ACK response
-            // Transaction remains in Pending state regardless of RJCT/ACSC return to switch, 
-            // as downstream completion/reversal will finalize the state.
-            var rsp = PaymentRequestResponseBuilder.Build(response);
-            await _isoService.PersistTransactionResponseAsync(record,
-                TransactionStatus.Pending,
-                !string.IsNullOrEmpty(response.Reason) ? response.Reason : "Transaction Is Pending For Approval",
-                response.AdditionalInfo,
-                rsp,
-                request.TxId ?? string.Empty,
-                request.EndToEndId ?? string.Empty,
-                dbCt);
-
-            _logger.LogInformation("[{CorrelationId}] pacs.008 initiation complete for TxId {TxId}. Status={Status}. Awaiting pacs.002 completion from IPS.", cid, request.TxId, response.Status);
-
-            return _signer.SignEnvelope(rsp);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request?.TxId);
-            response.AdditionalInfo = "Failed to process Transaction";
-            var rsp = PaymentRequestResponseBuilder.Build(response);
-            using var dbCts2 = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-            await _isoService.PersistTransactionResponseAsync(record,
-                TransactionStatus.Failed,
-                "Failed to process Transaction",
-                response.AdditionalInfo,
-                rsp,
-                request?.TxId ?? string.Empty,
-                request?.EndToEndId ?? string.Empty,
-                dbCts2.Token);
-            return _signer.SignEnvelope(rsp);
+            path = "EmergencyCatch";
+            _logger.LogCritical(ex, "[{CorrelationId}] [METRIC:ISO_EMERGENCY_PATH] Catastrophic failure for TxId {TxId}. Path={Path}", cid, request?.TxId, path);
+            // [PROTOCOL]: admi.002 for catastrophic technical failure (SmartVista spec)
+            var err = AdminMessageBuilder.Generate(
+                AdminRejectReasonCodes.TechnicalError,
+                "Critical failure during processing.",
+                request?.MsgId);
+            return FinalizeResponse(err, cid, sw, path);
+        }
+    }
+
+    private string FinalizeResponse(string isoBody, string cid, System.Diagnostics.Stopwatch sw, string path)
+    {
+        long elapsedMs = sw.ElapsedMilliseconds;
+        long remainingSlaMs = (_core.CallbackSlaSeconds * 1000) - elapsedMs;
+
+        _logger.LogInformation("[{CorrelationId}] [METRIC:ISO_PATH={Path}] Processing complete. Elapsed={ElapsedMs}ms, RemainingSLA={RemainingSlaMs}ms", cid, path, elapsedMs, remainingSlaMs);
+
+        try
+        {
+            return _signer.SignEnvelope(isoBody);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[{CorrelationId}] [METRIC:ISO_SIGNING_FAILED] Failed to sign ISO response. Returning unsigned body for SLA compliance.", cid);
+            return isoBody; // Signing-safe fallback: return unsigned body instead of crashing
         }
     }
 

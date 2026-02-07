@@ -20,6 +20,7 @@ public static class PaymentRequestBuilder
         public string LocalInstrument { get; set; } = string.Empty;
         public string CategoryPurpose { get; set; } = string.Empty;
         public string TxId { get; set; } = string.Empty;
+        public string? UETR { get; set; }
         public string EndToEndId { get; set; } = string.Empty;
         public decimal Amount { get; set; }
         public string Currency { get; set; } = string.Empty;
@@ -133,7 +134,8 @@ public static class PaymentRequestBuilder
                         PmtId = new PaymentIdentification13
                         {
                             EndToEndId = request.EndToEndId,
-                            TxId = request.TxId
+                            TxId = request.TxId,
+                            UETR = request.UETR
                         },
                         IntrBkSttlmAmt = new ActiveCurrencyAndAmount
                         {
@@ -248,6 +250,7 @@ public static class PaymentRequestBuilder
             LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.LclInstrm.Prtry,
             CategoryPurpose = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.CtgyPurp.Prtry,
             TxId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.TxId,
+            UETR = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.UETR,
             EndToEndId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.EndToEndId,
             Amount = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.TypedValue,
             Currency = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.Ccy,

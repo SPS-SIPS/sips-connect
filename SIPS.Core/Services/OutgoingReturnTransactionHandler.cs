@@ -62,6 +62,17 @@ public sealed class OutgoingReturnTransactionHandler(
             }
 
             // Step 2: Validate original transaction was successfully completed (ACSC)
+            // [SAFETY INVARIANT]: Block any financial action (Return/Refund) if transaction is in-doubt.
+            if (originalMessage.Status == PostgreSQL.Enums.TransactionStatus.CheckStatus)
+            {
+                _logger.LogWarning("[{CorrelationId}] Return blocked: Original transaction {TxId} is in CheckStatus (In-Doubt). Reconciliation required.",
+                    cid, message.OriginalTxId);
+                return Response<ReturnPaymentResponseDto>.Fail(
+                    "FINANCIAL FREEZE: This transaction is in an 'in-doubt' state (CheckStatus). " +
+                    "Financial movements are blocked until reconciliation is completed via the audit ledger.",
+                    System.Net.HttpStatusCode.Conflict);
+            }
+
             // Only allow returns for transactions that were accepted and settled
             if (originalMessage.Status != PostgreSQL.Enums.TransactionStatus.Success &&
                 originalMessage.Status != PostgreSQL.Enums.TransactionStatus.ReadyForReturn)

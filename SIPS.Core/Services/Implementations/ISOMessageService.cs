@@ -39,6 +39,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
                 MsgDefIdr = request.MsgDefIdr,
                 MsgId = request.MsgId,
                 TxId = request.SIPSRequestId,
+                UETR = (request as PayeeVerificationBuilder.Request)?.MsgId // Verification usually uses MsgId as TxId/UETR proxy
             }, ct);
         sw.Stop();
         _logger.LogInformation("DB persist RecordIncomingVerificationAsync txId={TxId} durationMs={Duration}", request.SIPSRequestId, sw.ElapsedMilliseconds);
@@ -47,7 +48,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
 
     public async Task PersistResponseAsync(
         ISOMessage isoMessage,
-        string status,
+        TransactionStatus status,
         string reason,
         string? additionalInfo,
         string responseXml,
@@ -56,7 +57,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         var sw = Stopwatch.StartNew();
         // update the original object (tests expect the original to be mutated)
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
-        isoMessage.Status = (status == "ACSC" || status == "SUCC") ? TransactionStatus.Success : TransactionStatus.Failed;
+        isoMessage.Status = status;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
 
@@ -77,6 +78,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             MsgDefIdr = isoMessage.MsgDefIdr,
             MsgId = isoMessage.MsgId,
             TxId = isoMessage.TxId,
+            UETR = isoMessage.UETR,
             EndToEndId = isoMessage.EndToEndId
         };
         // debug: log statuses to help unit-test diagnosis
@@ -159,6 +161,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             BizMsgIdr = request.BizMsgIdr,
             MsgDefIdr = request.MsgDefIdr,
             MsgId = request.MsgId,
+            UETR = request.UETR,
         };
         entity.Transactions.Add(new Transaction
         {
@@ -186,6 +189,59 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         sw.Stop();
         _logger.LogInformation("DB persist RecordIncomingTransactionAsync txId={TxId} durationMs={Duration}", request.TxId, sw.ElapsedMilliseconds);
         return result;
+    }
+
+    public async Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(
+        PaymentRequestBuilder.Request request,
+        string rawXml,
+        CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        var entity = new ISOMessage
+        {
+            MessageType = ISOMessageType.TransactionRequest,
+            Date = System.DateTimeOffset.Now.ToUniversalTime(),
+            FromBIC = request.From,
+            ToBIC = request.To,
+            Message = Encoding.UTF8.GetBytes(rawXml),
+            Status = TransactionStatus.Pending,
+            TxId = request.TxId,
+            UETR = request.UETR,
+            EndToEndId = request.EndToEndId,
+            BizMsgIdr = request.BizMsgIdr,
+            MsgDefIdr = request.MsgDefIdr,
+            MsgId = request.MsgId,
+        };
+        // Add basic transaction details for tracking
+        entity.Transactions.Add(new Transaction
+        {
+            Type = TransactionType.Deposit,
+            FromBIC = request.From,
+            LocalInstrument = request.LocalInstrument,
+            TxId = request.TxId,
+            Amount = request.Amount,
+            Currency = request.Currency,
+            CreditorAccount = request.Creditor.Account,
+            DebtorAccount = request.Debtor.Account
+        });
+
+        var result = await _persistence.TryRecordIncomingTransactionAsync(entity, ct);
+        sw.Stop();
+        
+        string status = result.IsNew ? "INSERT-First" : (result.Message != null ? "Follower-Loaded" : "Failed");
+        _logger.LogInformation("DB persist TryRecordIncomingTransactionAsync ({Status}) txId={TxId} durationMs={Duration}", status, request.TxId, sw.ElapsedMilliseconds);
+        
+        return result;
+    }
+
+    public async Task<(ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy)> TryRecordIncomingVerificationAsync(ISOMessage entity, CancellationToken ct)
+    {
+        return await _persistence.TryRecordIncomingVerificationAsync(entity, ct);
+    }
+
+    public async Task<ISOMessage?> GetInboundMessageByTxIdAsync(string txId, CancellationToken ct)
+    {
+        return await _persistence.GetISOMessageByTxIdAndTypeAsync(txId, ISOMessageType.TransactionRequest, ct);
     }
 
     public async Task PersistTransactionResponseAsync(
@@ -345,5 +401,42 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         sw.Stop();
         _logger.LogInformation("DB persist FinalizeAfterMaxRetriesAsync txId={TxId} round={Round} durationMs={Duration}",
             isoMessage.TxId, isoMessage.Round, sw.ElapsedMilliseconds);
+    }
+
+    public async Task<bool> AppendAuditLedgerEventAsync(
+        int isoMessageId,
+        object ledgerEvent,
+        CancellationToken ct)
+    {
+        const int maxRetries = 3;
+        var sw = Stopwatch.StartNew();
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            // 1. Get current xmin by fetching the message
+            var message = await _persistence.GetISOMessageByIdAsync(isoMessageId, ct);
+            if (message == null)
+            {
+                _logger.LogWarning("Failed to append audit ledger: ISOMessage {Id} not found.", isoMessageId);
+                return false;
+            }
+
+            // 2. Attempt atomic append using the retrieved xmin
+            var affected = await _persistence.AppendAuditLedgerEventAsync(isoMessageId, ledgerEvent, message.xmin, ct);
+
+            if (affected == 1)
+            {
+                _logger.LogInformation("Audit ledger event appended to ISOMessage {Id} (Attempt {Attempt}, Duration: {Duration}ms)", 
+                    isoMessageId, attempt, sw.ElapsedMilliseconds);
+                return true;
+            }
+
+            _logger.LogWarning("Concurrency conflict appending audit ledger to ISOMessage {Id} (Attempt {Attempt}). Retrying...", 
+                isoMessageId, attempt);
+        }
+
+        _logger.LogError("Failed to append audit ledger to ISOMessage {Id} after {Max} attempts due to concurrency conflicts.", 
+            isoMessageId, maxRetries);
+        return false;
     }
 }

@@ -75,11 +75,20 @@ public sealed class OutgoingTransactionStatusHandler_CompletionNotification_Test
         public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct)
             => Task.FromResult(_messageToReturn);
 
+        public Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct)
+            => Task.FromResult(_messageToReturn);
+
         public Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct)
             => Task.FromResult(_messageToReturn);
 
         public Task<List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct)
             => Task.FromResult(new List<ISOMessage>());
+
+        public Task<int> AppendAuditLedgerEventAsync(int isoMessageId, object ledgerEvent, uint xmin, CancellationToken ct)
+            => Task.FromResult(1);
+        public Task<ISOMessage?> GetISOMessageByTxIdAndTypeAsync(string txId, ISOMessageType type, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
+        public Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(ISOMessage entity, CancellationToken ct) => Task.FromResult((default(ISOMessage?), true));
+        public Task<(ISOMessage record, DedupOutcome outcome, string? duplicateBy)> TryRecordIncomingVerificationAsync(ISOMessage entity, CancellationToken ct) => Task.FromResult((entity, DedupOutcome.Owner, default(string?)));
     }
 
     private sealed class FakeSipsSender : ISipsRequestSender
