@@ -1,4 +1,5 @@
 using Serilog;
+using Microsoft.AspNetCore.RateLimiting;
 using static SIPS.Connect.Config.DI;
 using static SIPS.Connect.Extensions.InitializerExtensions;
 var builder = WebApplication.CreateBuilder(args);
@@ -25,6 +26,17 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddHttpClient();
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("UI", opt =>
+    {
+        opt.Window = TimeSpan.FromSeconds(10);
+        opt.PermitLimit = 50; // Throttle UI traffic to protect thread pool
+        opt.QueueLimit = 10;
+        opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
 
 Register(builder.Services, builder.Configuration);
 
@@ -37,6 +49,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseRateLimiter();
 app.UseRouting();
 
 app.UseCors("default");
