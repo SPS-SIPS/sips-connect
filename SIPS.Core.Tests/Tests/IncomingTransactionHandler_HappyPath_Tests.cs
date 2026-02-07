@@ -74,6 +74,8 @@ public class IncomingTransactionHandler_HappyPath_Tests
                 .ReturnsAsync((SIPS.PostgreSQL.Models.ISOMessage m, CancellationToken _) => m);
         recorder.Setup(r => r.ISOMessageResponseAsync(It.IsAny<SIPS.PostgreSQL.Models.ISOMessage>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((SIPS.PostgreSQL.Models.ISOMessage m, CancellationToken _) => m);
+        recorder.Setup(r => r.TryRecordIncomingTransactionAsync(It.IsAny<SIPS.PostgreSQL.Models.ISOMessage>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((SIPS.PostgreSQL.Models.ISOMessage m, CancellationToken _) => (m, true));
 
         // new deps
         var correlation = new CorrelationService();

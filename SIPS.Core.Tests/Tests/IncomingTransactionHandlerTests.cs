@@ -45,7 +45,12 @@ public class IncomingTransactionHandlerTests
         var signer = signerMock.Object;
         var jsonAdapter = Mock.Of<IJsonAdapter>();
         var recorderMock = new Mock<SIPS.PostgreSQL.Interfaces.IIncomingRecorder>();
-        var recorder = recorderMock.Object;
+        recorderMock.Setup(r => r.ISOMessageAsync(It.IsAny<SIPS.PostgreSQL.Models.ISOMessage>(), It.IsAny<CancellationToken>()))
+                    .ReturnsAsync((SIPS.PostgreSQL.Models.ISOMessage m, CancellationToken _) => m);
+        recorderMock.Setup(r => r.ISOMessageResponseAsync(It.IsAny<SIPS.PostgreSQL.Models.ISOMessage>(), It.IsAny<CancellationToken>()))
+                    .ReturnsAsync((SIPS.PostgreSQL.Models.ISOMessage m, CancellationToken _) => m);
+        recorderMock.Setup(r => r.TryRecordIncomingTransactionAsync(It.IsAny<SIPS.PostgreSQL.Models.ISOMessage>(), It.IsAny<CancellationToken>()))
+                    .ReturnsAsync((SIPS.PostgreSQL.Models.ISOMessage m, CancellationToken _) => (m, true));
 
         var httpClient = (httpClientMock ?? new Mock<IInterfaceHttpClient>()).Object;
         var verifier = (verifierMock ?? new Mock<INativeVerifier>()).Object;
@@ -66,7 +71,7 @@ public class IncomingTransactionHandlerTests
     var isoMessageService = new ISOMessageService(persistence);
         var coreOptions = Microsoft.Extensions.Options.Options.Create(new CoreOptions());
         // SIPS.Core.Services.Abstractions.IInboundMessageService
-        return new IncomingTransactionHandler(options, logger, httpClient, signer, verifier, jsonAdapter, recorder,
+        return new IncomingTransactionHandler(options, logger, httpClient, signer, verifier, jsonAdapter, recorderMock.Object,
             signature, parser, callback, responses, persistence, correlation, inbound, callbacks, isoMessageService, coreOptions);
     }
 
@@ -84,7 +89,7 @@ public class IncomingTransactionHandlerTests
 
         // Assert
         result.Should().NotBeNullOrWhiteSpace();
-        result.Should().Contain("Failed to verify the signature");
+        result.Should().Contain("Failed to verify signature or parse ISO20022 message.");
     }
 
     [Fact]
@@ -104,6 +109,6 @@ public class IncomingTransactionHandlerTests
 
         // Assert
         result.Should().NotBeNullOrWhiteSpace();
-        result.Should().Contain("Failed to verify the signature or parse the message");
+        result.Should().Contain("Failed to verify signature or parse ISO20022 message.");
     }
 }
