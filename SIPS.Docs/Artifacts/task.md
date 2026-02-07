@@ -1,0 +1,63 @@
+# Task Checklist
+
+- [x] Analyze Outgoing handlers for sync/async patterns and resource usage
+- [x] Analyze Incoming handlers for callback processing and SLA compliance
+- [x] Verify HTTP timeout configurations and cancellation token usage
+- [x] Inspect certificate handling and caching mechanisms
+- [x] Evaluate separation of concerns between inbound and outbound flows
+- [x] Refine Implementation Plan based on user correction
+- [x] Increase outbound HTTP timeout to 20s in appsettings.json
+- [x] Implement bounded CoreBank calls (3s timeout) in Incoming handlers
+- [x] Refine Resilience: Enforce 1-hour certificate cache duration
+- [x] Refine Resilience: Implement 9s global deadline for ISO callback handlers
+- [x] Verify Keep-Alive configuration in Kestrel/Program.cs
+- [x] Final Proof: Run verification test suite
+- [x] Hardening: Implement "ISO Always" emergency guard in handlers
+- [x] Triage: Audit and fix API-KEY authentication
+- [x] Triage: Audit and fix Bearer token refresh
+- [x] Hardening: Extract IssuerDN in NativeVerifier.cs
+- [x] Document hardened state in walkthrough.md
+- [x] Operational: Implement canonical SLA constants
+- [x] Operational: Implement detailed path logging
+- [x] Operational: Normalize IssuerDN for cert caching
+- [x] Operational: Verify health/metrics exclusions in rate limiter
+- [x] Integrity: Implement Financial Integrity Refinements
+    - [x] Enable `xmin` concurrency token
+    - [x] Implement atomic `AppendAuditLedgerEventAsync`
+    - [x] Expose audit ledger append via service
+    - [x] Integrate phantom credit detection
+    - [x] Resolve build regressions
+    - [x] Standardize response usage
+    - [x] Update persistence fakes in test suite
+- [x] Final Proof: Run verification test suite (84/84 passing)
+- [x] Finalize walkthrough and compliance attestation
+- [x] Deliver operations/compliance follow-ups
+- [x] Reframe documentation for Participant Integration Gateway context
+- [x] Implement Final Safety Guard (Financial Freeze)
+- [x] Deliver Final Comprehensive Technical Report
+- [x] Deliver Operational Close-out (Ops Runbook)
+- [x] ACHIEVED PRODUCTION SIGN-OFF (February 7, 2026)
+
+## Phase 4: Inbound Hardening (Gold Pattern + SmartVista Protocol Compliance)
+- [x] Tighten Inbound Plan (INSERT-First Gold Pattern)
+- [x] Implement UETR extraction & secondary indexing
+- [x] Implement `UNIQUE (MessageType, TxId)` constraint
+- [x] Implement `TryRecordIncomingTransactionAsync` (INSERT-First)
+- [x] Update `IncomingTransactionHandler` with Replay-Wait logic
+- [x] Expose methods via `IISOMessageService` and `IPersistenceGateway`
+- [x] Build verification (SIPS.Core, SIPS.PostgreSQL)
+- [x] **SmartVista Protocol Compliance**
+    - [x] Add `UNIQUE (MessageType, MsgId)` index (message-level de-dup)
+    - [x] Create `AdminMessageBuilder` for admi.002 responses
+    - [x] Update error taxonomy: admi.002 for technical/protocol errors
+    - [x] Update error taxonomy: pacs.002 for business outcomes
+    - [x] Enhance audit ledger with `duplicateBy` tracking
+    - [x] Build verification (all packages passing)
+- [x] Generate and apply database migration
+- [x] Verify structural de-duplication via concurrent automated tests
+- [x] **Verification Handling (IncomingVerificationHandler.cs)**
+    - [x] Apply "Gold Pattern" Structure (De-duplication, Audit Logging)
+    - [x] Implement `MsgId` constraint and `TryRecordIncomingVerificationAsync` (INSERT-First)
+    - [x] Protocol Compliance: `acmt.024` (Business) vs `admi.002` (Protocol/Technical)
+    - [x] Audit Ledger Integration (`VerificationOwnerClaimed`, `VerificationFollowerDuplicate`)
+    - [x] Unit/Integration Tests for Verification Logic
