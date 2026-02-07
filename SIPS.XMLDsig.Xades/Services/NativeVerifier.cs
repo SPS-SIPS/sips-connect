@@ -148,8 +148,13 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
     private async Task<(bool valid, X509Certificate? signingCertificate, string? owner)> ValidateCertificate(XmlElement signatureElement, CancellationToken cancellationToken = default)
     {
         XmlElement sn = GetFirstOfXmlElementsByTagWithPrefix(signatureElement!, "ds:X509SerialNumber") ?? throw new InvalidOperationException("XML must contain ds:X509SerialNumber node");
+        XmlElement issuer = GetFirstOfXmlElementsByTagWithPrefix(signatureElement!, "ds:X509IssuerName") ?? throw new InvalidOperationException("XML must contain ds:X509IssuerName node");
 
-        var (certificate, error) = await _cdService.GetCertificatesAsync(sn.InnerText, cancellationToken);
+        // BPC Hardening: Normalize IssuerDN to avoid cache misses due to formatting variance
+        string normalizedIssuer = issuer.InnerText?.Trim() ?? string.Empty;
+        while (normalizedIssuer.Contains("  ")) normalizedIssuer = normalizedIssuer.Replace("  ", " ");
+
+        var (certificate, error) = await _cdService.GetCertificatesAsync(sn.InnerText, normalizedIssuer, cancellationToken);
         if (certificate is null)
         {
             _logger.LogError("Could not download the certificate: {error}", error);
