@@ -10,9 +10,6 @@ The following repositories were merged into this structure:
 | :--- | :--- | :--- | :--- |
 | **SIPS.Connect** | `/SIPS.Connect` | `main` | Full history merged via subtree |
 | **Packages** | `/Packages` | `improvements` | Full history merged via subtree |
-| **Examples (Consumer)** | `/Examples/SIPS.Example.Consumer` | `main` | Full history merged via subtree |
-| **Examples (Deployment)** | `/Examples/SIPS.Example.Deployement` | `main` | Full history merged via subtree |
-| **Dashboard UI** | `/sps-dashboard-ui` | `feature` | Full history merged via subtree |
 
 ## Provenance Verification
 To verify the merged history and lineage, auditors can run:
