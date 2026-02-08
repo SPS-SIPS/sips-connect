@@ -1,0 +1,23 @@
+{
+    "realm": "master",
+    "enabled": true,
+    "users": [
+        {
+            "username": "admin",
+            "email": "admin@sips.com",
+            "firstName": "Admin",
+            "lastName": "User",
+            "enabled": true,
+            "credentials": [
+                {
+                    "type": "password",
+                    "value": "admin",
+                    "temporary": false
+                }
+            ],
+            "realmRoles": [
+                "admin"
+            ]
+        }
+    ]
+}
