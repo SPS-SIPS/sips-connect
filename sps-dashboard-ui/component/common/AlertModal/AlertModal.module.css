@@ -1,0 +1,124 @@
+.modalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--color-overlay);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: var(--z-index-modal);
+    backdrop-filter: blur(2px);
+}
+
+.modal {
+    position: relative;
+    background-color: white;
+    border-radius: var(--radius-xl);
+    padding: 24px;
+    box-shadow: 0 8px 32px var(--shadow-lg);
+    width: 340px;
+    max-width: 90%;
+    text-align: center;
+    animation: scaleIn 0.3s ease;
+}
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.closeButton {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease;
+}
+
+.closeButton:hover {
+    opacity: 0.8;
+}
+
+.closeIcon {
+    width: 24px;
+    height: 24px;
+    color: #666;
+    transition: color 0.2s ease;
+}
+
+.closeButton:hover .closeIcon {
+    color: #333;
+}
+
+.modal h3 {
+    margin: 0 0 16px;
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+}
+
+.modal p {
+    margin: 0 0 24px;
+    font-size: 16px;
+    color: #666;
+    line-height: 1.5;
+}
+
+.buttons {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+.confirmButton,
+.errorButton {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.confirmButton {
+    background-color: var(--color-primary);
+    color: white;
+}
+
+.confirmButton:hover {
+    background-color: var(--color-primary-hover);
+    transform: translateY(-1px);
+}
+
+.confirmButton:active {
+    transform: translateY(0);
+}
+
+.errorButton {
+    background-color: var(--color-error);
+    color: white;
+}
+
+.errorButton:hover {
+    background-color: var(--color-error-hover);
+    transform: translateY(-1px);
+}
+
+.errorButton:active {
+    transform: translateY(0);
+}

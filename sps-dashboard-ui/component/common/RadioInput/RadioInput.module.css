@@ -1,0 +1,40 @@
+.radioContainer {
+    width: fit-content;
+    display: flex;
+    flex-direction: column;
+}
+
+.label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-text-label);
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.requiredAsterisk {
+    color: var(--color-error);
+    margin-left: 5px;
+}
+
+.radioGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.radioOption {
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.radioInput {
+    accent-color: var(--color-primary);
+    cursor: pointer;
+}
+.errorMessage {
+    color: var(--color-error);
+    font-size: 12px;
+}

@@ -1,0 +1,41 @@
+.container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.progressTrack {
+    position: relative;
+    overflow: hidden;
+}
+
+.progressFill {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--spacing-sm);
+}
+
+.label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-label);
+    display: flex;
+    justify-content: space-between;
+}
+
+.labelInside {
+    font-size: var(--font-size-sm);
+    margin-left: var(--spacing-sm);
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.statusIcon {
+    position: absolute;
+    right: var(--spacing-sm);
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+}

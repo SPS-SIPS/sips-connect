@@ -1,0 +1,73 @@
+.inputContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    width: 100%;
+    position: relative;
+}
+
+.label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-label);
+}
+
+.requiredAsterisk {
+    color: var(--color-error);
+    margin-left: 0.2rem;
+}
+
+.selectWrapper {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.inputField {
+    position: relative;
+    width: 100%;
+    padding: 0.75rem 2.5rem 0.75rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    font-size: 1rem;
+    color: var(--color-text-primary);
+    background-color: var(--color-text-light);
+    appearance: none;
+    -moz-appearance: none;
+    -webkit-appearance: none;
+    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+    text-overflow: ellipsis;
+    white-space: normal;
+    background-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22none%22 stroke=%22currentColor%22 class=%22h-5 w-5%22%3E%3Cpath d=%22M5 7l5 5 5-5%22/%3E%3C/svg%3E');
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 12px 12px;
+}
+
+.inputField:focus {
+    outline: none;
+    border-color: var(--color-border-focus);
+    box-shadow: var(--shadow-focus);
+}
+
+.inputField:hover {
+    border-color: var(--color-primary-hover);
+}
+
+.inputField:disabled {
+    background-color: #f2f2f2;
+    color: #999999;
+    border-color: var(--color-border);
+    cursor: not-allowed;
+}
+
+.inputField option {
+    color: var(--color-text-primary);
+}
+
+.errorMessage {
+    color: var(--color-error);
+    font-size: 12px;
+}
