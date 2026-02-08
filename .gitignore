@@ -138,7 +138,10 @@ $tf/
 **/*.HTMLClient/GeneratedArtifacts
 **/*.Server/GeneratedArtifacts
 **/*.Server/ModelManifest.xml
-**/[Pp]ackages/*
+# **/[Pp]ackages/*
+!Packages/
+
+
 *- [Bb]ackup ([0-9]).rdl
 *- [Bb]ackup ([0-9][0-9]).rdl
 *- [Bb]ackup.rdl
