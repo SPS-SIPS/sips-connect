@@ -1,0 +1,18 @@
+name: sips-connect
+services:
+  sips-corebank:
+    image: sips-corebank
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8080"
+    env_file:
+      - ./.env
+    networks:
+      - sips-network
+
+networks:
+  sips-network:
+    driver: bridge
+    external: true
