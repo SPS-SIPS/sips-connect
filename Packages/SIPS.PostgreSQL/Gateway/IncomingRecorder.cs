@@ -243,6 +243,10 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
             return message;
         }
 
+        // [CONCURRENCY GUARD]: If a raw SQL update (like AppendAuditLedgerEventAsync) changed xmin,
+        // we MUST reload to prevent DbUpdateConcurrencyException.
+        await _storage.Entry(entity).ReloadAsync(ct);
+
         entity.Response = message.Response;
         entity.Status = message.Status;
         entity.Reason = message.Reason;
@@ -285,6 +289,9 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
             _logger.LogCritical("Unknown Message : {message}", message);
             return message;
         }
+
+        // [CONCURRENCY GUARD]: Force refresh from DB to ensure xmin is current
+        await _storage.Entry(entity).ReloadAsync(ct);
 
         entity.Response = message.Response;
 
