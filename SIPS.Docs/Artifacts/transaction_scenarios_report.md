@@ -8,21 +8,37 @@
 
 ## 🏗️ Resilience Grading System
 
-*   **🏆 GOLD**: Absolute protection. Immue to retry storms, concurrent race conditions, and phantom credits. (INSERT-First De-duplication).
+*   **🏆 GOLD**: Absolute protection. Immune to retry storms, concurrent race conditions, and phantom credits. (INSERT-First De-duplication).
 *   **🥈 SILVER**: Robust protection. Prevents double-processing using state-validation. Safe for production.
 *   **🥉 BRONZE**: Standard handling. Functional but lacks high-concurrency "Gold" hardening.
+
+---
+
+## 🛡️ Authorization Modes: Strict vs. Permissive
+The system dynamically adapts its safety profile based on the bank's integration capability (`IncludeCoreBankOnListing` flag).
+
+*   **🛠️ STRICT MODE (Real-time Authorization)**:
+    - **Behavior**: SIPS calls CoreBank *immediately* during the initial message handshake. 
+    - **Risk Mitigation**: Credits are pre-authorized. If CoreBank is down, SIPS rejects the request to IPS.
+    - **Best for**: Banks with real-time STP (Straight Through Processing) capabilities.
+
+*   **⚡ PERMISSIVE MODE (Buffered/Late Binding)**:
+    - **Behavior**: SIPS buffers the payment locally and responds "Accepted" to IPS immediately. The CoreBank credit is triggered only *after* final settlement.
+    - **Risk Mitigation**: Ensures high availability. SIPS protects the bank from network latency during the handshake.
+    - **Best for**: Banks requiring an integration buffer or with "Late Binding" settlement models.
 
 ---
 
 ## 1. Incoming Payments (`pacs.008`)
 **Grade: 🏆 GOLD**
 
-| Scenario | System Handling | Financial Impact |
-| :--- | :--- | :--- |
-| **Success** | Message recorded, signature verified, CoreBank credited, `pacs.002 (ACSC)` returned. | Ledger Balanced. |
-| **Retry Storm** (Duplicate `TxId`) | **INSERT-First** logic captures the first request; subsequent requests wait 500ms and receive a replay of the original response. | **ZERO** double-credit risk. |
-| **IPS Protocol Error** | Early validation rejects invalid XML or missing fields using `admi.002`. | No processing overhead. |
-| **CoreBank Timeout** | Transaction marked `CheckStatus`. User receives `RJCT` but money is frozen in SIPS until manual reconciliation. | **PHANTOM CREDIT PREVENTED**. |
+| Scenario | Mode | System Handling | Financial Impact |
+| :--- | :--- | :--- | :--- |
+| **Normal Success** | Strict | Real-time CB check -> ACSC. | Ledger Balanced (Sync). |
+| **Normal Success** | Permissive | Local Record -> ACSC. CB credit triggered on completion. | Ledger Balanced (Async). |
+| **Retry Storm** | Both | **INSERT-First** logic; followers receive replay. | **ZERO** double-credit risk. |
+| **CB Timeout** | Strict | `CheckStatus` raised. `RJCT` returned to IPS. | **PHANTOM CREDIT PREVENTED**. |
+| **CB Timeout** | Permissive | Handled in completion flow. `CheckStatus` prevents double-post. | Audit-trail safe. |
 
 ---
 
