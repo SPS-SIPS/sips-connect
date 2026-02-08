@@ -59,6 +59,8 @@ public class IncomingReturnTransactionHandler_Tests
                 .ReturnsAsync((ISOMessage m, CancellationToken _) => m);
         recorder.Setup(r => r.GetISOMessageWithTransactionsByTxIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new ISOMessage { Transactions = { new Transaction { TxId = "TX1", EndToEndId = "E2E1", Amount = 1m, Currency = "ZAR", LocalInstrument = "FP", CategoryPurpose = "TRF", FromBIC = "BICB" } } });
+        recorder.Setup(r => r.TryRecordIncomingReturnAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ISOMessage m, CancellationToken _) => (m, true));
 
         var signature = new Mock<SIPS.Core.Services.Verification.ISignatureService>();
         signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
