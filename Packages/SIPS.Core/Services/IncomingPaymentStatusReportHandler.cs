@@ -373,7 +373,11 @@ public sealed class IncomingPaymentStatusReportHandler(
 
                 if (rejectResult != null)
                 {
+                     // [DATA SAFETY]: Use explicit PersistResponseAsync to merge CoreBankResponse safely.
+                     // Direct assignment isoMessage.CoreBankResponse = ... is unsafe as it bypasses the audit ledger merge logic.
                      isoMessage.CoreBankResponse = JsonSerializer.Serialize(rejectResult, _jsonSerializerOptions);
+                     await _isoService.PersistResponseAsync(isoMessage, isoMessage.Status, isoMessage.Reason ?? "", isoMessage.AdditionalInfo, 
+                        isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "", ct);
                 }
                 
             }
@@ -664,10 +668,21 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
 
         // Apply mapped status to parent ISOMessage
+        // Apply mapped status to parent ISOMessage
         isoMessage.Status = parentStatus;
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
+        
+        // [DATA SAFETY]: Use explicit PersistResponseAsync to merge CoreBankResponse safely.
         isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
+        // Note: We don't have the final response XML yet (rspFinal is built later), but we can persist the current state.
+        // Actually, PersistStatusResponseAsync below will persist the child status.
+        // We need to persist the PARENT changes (CoreBankResponse) safely first.
+        // We pass empty string for responseXml as we are not updating the raw XML response of the parent here, just the status/CB response.
+        // Wait, PersistResponseAsync updates the parent's Response property too. 
+        // We should preserve existing Response if we don't have a new one.
+        string currentResponseXml = isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "";
+        await _isoService.PersistResponseAsync(isoMessage, parentStatus, reason, additionalInfo, currentResponseXml, dbCt);
 
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] tx is null? {IsNull}", tx == null);
     tx ??= new SIPS.PostgreSQL.Models.Transaction();

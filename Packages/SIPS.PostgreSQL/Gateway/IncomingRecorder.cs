@@ -245,26 +245,93 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
 
         // [CONCURRENCY GUARD]: If a raw SQL update (like AppendAuditLedgerEventAsync) changed xmin,
         // we MUST reload to prevent DbUpdateConcurrencyException.
+        // [IDENTITY DRIFT FIX]: Capture targets first because 'message' and 'entity' might be the same tracked instance.
+        var targetResponse = message.Response;
+        var targetStatus = message.Status;
+        var targetReason = message.Reason;
+        var targetAdditionalInfo = message.AdditionalInfo;
+        var targetTxId = message.TxId;
+        var targetUETR = message.UETR;
+        var targetEndToEndId = message.EndToEndId;
+        var targetCoreBankResponse = message.CoreBankResponse;
+        var targetReturnId = message.ReturnId;
+        var targetReturnDedupKey = message.ReturnDedupKey;
+        var targetRound = message.Round;
+        var targetPacs002Role = message.Pacs002Role;
+
         await _storage.Entry(entity).ReloadAsync(ct);
 
-        entity.Response = message.Response;
-        entity.Status = message.Status;
-        entity.Reason = message.Reason;
-        entity.AdditionalInfo = message.AdditionalInfo;
+        entity.Response = targetResponse;
+        entity.Status = targetStatus;
+        entity.Reason = targetReason;
+        entity.AdditionalInfo = targetAdditionalInfo;
+        entity.Round = targetRound;
+        entity.Pacs002Role = targetPacs002Role;
         
-        if (message.TxId != null)
+        if (targetTxId != null) entity.TxId = targetTxId;
+        if (targetUETR != null) entity.UETR = targetUETR;
+        if (targetEndToEndId != null) entity.EndToEndId = targetEndToEndId;
+        if (targetCoreBankResponse != null) 
         {
-            entity.TxId = message.TxId;
-        }
-        
-        if (message.EndToEndId != null)
-        {
-            entity.EndToEndId = message.EndToEndId;
-        }
-        
-        if (message.CoreBankResponse != null)
-        {
-            entity.CoreBankResponse = message.CoreBankResponse;
+            // [AUDIT PRESERVATION]: Check if the DB has an 'auditLedger' that we are about to overwrite.
+            // If the target (new value) doesn't have it, we must copy it from the source (DB).
+            if (!string.IsNullOrWhiteSpace(entity.CoreBankResponse) && entity.CoreBankResponse.Contains("\"auditLedger\""))
+            {
+                // Only merge if target doesn't already have it (to avoid duplication or clobbering intent)
+                if (!targetCoreBankResponse.Contains("\"auditLedger\""))
+                {
+                    try 
+                    {
+                        var dbJson = System.Text.Json.Nodes.JsonNode.Parse(entity.CoreBankResponse)?.AsObject();
+                        
+                        // [ROBUSTNESS]: Handle empty/whitespace target by creating a new JsonObject instead of parsing.
+                        // This prevents JsonException from wiping the field via the catch block (Data Loss).
+                        System.Text.Json.Nodes.JsonObject? targetJson = null;
+                        
+                        if (string.IsNullOrWhiteSpace(targetCoreBankResponse))
+                        {
+                            targetJson = new System.Text.Json.Nodes.JsonObject();
+                        }
+                        else
+                        {
+                            targetJson = System.Text.Json.Nodes.JsonNode.Parse(targetCoreBankResponse)?.AsObject();
+                        }
+
+                        if (dbJson != null && targetJson != null && dbJson.ContainsKey("auditLedger"))
+                        {
+                             var ledger = dbJson["auditLedger"];
+                             targetJson["auditLedger"] = ledger!.DeepClone();
+                             entity.CoreBankResponse = targetJson.ToJsonString();
+                        }
+                        else
+                        {
+                             // If target was empty and we created {}, and there was NO audit ledger, we set it to "{}".
+                             if (targetJson != null)
+                             {
+                                 entity.CoreBankResponse = targetJson.ToJsonString();
+                             }
+                             else
+                             {
+                                 entity.CoreBankResponse = targetCoreBankResponse;
+                             }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Fallback: don't crash, just accept the new value but log warning
+                        _logger.LogWarning("Failed to merge auditLedger into CoreBankResponse: {Message}. Overwriting.", ex.Message);
+                        entity.CoreBankResponse = targetCoreBankResponse;
+                    }
+                }
+                else
+                {
+                     entity.CoreBankResponse = targetCoreBankResponse;
+                }
+            }
+            else
+            {
+                entity.CoreBankResponse = targetCoreBankResponse;
+            }
         }
 
         await _storage.SaveChangesAsync(ct);
@@ -290,10 +357,18 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
             return message;
         }
 
-        // [CONCURRENCY GUARD]: Force refresh from DB to ensure xmin is current
+        // [CONCURRENCY GUARD]: Force refresh from DB to ensure xmin is current. Capture target first.
+        var targetResponse = message.Response;
+        var targetStatus = message.Status;
+        var targetReason = message.Reason;
+        var targetAdditionalInfo = message.AdditionalInfo;
+
         await _storage.Entry(entity).ReloadAsync(ct);
 
-        entity.Response = message.Response;
+        entity.Response = targetResponse;
+        entity.Status = targetStatus;
+        entity.Reason = targetReason;
+        entity.AdditionalInfo = targetAdditionalInfo;
 
         await _storage.SaveChangesAsync(ct);
 
