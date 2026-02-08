@@ -1,0 +1,12 @@
+{
+  "type": 1,
+  "method": 1,
+  "merchantId": "12345678",
+  "merchantCategoryCode": 5814,
+  "currencyCode": 706,
+  "merchantName": "HAYATRESTAURANTS",
+  "merchantCity": "MOGADISHU",
+  "postalCode": "00000",
+  "storeLabel": "00116789",
+  "terminalLabel": "11002"
+}

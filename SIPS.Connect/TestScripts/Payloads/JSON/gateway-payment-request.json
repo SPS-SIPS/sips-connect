@@ -1,0 +1,17 @@
+{
+  "agent": "AGROSOS0",
+  "lclInstrument": "CRTRM",
+  "ctgPurp": "C2CCRT",
+  "localId": "AGROSOS089538475",
+  "amount": 9.88,
+  "currency": "USD",
+  "drName": "SIPS Business",
+  "drAccount": "SO120010201402005007303",
+  "drAccountType": "IBAN",
+  "crName": "SIPS Business",
+  "crAccount": "SO140010202305005007605",
+  "crAccountType": "IBAN",
+  "crAgentBIC": "AGROSOS0",
+  "crIssuer": "c",
+  "narration": "Send Money"
+}

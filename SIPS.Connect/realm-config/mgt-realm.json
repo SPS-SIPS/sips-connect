@@ -1,0 +1,98 @@
+{
+    "realm": "mgt",
+    "enabled": true,
+    "users": [
+        {
+            "username": "admin",
+            "email": "admin@sips.com",
+            "firstName": "Admin",
+            "lastName": "User",
+            "enabled": true,
+            "credentials": [
+                {
+                    "type": "password",
+                    "value": "admin",
+                    "temporary": false
+                }
+            ],
+            "realmRoles": [
+                "iso_messages",
+                "transactions",
+                "gateway",
+                "som_qr",
+                "configuration",
+                "offline_access"
+            ]
+        }
+    ],
+    "roles": {
+        "realm": [
+            {
+                "name": "iso_messages",
+                "description": "Manage ISO Messages",
+                "attributes": {}
+            },
+            {
+                "name": "transactions",
+                "description": "Manage Transactions",
+                "attributes": {}
+            },
+            {
+                "name": "gateway",
+                "description": "Manage Gateway",
+                "attributes": {}
+            },
+            {
+                "name": "som_qr",
+                "description": "Manage Som QR",
+                "attributes": {}
+            },
+            {
+                "name": "configuration",
+                "description": "Manage Configurations",
+                "attributes": {}
+            }
+        ]
+    },
+    "clients": [
+        {
+            "clientId": "sc-api",
+            "enabled": true,
+            "bearerOnly": true,
+            "protocol": "openid-connect",
+            "publicClient": false,
+            "redirectUris": [],
+            "webOrigins": []
+        },
+        {
+            "clientId": "sc-portal",
+            "enabled": true,
+            "publicClient": true,
+            "protocol": "openid-connect",
+            "redirectUris": [
+                "http://localhost:3000/*"
+            ],
+            "webOrigins": [
+                "http://localhost:3000"
+            ],
+            "protocolMappers": [
+            {
+                "name": "sc-api as audience",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-mapper",
+                "consentRequired": false,
+                "config": {
+                    "included.client.audience": "sc-api",
+                    "id.token.claim": "false",
+                    "access.token.claim": "true"
+                }
+            }
+            ]
+        }
+    ],
+    "registrationAllowed": false,
+    "loginWithEmailAllowed": true,
+    "resetPasswordAllowed": true,
+    "registrationEmailAsUsername": true,
+    "editUsernameAllowed": false
+}
