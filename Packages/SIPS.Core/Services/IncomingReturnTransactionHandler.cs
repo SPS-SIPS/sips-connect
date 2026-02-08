@@ -131,7 +131,10 @@ public sealed class IncomingReturnTransactionHandler(
             response.Reason = MISS;
             response.Status = RJCT;
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            if (record != null)
+            {
+                await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            }
             return _signer.SignEnvelope(rsp);
         }
 
@@ -143,7 +146,10 @@ public sealed class IncomingReturnTransactionHandler(
             response.Reason = MISS;
             response.Status = RJCT;
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            if (record != null)
+            {
+                await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            }
             return _signer.SignEnvelope(rsp);
         }
 
@@ -157,7 +163,10 @@ public sealed class IncomingReturnTransactionHandler(
             response.Reason = "NOAS"; // No Original Transaction
             response.Status = RJCT;
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? "NOAS", response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            if (record != null)
+            {
+                await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? "NOAS", response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            }
             return _signer.SignEnvelope(rsp);
         }
 
@@ -196,7 +205,10 @@ public sealed class IncomingReturnTransactionHandler(
                 response.Reason = "NARR"; // Narrative Reason
                 response.Status = RJCT;
                 var rsp = ReturnPaymentResponseBuilder.Build(response);
-                await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? "NARR", response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+                if (record != null)
+                {
+                    await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? "NARR", response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+                }
                 return _signer.SignEnvelope(rsp);
             }
         }
@@ -254,7 +266,10 @@ public sealed class IncomingReturnTransactionHandler(
                         var rspReject = ReturnPaymentResponseBuilder.Build(response);
                         // User Requirement: Return RJCT to switch, but persist as Pending (PDNG) locally
                         // to allow for downsteam/manual resolution or waiting for switch confirmation (if applicable).
-                        await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspReject, dbCt);
+                        if (record != null)
+                        {
+                            await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspReject, dbCt);
+                        }
                         return _signer.SignEnvelope(rspReject);
                     }
                 }
@@ -289,7 +304,10 @@ public sealed class IncomingReturnTransactionHandler(
             _logger.LogInformation("[{CorrelationId}] Built ACSC response (IRTH): {Response}", cid, rsp);
 
             // Persist return message as ReadyForReturn (not final status yet)
-            await _isoService.PersistReturnResponseAsync(record, ACSC, response.Reason ?? ACSC, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            if (record != null)
+            {
+                await _isoService.PersistReturnResponseAsync(record, ACSC, response.Reason ?? ACSC, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            }
 
             return _signer.SignEnvelope(rsp);
         }
@@ -300,7 +318,10 @@ public sealed class IncomingReturnTransactionHandler(
             response.Reason = MISS;
             response.AdditionalInfo = "Failed to process return request.";
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            if (record != null)
+            {
+                await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+            }
             return _signer.SignEnvelope(rsp);
         }
     }

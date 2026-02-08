@@ -62,7 +62,5 @@ public class AuthService(CoreOptions options, ILogger<AuthService> logger, IRepo
         // Note: AbsoluteExpirationRelativeToNow in SetAsync handles expiration at the cache layer.
         // If we retrieve it from cache, it's generally still valid.
         return response;
-
-        return response;
     }
 }

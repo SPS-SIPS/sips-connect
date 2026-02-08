@@ -142,10 +142,10 @@ public sealed class OutgoingVerificationHandler(
             Alias = message.Alias,
             Type = message.Type,
             To = message.ToBIC,
-            MsgId = anchorMsgId
+            MsgId = anchorMsgId ?? string.Empty
         };
         (string document, bizMsgIdr, type) = PayeeVerificationBuilder.Build(req);
-        msgId = req.MsgId ?? string.Empty;
+        msgId = req.MsgId;
 
         if (document != null)
         {
