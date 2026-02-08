@@ -246,7 +246,7 @@ public sealed class IncomingVerificationHandler(
             response = new PayeeVerificationResponseBuilder.Request
             {
                 Original = request,
-                VerificationId = request.SIPSRequestId,
+                VerificationId = request.SIPSRequestId ?? string.Empty,
                 From = request.From,
                 To = request.To,
                 Type = request.Type
@@ -324,9 +324,9 @@ public sealed class IncomingVerificationHandler(
             var finalStatus = path == "CoreBankTimeout" ? TransactionStatus.CheckStatus : (response.Verified ? TransactionStatus.Success : TransactionStatus.Failed);
             
             // [GOLD PATTERN]: Persist-Before-Return
-            await _isoService.PersistResponseAsync(isoMessage, finalStatus, response.Reason, response.AdditionalInfo, signedRsp, dbCt);
+            await _isoService.PersistResponseAsync(isoMessage!, finalStatus, response.Reason, response.AdditionalInfo, signedRsp, dbCt);
             
-            await _isoService.AppendAuditLedgerEventAsync(isoMessage.Id, new { 
+            await _isoService.AppendAuditLedgerEventAsync(isoMessage!.Id, new { 
                 @event = "VerificationBusinessResponsePersisted", 
                 status = finalStatus.ToString(),
                 timestampUtc = DateTimeOffset.UtcNow 
