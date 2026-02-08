@@ -1,0 +1,103 @@
+name: ${INSTITUTION_NAME:-agro}-sips-connect
+services:
+  sips-connect:
+    restart: unless-stopped
+    image: hanad/sips-connect:1.5.8
+    environment:
+      - DB_HOST=${DB_HOST:-sips-connect-db}
+      - DB_PORT=5432
+    ports:
+      - "${SIPS_CONNECT_PORT:-9030}:8080"   # HTTP (existing)
+      - "${SIPS_CONNECT_HTTPS_PORT:-9443}:443"   # HTTPS (new)
+    env_file:
+      - ./.env
+    volumes:
+      - ./logs:/logs:rw
+      - ./certs:/certs:ro
+      - ./appsettings.json:/app/appsettings.json:rw
+      - ./jsonAdapter.json:/app/jsonAdapter.json:rw
+      - ./certs/tls.crt:/usr/local/share/ca-certificates/tls.crt:ro
+    networks:
+      - sips-network
+  idp:
+    image: keycloak/keycloak:26.2.0
+    env_file:
+      - ./.env
+    command:
+      - start-dev
+      - --import-realm
+      - --verbose
+      - --https-key-store-file=/opt/keycloak/certs/keycloak.p12
+      - --https-key-store-password=${KEYCLOAK_KEYSTORE_PASSWORD}
+      - --hostname-strict=false
+      - --http-enabled=false
+      - --https-port=${IDP_PORT:-8443}
+    volumes:
+      - ./realm-config:/opt/keycloak/data/import
+      - ./certs/keycloak.p12:/opt/keycloak/certs/keycloak.p12:ro
+    ports:
+      - "${IDP_PORT:-9031}:${IDP_PORT:-8443}"
+    networks:
+      - sips-network
+  sips-connect-db:
+    image: postgres:16
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    env_file:
+      - ./.env
+    networks:
+      - sips-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "postgres", "-U", "postgres"]
+      interval: '10s'
+      timeout: '30s'
+      retries: 5
+      start_period: '20s'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+  loki:
+    image: grafana/loki:2.9.7
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3200}:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - sips-network
+  promtail:
+    image: grafana/promtail:2.9.7
+    restart: unless-stopped
+    volumes:
+      - ./logs:/var/log/app
+      - ./promtail-config.yaml:/etc/promtail/config.yaml
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - sips-network
+  grafana:
+    image: grafana/grafana:10.4.2
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-9033}:3000"
+    networks:
+      - sips-network
+    volumes:
+      - grafana_data:/var/lib/grafana
+  sips-corebank:
+    image: hanad/sips-consumer:1.1.2
+    restart: unless-stopped
+    ports:
+      - "${CB_PORT:-9032}:8080"
+    env_file:
+      - ./.env
+    volumes:
+      - ./db.json:/app/db.json:rw
+      - ./certs:/certs:ro
+    networks:
+      - sips-network
+volumes:
+  grafana_data:
+  pg_data:
+
+networks:
+  sips-network:
+    driver: bridge
