@@ -222,11 +222,22 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             Type = TransactionType.Deposit,
             FromBIC = request.From,
             LocalInstrument = request.LocalInstrument,
+            CategoryPurpose = request.CategoryPurpose ?? string.Empty,
             TxId = request.TxId,
             Amount = request.Amount,
             Currency = request.Currency,
             CreditorAccount = request.Creditor.Account,
-            DebtorAccount = request.Debtor.Account
+            CreditorAccountType = request.Creditor.AccountType ?? string.Empty,
+            CreditorAgentBIC = request.Creditor.AgentBIC ?? string.Empty,
+            CreditorIssuer = request.Creditor.Issuer ?? "C",
+            CreditorName = request.Creditor.Name ?? string.Empty,
+            DebtorAccount = request.Debtor.Account,
+            DebtorAccountType = request.Debtor.AccountType ?? string.Empty,
+            DebtorAgentBIC = request.Debtor.AgentBIC ?? string.Empty,
+            DebtorIssuer = request.Debtor.Issuer ?? "C",
+            DebtorName = request.Debtor.Name ?? string.Empty,
+            EndToEndId = request.EndToEndId ?? string.Empty,
+            RemittanceInformation = request.Ustrd ?? string.Empty
         });
 
         var result = await _persistence.TryRecordIncomingTransactionAsync(entity, ct);
@@ -368,10 +379,23 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         {
             Type = TransactionType.ReturnWithdrawal,
             FromBIC = request.From,
+            LocalInstrument = request.LocalInstrument ?? string.Empty,
+            CategoryPurpose = request.CategoryPurpose ?? string.Empty,
             TxId = request.OrgnlTxId,
             Amount = request.OriginalAmount,
             Currency = request.OriginalCurrency,
-            RemittanceInformation = request.ReturnReason
+            RemittanceInformation = request.ReturnReason ?? string.Empty,
+            EndToEndId = request.OriginalEndToEnd ?? string.Empty,
+            CreditorAccount = string.Empty,
+            CreditorAccountType = string.Empty,
+            CreditorAgentBIC = string.Empty,
+            CreditorIssuer = "C",
+            CreditorName = string.Empty,
+            DebtorAccount = string.Empty,
+            DebtorAccountType = string.Empty,
+            DebtorAgentBIC = string.Empty,
+            DebtorIssuer = "C",
+            DebtorName = string.Empty
         });
 
         var result = await _persistence.TryRecordIncomingReturnAsync(entity, ct);
