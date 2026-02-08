@@ -301,18 +301,18 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         // Atomic append guarded by xmin (optimistic concurrency)
         // Using raw SQL to ensure atomicity at the DB level
         var sql = @"
-UPDATE ""ISOMessages""
-SET ""CoreBankResponse"" = 
+UPDATE isomessages
+SET corebankresponse = 
     jsonb_set(
-        COALESCE(""CoreBankResponse"", '{}'::jsonb),
-        '{auditLedger}',
+        COALESCE(corebankresponse, '{{}}'::jsonb),
+        '{{auditLedger}}',
         (
-            COALESCE(""CoreBankResponse""->'auditLedger', '[]'::jsonb) 
+            COALESCE(corebankresponse->'auditLedger', '[]'::jsonb) 
             || @event::jsonb
         ),
         true
     )
-WHERE ""Id"" = @id 
+WHERE id = @id 
   AND xmin = @expected_xmin;";
 
         var pId = new NpgsqlParameter("id", isoMessageId);

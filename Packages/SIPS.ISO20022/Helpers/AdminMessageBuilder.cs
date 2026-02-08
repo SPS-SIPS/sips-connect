@@ -15,21 +15,27 @@ public static class AdminMessageBuilder
         string? additionalInfo = null,
         string? originalMsgId = null)
     {
-        var timestamp = DateTime.UtcNow.ToString("o");
+        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
         var msgId = Guid.NewGuid().ToString();
-        
         var message = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
-<Document xmlns=""urn:iso:std:iso:20022:tech:xsd:admi.002.001.01"">
-  <MsgRjct>
-    <RltdRef>
-      <Ref>{originalMsgId ?? msgId}</Ref>
-    </RltdRef>
-    <Rsn>
-      <RjctgPtyRsn>{reasonCode}</RjctgPtyRsn>
-      {(string.IsNullOrWhiteSpace(additionalInfo) ? "" : $"<AddtlRsnInf>{System.Security.SecurityElement.Escape(additionalInfo)}</AddtlRsnInf>")}
-    </Rsn>
-  </MsgRjct>
-</Document>";
+<BusinessLayer xmlns:header=""urn:iso:std:iso:20022:tech:xsd:head.001.001.03"" xmlns:document=""urn:iso:std:iso:20022:tech:xsd:admi.002.001.01"">
+  <header:AppHdr>
+    <header:BizMsgIdr>{msgId}</header:BizMsgIdr>
+    <header:MsgDefIdr>admi.002.001.01</header:MsgDefIdr>
+    <header:CreDt>{timestamp}</header:CreDt>
+  </header:AppHdr>
+  <document:Document>
+    <document:MsgRjct>
+      <document:RltdRef>
+        <document:Ref>{originalMsgId ?? msgId}</document:Ref>
+      </document:RltdRef>
+      <document:Rsn>
+        <document:RjctgPtyRsn>{reasonCode}</document:RjctgPtyRsn>
+        {(string.IsNullOrWhiteSpace(additionalInfo) ? "" : $"<document:AddtlRsnInf>{System.Security.SecurityElement.Escape(additionalInfo)}</document:AddtlRsnInf>")}
+      </document:Rsn>
+    </document:MsgRjct>
+  </document:Document>
+</BusinessLayer>";
 
         return message;
     }
