@@ -1,0 +1,58 @@
+.loadingContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: var(--spacing-xxl);
+    background: var(--color-background-secondary);
+    border-radius: var(--radius-lg);
+    margin: var(--spacing-xl) 0;
+}
+
+.error {
+    color: var(--color-error-label);
+    background: var(--color-error-background);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-error-border);
+    margin: var(--spacing-lg) 0;
+    font-size: var(--font-size-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.noFields {
+    background: var(--color-warning-background);
+    color: var(--color-text-label);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-warning);
+    margin: var(--spacing-xl) 0;
+    text-align: center;
+    font-size: var(--font-size-sm);
+}
+
+/* Add these if you need animations for loading state */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.loadingContainer,
+.error,
+.noFields {
+    animation: fadeIn var(--transition-normal) ease-in;
+}
+
+@media (max-width: var(--breakpoint-mobile)) {
+    .loadingContainer {
+        padding: var(--spacing-lg);
+        margin: var(--spacing-lg) 0;
+    }
+
+    .error,
+    .noFields {
+        margin: var(--spacing-md) 0;
+        padding: var(--spacing-sm);
+    }
+}

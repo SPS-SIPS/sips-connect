@@ -1,0 +1,193 @@
+.container {
+    padding: var(--spacing-xl);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    margin: var(--spacing-lg) auto;
+    max-width: var(--breakpoint-tablet);
+    width: 100%;
+}
+
+.title {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xl);
+    margin-bottom: var(--spacing-sm);
+    text-align: center;
+}
+
+.subtitle {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-base);
+    margin-bottom: var(--spacing-xl);
+    text-align: center;
+}
+
+.inputSection {
+    display: flex;
+    gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+}
+
+.inputGroup {
+    flex: 1;
+}
+
+.label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    color: var(--color-text-label);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+}
+
+.textarea {
+    width: 100%;
+    padding: var(--spacing-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-family: monospace;
+    resize: vertical;
+    min-height: 120px;
+    font-size: var(--font-size-sm);
+    transition: border-color var(--transition-fast);
+
+    &:focus {
+        outline: none;
+        border-color: var(--color-primary);
+        box-shadow: var(--shadow-focus);
+    }
+}
+
+.uploadSection {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.fileInput {
+    display: none;
+}
+
+.uploadButton {
+    background-color: var(--color-primary);
+    color: var(--color-text-on-primary);
+    width: 100%;
+
+    &:hover {
+        background-color: var(--color-primary-hover);
+    }
+
+    &:disabled {
+        background-color: var(--color-background-disabled);
+    }
+}
+
+.qrPreview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.qrImage {
+    max-width: 200px;
+    max-height: 200px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-xs);
+    background: var(--color-background);
+}
+
+.removeButton {
+    background: none;
+    border: none;
+    color: var(--color-error);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.parseButton {
+    width: 100%;
+    background-color: var(--color-primary);
+    color: var(--color-text-on-primary);
+    margin-bottom: var(--spacing-lg);
+
+    &:hover:not(:disabled) {
+        background-color: var(--color-primary-hover);
+    }
+}
+
+.error {
+    color: var(--color-error);
+    background-color: var(--color-error-background);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-error-border);
+    margin-bottom: var(--spacing-lg);
+    font-size: var(--font-size-sm);
+}
+
+.resultSection {
+    margin-top: var(--spacing-xl);
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--spacing-lg);
+}
+
+.resultTitle {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-lg);
+    margin-bottom: var(--spacing-md);
+    text-align: center;
+}
+
+.resultData {
+    background-color: var(--color-background);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    overflow-x: auto;
+    font-size: var(--font-size-sm);
+
+
+}
+.resultData .pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: var(--spacing-md);
+        margin: var(--spacing-md);
+        border-radius: var(--radius-md);
+    }
+
+    .inputSection {
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+
+    .title {
+        font-size: var(--font-size-lg);
+    }
+
+    .subtitle {
+        font-size: var(--font-size-sm);
+    }
+
+    .qrImage {
+        max-width: 150px;
+        max-height: 150px;
+    }
+
+    .resultTitle {
+        font-size: var(--font-size-md);
+    }
+}

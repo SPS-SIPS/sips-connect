@@ -1,0 +1,121 @@
+.requestBuilder {
+    padding: var(--spacing-xxl);
+    background: var(--color-background);
+    min-height: 100vh;
+}
+
+.header {
+    text-align: center;
+    margin-bottom: var(--spacing-xxl);
+}
+
+.title {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xxl);
+    margin-bottom: var(--spacing-md);
+    font-weight: 600;
+}
+
+.subtitle {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-lg);
+    line-height: 1.5;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.requestSelector {
+    margin-bottom: var(--spacing-xxl);
+}
+
+.jsonPreview {
+    margin-top: var(--spacing-xl);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--color-background);
+    box-shadow: var(--shadow-sm);
+}
+
+.jsonHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md);
+    background: var(--color-background-tertiary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.jsonHeader h3 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    color: var(--color-text-primary);
+}
+
+.copyButton {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border: none;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+    font-size: var(--font-size-base);
+}
+
+.copyButton:hover {
+    background: var(--color-primary-hover);
+}
+
+.copyButton:active {
+    transform: translateY(1px);
+}
+
+.jsonContent {
+    padding: var(--spacing-lg);
+    margin: 0;
+    background: var(--color-background);
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.loading,
+.error,
+.noEndpoints {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    font-size: var(--font-size-lg);
+    color: var(--color-text-secondary);
+}
+
+.error {
+    color: var(--color-error);
+    background: var(--color-error-background);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .requestBuilder {
+        padding: var(--spacing-md);
+    }
+
+    .jsonHeader {
+        flex-direction: column;
+        gap: var(--spacing-md);
+        align-items: flex-start;
+    }
+
+    .copyButton {
+        width: 100%;
+        justify-content: center;
+    }
+}

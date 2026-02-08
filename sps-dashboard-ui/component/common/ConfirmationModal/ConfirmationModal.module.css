@@ -1,0 +1,45 @@
+.modalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--color-overlay);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: var(--z-index-modal);
+}
+
+.modal {
+    position: relative;
+    background-color: white;
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow-sm);
+    width: 300px;
+    text-align: center;
+}
+
+.buttons {
+    margin-top: 20px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.confirmButton, .cancelButton {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.confirmButton {
+    background-color: var(--color-primary);
+    color: white;
+}
+
+.cancelButton {
+    background-color: var(--color-error);
+    color: white;
+}
