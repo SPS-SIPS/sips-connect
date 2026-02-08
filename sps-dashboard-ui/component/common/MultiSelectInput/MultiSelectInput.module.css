@@ -1,0 +1,41 @@
+.checkboxContainer {
+    width: fit-content;
+    display: flex;
+    flex-direction: column;
+}
+
+.label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #2C3E50;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.requiredAsterisk {
+    color: var(--color-error);
+    margin-left: 5px;
+}
+
+.checkboxGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.checkboxOption {
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.checkboxInput {
+    accent-color: var(--color-primary);
+    cursor: pointer;
+}
+
+.errorMessage {
+    color: var(--color-error);
+    font-size: 12px;
+}
