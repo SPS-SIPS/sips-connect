@@ -79,7 +79,8 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             MsgId = isoMessage.MsgId,
             TxId = isoMessage.TxId,
             UETR = isoMessage.UETR,
-            EndToEndId = isoMessage.EndToEndId
+            EndToEndId = isoMessage.EndToEndId,
+            CoreBankResponse = isoMessage.CoreBankResponse // [FIX]: Ensure CoreBankResponse is included in snapshot so merge logic sees it
         };
         // debug: log statuses to help unit-test diagnosis
         _logger.LogDebug("[ISOMessageService] PersistResponseAsync original.Status={OriginalStatus} snapshot.Status={SnapshotStatus}", isoMessage.Status, snapshot.Status);
