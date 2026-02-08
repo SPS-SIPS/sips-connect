@@ -10,6 +10,7 @@ namespace SIPS.Connect.Controllers;
 [Authorize(Roles = KnownRoles.Dashboard)]
 [ApiController]
 [Route("api/v1/[controller]")]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("UI")]
 public sealed class DashboardController(
     IStorageBroker broker,
     IConfiguration configuration) : ControllerBase

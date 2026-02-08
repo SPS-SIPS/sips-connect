@@ -2,8 +2,8 @@ name: sips-connect
 services:
   sips-connect-db:
     image: postgres:16
-    # ports:
-    #   - "5432:5432"
+    ports:
+      - "5432:5432"
     env_file:
       - ./.env
     networks:
@@ -16,68 +16,68 @@ services:
       start_period: '20s'
     volumes:
       - pg_data:/var/lib/postgresql/data
-  sips-connect:
-    image: sips.connect
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8081:8080"
-    env_file:
-      - ./.env
-    volumes:
-      - ./logs:/logs
-      - ./certs:/certs
-      - ./appsettings.json:/app/appsettings.json:rw
-      - ./jsonAdapter.json:/app/jsonAdapter.json:rw
-    networks:
-      - sips-network
-    depends_on:
-      - sips-connect-db
-  idp:
-    image: keycloak/keycloak:26.2.0
-    container_name: keycloak_idp
-    env_file:
-      - ./.env
-    command: "start-dev --import-realm --verbose"
-    volumes:
-      - ./realm-config:/opt/keycloak/data/import
-    ports:
-      - "8080:8080"
-    networks:
-      - sips-network
-    depends_on:
-      - sips-connect-db
-  loki:
-    image: grafana/loki:2.9.7
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - sips-network
-  promtail:
-    image: grafana/promtail:2.9.7
-    volumes:
-      - ./logs:/var/log/app
-      - ./promtail-config.yaml:/etc/promtail/config.yaml
-    command: -config.file=/etc/promtail/config.yaml
-    networks:
-      - sips-network
-  grafana:
-    image: grafana/grafana:10.4.2
-    ports:
-      - "3001:3000"
-    networks:
-      - sips-network
-    volumes:
-      - grafana_data:/var/lib/grafana
+  # sips-connect:
+  #   image: sips.connect
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8081:8080"
+  #   env_file:
+  #     - ./.env
+  #   volumes:
+  #     - ./logs:/logs
+  #     - ./certs:/certs
+  #     - ./appsettings.json:/app/appsettings.json:rw
+  #     - ./jsonAdapter.json:/app/jsonAdapter.json:rw
+  #   networks:
+  #     - sips-network
+  #   depends_on:
+  #     - sips-connect-db
+  # idp:
+  #   image: keycloak/keycloak:26.2.0
+  #   container_name: keycloak_idp
+  #   env_file:
+  #     - ./.env
+  #   command: "start-dev --import-realm --verbose"
+  #   volumes:
+  #     - ./realm-config:/opt/keycloak/data/import
+  #   ports:
+  #     - "8080:8080"
+  #   networks:
+  #     - sips-network
+  #   depends_on:
+  #     - sips-connect-db
+  # loki:
+  #   image: grafana/loki:2.9.7
+  #   ports:
+  #     - "3100:3100"
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   networks:
+  #     - sips-network
+  # promtail:
+  #   image: grafana/promtail:2.9.7
+  #   volumes:
+  #     - ./logs:/var/log/app
+  #     - ./promtail-config.yaml:/etc/promtail/config.yaml
+  #   command: -config.file=/etc/promtail/config.yaml
+  #   networks:
+  #     - sips-network
+  # grafana:
+  #   image: grafana/grafana:10.4.2
+  #   ports:
+  #     - "3001:3000"
+  #   networks:
+  #     - sips-network
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
 
 
 volumes:
   pg_data:
-  grafana_data:
+  # grafana_data:
 
 networks:
   sips-network:
     driver: bridge
-    external: true
+    external: false

@@ -17,8 +17,14 @@ public class ApiKeyAuthenticationHandler(
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!Request.Headers.TryGetValue(ApiKeyDefaults.HeaderNameKey, out var keyHdr) ||
-            !Request.Headers.TryGetValue(ApiKeyDefaults.HeaderNameSecret, out var secHdr))
+        if (!Request.Headers.TryGetValue(ApiKeyDefaults.HeaderNameKey, out var keyHdr) && 
+            !Request.Headers.TryGetValue("api-key", out keyHdr))
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        if (!Request.Headers.TryGetValue(ApiKeyDefaults.HeaderNameSecret, out var secHdr) &&
+            !Request.Headers.TryGetValue("api-secret", out secHdr))
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }

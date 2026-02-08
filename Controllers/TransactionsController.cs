@@ -10,6 +10,7 @@ namespace SIPS.Connect.Controllers;
 
 [ApiController]
 [Route(V)]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("UI")]
 public sealed class TransactionsController(IStorageBroker broker) : ControllerBase
 {
     private const string V = "api/v1/[controller]";
