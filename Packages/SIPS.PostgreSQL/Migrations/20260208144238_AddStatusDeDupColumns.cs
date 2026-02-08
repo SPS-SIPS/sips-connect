@@ -12,45 +12,49 @@ namespace SIPS.PostgreSQL.Migrations
         {
             migrationBuilder.Sql("DROP INDEX IF EXISTS ix_isomessagestatuses_isomessageid;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "messagerole",
-                table: "isomessagestatuses",
-                type: "text",
-                nullable: false,
-                defaultValue: "");
+            migrationBuilder.Sql(@"
+                DO $$ 
+                BEGIN 
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='isomessagestatuses' AND column_name='messagerole') THEN 
+                        ALTER TABLE isomessagestatuses ADD COLUMN messagerole text NOT NULL DEFAULT ''; 
+                    END IF; 
+                END $$;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "msgid",
-                table: "isomessagestatuses",
-                type: "text",
-                nullable: true);
+            migrationBuilder.Sql(@"
+                DO $$ 
+                BEGIN 
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='isomessagestatuses' AND column_name='msgid') THEN 
+                        ALTER TABLE isomessagestatuses ADD COLUMN msgid text; 
+                    END IF; 
+                END $$;");
 
-            migrationBuilder.CreateIndex(
-                name: "ux_iso_status_dedup",
-                table: "isomessagestatuses",
-                columns: new[] { "isomessageid", "messagerole", "status", "msgid" },
-                unique: true);
+            migrationBuilder.Sql("DROP INDEX IF EXISTS ux_iso_status_dedup;");
+            migrationBuilder.Sql("CREATE UNIQUE INDEX ux_iso_status_dedup ON isomessagestatuses (isomessageid, messagerole, status, msgid);");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "ux_iso_status_dedup",
-                table: "isomessagestatuses");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS ux_iso_status_dedup;");
 
-            migrationBuilder.DropColumn(
-                name: "messagerole",
-                table: "isomessagestatuses");
+            migrationBuilder.Sql(@"
+                DO $$ 
+                BEGIN 
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='isomessagestatuses' AND column_name='messagerole') THEN 
+                        ALTER TABLE isomessagestatuses DROP COLUMN messagerole; 
+                    END IF; 
+                END $$;");
 
-            migrationBuilder.DropColumn(
-                name: "msgid",
-                table: "isomessagestatuses");
+            migrationBuilder.Sql(@"
+                DO $$ 
+                BEGIN 
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='isomessagestatuses' AND column_name='msgid') THEN 
+                        ALTER TABLE isomessagestatuses DROP COLUMN msgid; 
+                    END IF; 
+                END $$;");
 
-            migrationBuilder.CreateIndex(
-                name: "ix_isomessagestatuses_isomessageid",
-                table: "isomessagestatuses",
-                column: "isomessageid");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS ix_isomessagestatuses_isomessageid;");
+            migrationBuilder.Sql("CREATE INDEX ix_isomessagestatuses_isomessageid ON isomessagestatuses (isomessageid);");
         }
     }
 }
