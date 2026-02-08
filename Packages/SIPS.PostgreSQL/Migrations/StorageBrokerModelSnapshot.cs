@@ -184,6 +184,15 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("bytea")
                         .HasColumnName("message");
 
+                    b.Property<string>("MessageRole")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("messagerole");
+
+                    b.Property<string>("MsgId")
+                        .HasColumnType("text")
+                        .HasColumnName("msgid");
+
                     b.Property<string>("Reason")
                         .HasColumnType("text")
                         .HasColumnName("reason");
@@ -200,8 +209,9 @@ namespace SIPS.PostgreSQL.Migrations
                     b.HasKey("Id")
                         .HasName("pk_isomessagestatuses");
 
-                    b.HasIndex("ISOMessageId")
-                        .HasDatabaseName("ix_isomessagestatuses_isomessageid");
+                    b.HasIndex("ISOMessageId", "MessageRole", "Status", "MsgId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_iso_status_dedup");
 
                     b.ToTable("isomessagestatuses", (string)null);
                 });
