@@ -1,7 +1,7 @@
 # SIPS Repository Structure
 
 ## Overview
-This repository uses a **Monorepo** architecture to unify the Somali Interbank Payment System (SIPS) components. This structure ensures a single source of truth, deterministic builds, and explicit dependency governance across the entire participant gateway ecosystem.
+This repository uses a **Monorepo** architecture to unify the Somali Instant Payment System (SIPS) components. This structure ensures a single source of truth, deterministic builds, and explicit dependency governance across the entire participant gateway ecosystem.
 
 ## Directory Layout
 
