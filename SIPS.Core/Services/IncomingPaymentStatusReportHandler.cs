@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -151,12 +152,15 @@ public sealed class IncomingPaymentStatusReportHandler(
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] parsed request TxId={TxId} Status={Status}", request.TxId, request.Status);
 
         // Step 2: Retrieve ISO message by TxId
-        // CRITICAL: We use TxId for correlation, NOT BizMsgIdr
-        // SmartVista switch regenerates BizMsgIdr at each hop, but TxId remains constant
+        // CRITICAL: We use TxId for correlation, NOT BizMsgIdr (Delta 2)
+        if (string.IsNullOrWhiteSpace(request.TxId))
+        {
+            _logger.LogWarning("[{CorrelationId}] pacs.002 rejected: Mandatory TxId (OrgnlTxId) is missing", cid);
+            return AdminMessage.Generate("Mandatory TxId is missing.");
+        }
+
         var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.TxId, ct);
         isoMessage ??= await _persistence.GetISOMessageByTxIdAsync(request.TxId, ct);
-
-        _logger.LogDebug("[IncomingPaymentStatusReportHandler] located isoMessage TxId={IsoTxId} Status={IsoStatus}", isoMessage?.TxId, isoMessage != null ? isoMessage.Status.ToString() : "null");
 
         if (isoMessage == null)
         {
@@ -165,7 +169,21 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
 
         // Step 3: Record the incoming status report under parent ISOMessage
-        var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, ct);
+        // Gold Pattern: Persist before side-effects with composite de-dup (Role + Status + MsgId)
+        var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, request.Role, request.MsgId, ct);
+
+        // Gold Pattern/Delta 5 Check: If we already have a status record for this ROLE, STATUS and MSGID, return the previous response
+        var previousRecord = isoMessage.Statuses?
+            .Where(s => s.MessageRole == request.Role && s.Status != TransactionStatus.Pending && s.MsgId == request.MsgId)
+            .OrderByDescending(s => s.Date)
+            .FirstOrDefault();
+
+        if (previousRecord != null && previousRecord.Response != null)
+        {
+             _logger.LogInformation("[{CorrelationId}] Replay detected for pacs.002 (Role={Role}, Status={Status}). Returning previous response.", 
+                cid, request.Role, request.Status);
+             return _signer.SignEnvelope(Encoding.UTF8.GetString(previousRecord.Response));
+        }
         var transaction = isoMessage.Transactions.FirstOrDefault();
 
         if (transaction == null)

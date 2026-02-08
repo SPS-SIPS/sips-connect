@@ -125,83 +125,40 @@ public sealed class IncomingTransactionStatusHandler(
         }
 
         // Step 3: Record the incoming status message
-        var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, ct);
+        var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, SIPS.ISO20022.Enums.Pacs002Role.StatusUpdate, request.MsgId, ct);
 
         // Step 4: Prepare response object
         var response = _responses.BuildPaymentStatusInitial(request);
 
-        try
+        // Delta 4: Ledger-as-Truth (Protocol Aligned)
+        // Inbound pacs.028 probes are resolved strictly against the local DB state.
+        // We do not proxy to CoreBank as an "oracle" during the switch investigation.
+        _logger.LogInformation("[{CorrelationId}] pacs.028 inquiry for TxId {TxId} resolved via local ledger (Status={Status}).", 
+            cid, request.OrgnlTxId, isoMessage.Status);
+        
+        if (isoMessage.Status == TransactionStatus.Success)
         {
-            using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-            var dbCt = dbCts.Token;
-            // Step 5: Send callback and parse result
-            var headers = new Dictionary<string, string>() {
-                { API_Key, _callbackLinks.Key! },
-                { API_Secret, _callbackLinks.Secret! }
-            };
-            // Idempotency key for safe retries downstream
-            var idem = string.IsNullOrWhiteSpace(request.OriginalEndToEnd)
-                ? request.OrgnlTxId
-                : $"{request.OrgnlTxId}-{request.OriginalEndToEnd}";
-            headers["X-Idempotency-Key"] = idem;
-            headers["X-Transaction-Id"] = request.OrgnlTxId;
-            if (!string.IsNullOrWhiteSpace(request.OriginalEndToEnd))
-                headers["X-EndToEnd-Id"] = request.OriginalEndToEnd;
-            var dto = new CBStatusRequestDto
-            {
-                FromBIC = request.From,
-                OriginalEndToEnd = request.OriginalEndToEnd,
-                OrgnlTxId = request.OrgnlTxId
-            };
-            var responseMessage = await _callbacks.SendJsonAsync(
-                _callbackLinks.Status!,
-                headers,
-                dto,
-                CB_StatusRequest,
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                ct,
-                cid);
-
-            // Guard against null callback result
-            if (responseMessage == null)
-            {
-                _logger.LogInformation("[{CorrelationId}] CoreBank status callback returned null for TxId {TxId}. Defaulting to RJCT.", cid, request.OrgnlTxId);
-                response.Status = RJCT;
-                response.Reason = "CoreBank callback failed";
-                response.AdditionalInfo = "Null response from CoreBank";
-            }
-            else if (responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
-            {
-                ParseCallbackResult(responseMessage.Data, response);
-                _logger.LogInformation("[{CorrelationId}] CoreBank status request for TxId {TxId} returned {Status}", cid, request.OrgnlTxId, response.Status);
-            }
-            else
-            {
-                _logger.LogInformation("[{CorrelationId}] CoreBank status request for TxId {TxId} failed with {StatusCode}. Defaulting to RJCT.", cid, request.OrgnlTxId, responseMessage.StatusCode);
-                response.Status = RJCT;
-                response.Reason = "CoreBank callback failed";
-                response.AdditionalInfo = $"Failed to get response from CB. Status: {responseMessage.StatusCode}";
-            }
-
-            // Step 6: Build, persist, and sign response (single persist)
-            // Use StatusOrchestrator to map status consistently
-            var finalStatus = _statusOrchestrator.MapSingleStatus(response.Status ?? ACSC, "CoreBank");
-            var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            await _isoService.PersistStatusResponseAsync(record, finalStatus, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
-            return _signer.SignEnvelope(rsp);
+            response.Status = ACSC;
+            response.Reason = isoMessage.Reason ?? "G001"; // Successful
         }
-        catch (Exception ex)
+        else if (isoMessage.Status == TransactionStatus.Failed)
         {
-            _logger.LogError(ex, "[{CorrelationId}] INCOMING PS Handler Exception for TxId {TxId}", cid, request.OrgnlTxId);
-            response.AdditionalInfo = "Failed to transfer: " + ex.Message;
-            var rsp = PaymentStatusRequestResponseBuilder.Build(response);
-            using var dbCts2 = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCts2.Token);
-            return _signer.SignEnvelope(rsp);
+            response.Status = RJCT;
+            response.Reason = isoMessage.Reason ?? "MS03"; // Rejected
         }
+        else
+        {
+            // If still Pending or CheckStatus, return ACSP (AcceptedSettlementInProcess)
+            // indicating the participant is still processing or in-doubt.
+            response.Status = SIPS.Core.Constants.ACSP;
+            response.Reason = "PDNG"; 
+        }
+
+        response.AdditionalInfo = isoMessage.AdditionalInfo;
+        
+        var localRsp = PaymentStatusRequestResponseBuilder.Build(response);
+        await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, response.Reason, response.AdditionalInfo ?? string.Empty, localRsp, ct);
+        return _signer.SignEnvelope(localRsp);
     }
 
     private void ParseCallbackResult(JsonObject data, PaymentStatusRequestResponseBuilder.Response response)

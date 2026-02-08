@@ -1,7 +1,7 @@
 # SIPS Connect: Transaction & Return Scenarios (Management Report)
 
 **Date**: February 8, 2026  
-**Status**: Production-Ready (Hardening Phase 4 Complete)  
+**Status**: ✅ Phase 5 Switch-Grade Complete  
 **Objective**: This report provides an honest assessment of how SIPS Connect handles various financial scenarios to ensure absolute integrity and regulatory compliance.
 
 ---
@@ -23,7 +23,7 @@ The system dynamically adapts its safety profile based on the bank's integration
     - **Best for**: Banks with real-time STP (Straight Through Processing) capabilities.
 
 *   **⚡ PERMISSIVE MODE (Buffered/Late Binding)**:
-    - **Behavior**: SIPS buffers the payment locally and responds "Accepted" to IPS immediately. The CoreBank credit is triggered only *after* final settlement.
+    - **Behavior**: SIPS buffers the payment locally and responds with protocol-level acceptance (not final settlement) to IPS immediately. The CoreBank credit is triggered only *after* final settlement.
     - **Risk Mitigation**: Ensures high availability. SIPS protects the bank from network latency during the handshake.
     - **Best for**: Banks requiring an integration buffer or with "Late Binding" settlement models.
 
@@ -65,24 +65,44 @@ The system dynamically adapts its safety profile based on the bank's integration
 ---
 
 ## 4. Payment Status Reports (`pacs.002`)
-**Grade: 🥈 SILVER**
+**Grade: 🏆 GOLD**
 
 | Scenario | System Handling | Integrity |
 | :--- | :--- | :--- |
-| **Double Completion** | If IPS sends two `pacs.002` for one payment, the system detects the "Non-Pending" status and ignores the second update. | Idempotent. |
+| **Status Re-delivery** | Detected via **Composite Unique Constraint** `(Role, Status, MsgId)`. Previous response replayed. | **GOLD** Idempotent. |
 | **Late Confirmation** | Updates a `Pending` transaction to `Success` and triggers the CoreBank "Late Binding" transfer. | Standard Flow. |
 
 ---
 
 ## 📉 Assessment of Residual Risk
 
-1.  **Manual Reconciliation (The "Ops Burden")**: While the system is financially safe (it freezes instead of failing), `CheckStatus` requires human intervention. This is by design to ensure 100% accuracy.
-2.  **State-Based Idempotency**: The Status Report handler (`pacs.002`) does not yet use the "Gold" INSERT-First pattern for its own status records. This is acceptable for outcome signals but could be a future "Gold" target to improve audit granularity.
+1.  **Manual Reconciliation (The "Ops Burden")**: While the system is financially safe (it freezes instead of failing), `CheckStatus` requires human intervention. This is by design to ensure 100% accuracy in in-doubt scenarios.
 
 ---
 
-## 🏁 Final Conclusion
-The SIPS Connect system is now **Hardened for Scale**. The implementation of the **Gold Pattern** (INSERT-First) on all critical inbound entry points ensures that the Participant Integration Gateway remains the "Source of Truth" even during extreme network instability or IPS retry storms.
+## 🏆 Spec-Visible Gap Closure: "Switch-Grade Complete"
 
-> [!IMPORTANT]
-> **Key Management Takeaway**: The system will always choose to **Freeze (CheckStatus)** over **Guessing**. This prioritizes financial solvency over temporary latency.
+To ensure full alignment with the **SmartVista IPS Payment Specification**, the following functional enhancements are integrated into the SIPS Connect lifecycle:
+
+### 1. Payment Returns (`pacs.004`)
+*   **Inbound Returns**: Protected by the **Gold Pattern**. If the optional `RtrId` is missing, SIPS derives a **Deterministic De-duplication Key** (SHA256) from original transaction attributes to ensure exactly one credit reversal in the CoreBank.
+*   **Outbound Returns**: Enforced strict eligibility (Original transaction must be `Success` or `ReadyForReturn`). **`OrgnlTxId`** is mandated as the authoritative anchor (Anchored per SmartVista spec).
+
+### 2. Status Investigations (`pacs.028`)
+*   **Protocol Standard**: All Store-and-Forward (SAF) recovery flows now explicitly use **pacs.028.001.05**.
+*   **Ledger-as-Truth**: Inbound inquiries are resolved strictly against the **Participant Ledger** (SIPS Connect DB), maintaining participant authority without proxying to CoreBank.
+*   **Dual-Initiator Recovery**: Supports investigations triggered by both the sender and the receiver sides.
+
+### 3. Completion Handshake (`pacs.002`)
+*   **Notify + Ack Loop**: Distinguishes between standard status reports and final completion notifications using a dedicated **Role Discriminator** (`Pacs002Role`).
+*   **Idempotency**: Creditor-side signature and ACK handshake ensure that IPS/Participant ledger synchronization is atomic and non-redundant.
+
+### 4. Verification Hardening (`acmt.024`)
+*   **MsgId Sovereignty**: Adheres to the "Message Check" model, using `MsgId` as the strict idempotency key with no fallback to `TxId`, preserving protocol integrity.
+
+---
+
+## 🏁 Final Integrity Attestation
+This system is now architected to be **"Switch-Grade Complete."** Every message transition is governed by **TxId atomicity for financial flows** and **MsgId sovereignty for verification flows**, with **Deterministic Replay** enforced throughout.
+
+**Technical Confidence**: 🟢 HIGH (Production-Ready)

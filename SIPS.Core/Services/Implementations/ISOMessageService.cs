@@ -91,6 +91,8 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
     public async Task<ISOMessageStatus> RecordIncomingStatusAsync(
         ISOMessage isoMessage,
         string rawXml,
+        SIPS.ISO20022.Enums.Pacs002Role role,
+        string? msgId,
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
@@ -100,6 +102,8 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             Date = System.DateTimeOffset.Now.ToUniversalTime(),
             Message = Encoding.UTF8.GetBytes(rawXml),
             Status = TransactionStatus.Pending,
+            MessageRole = role,
+            MsgId = msgId
         };
         var result = await _persistence.RecordISOMessageStatusAsync(entity, ct);
         sw.Stop();
@@ -332,6 +336,51 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         var result = await _persistence.RecordISOMessageAsync(entity, ct);
         sw.Stop();
         _logger.LogInformation("DB persist RecordIncomingReturnAsync txId={TxId} durationMs={Duration}", request.OrgnlTxId, sw.ElapsedMilliseconds);
+        return result;
+    }
+
+    public async Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingReturnAsync(
+        ReturnPaymentRequestBuilder.Request request,
+        string rawXml,
+        string? returnDedupKey,
+        CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        var entity = new ISOMessage
+        {
+            MessageType = ISOMessageType.ReturnRequest,
+            Date = System.DateTimeOffset.Now.ToUniversalTime(),
+            FromBIC = request.From,
+            ToBIC = request.To,
+            Message = Encoding.UTF8.GetBytes(rawXml),
+            Status = TransactionStatus.Pending,
+            TxId = request.OrgnlTxId,
+            EndToEndId = request.OriginalEndToEnd,
+            ReturnId = request.ReturnId,
+            ReturnDedupKey = returnDedupKey,
+            BizMsgIdr = request.BizMsgIdr,
+            MsgDefIdr = request.MsgDefIdr,
+            MsgId = request.MsgId
+        };
+        
+        // Add basic transaction details for tracking
+        entity.Transactions.Add(new Transaction
+        {
+            Type = TransactionType.ReturnWithdrawal,
+            FromBIC = request.From,
+            TxId = request.OrgnlTxId,
+            Amount = request.OriginalAmount,
+            Currency = request.OriginalCurrency,
+            RemittanceInformation = request.ReturnReason
+        });
+
+        var result = await _persistence.TryRecordIncomingReturnAsync(entity, ct);
+        sw.Stop();
+        
+        string status = result.IsNew ? "INSERT-First" : (result.Message != null ? "Follower-Loaded" : "Failed");
+        _logger.LogInformation("DB persist TryRecordIncomingReturnAsync ({Status}) orgnlTxId={OrgnlTxId} rtrId={RtrId} durationMs={Duration}", 
+            status, request.OrgnlTxId, request.ReturnId ?? "NONE", sw.ElapsedMilliseconds);
+        
         return result;
     }
 

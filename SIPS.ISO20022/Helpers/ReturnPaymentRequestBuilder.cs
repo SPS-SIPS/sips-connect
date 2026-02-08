@@ -27,7 +27,17 @@ public static class ReturnPaymentRequestBuilder
         public decimal OriginalAmount { get; set; }
         public string ReturnReason { get; set; } = string.Empty;
         public string AdditionalInfo { get; set; } = string.Empty;
+        public string DebtorAgent { get; set; } = string.Empty;
+        public string CreditorAgent { get; set; } = string.Empty;
 
+        public string GetDeterministicDedupKey()
+        {
+            var data = $"{OrgnlTxId}|{OriginalAmount:F2}|{OriginalCurrency}|{DebtorAgent}|{CreditorAgent}|{ReturnReason}";
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var bytes = System.Text.Encoding.UTF8.GetBytes(data);
+            var hash = sha256.ComputeHash(bytes);
+            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+        }
     }
     private static AppHdr AppHeader(string from, string to, SupportedMessageTypes type, string bizMsgIdr)
     {
@@ -180,6 +190,8 @@ public static class ReturnPaymentRequestBuilder
             OriginalAmount = document?.PmtRtr?.TxInf.FirstOrDefault()?.RtrdIntrBkSttlmAmt?.TypedValue ?? 0,
             ReturnReason = document?.PmtRtr?.TxInf.FirstOrDefault()?.RtrRsnInf.FirstOrDefault()?.Rsn?.Prtry ?? "",
             AdditionalInfo = document?.PmtRtr?.TxInf.FirstOrDefault()?.RtrRsnInf.FirstOrDefault()?.AddtlInf.FirstOrDefault() ?? "",
+            DebtorAgent = document?.PmtRtr?.GrpHdr?.InstgAgt?.FinInstnId?.Othr?.Id ?? "",
+            CreditorAgent = document?.PmtRtr?.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? ""
         };
     }
 }

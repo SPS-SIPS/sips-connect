@@ -15,6 +15,7 @@ public static class Constants
     public const string API_Secret = "ApiSecret";
 
     public const string ACSC = "ACSC";
+    public const string ACSP = "ACSP";
     public const string RJCT = "RJCT";
     public const string PDNG = "PDNG"; // Pending - awaiting final status
     public const string MISS = "MISS";

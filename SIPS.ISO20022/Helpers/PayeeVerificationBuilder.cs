@@ -67,7 +67,7 @@ public static class PayeeVerificationBuilder
             {
                 Assgnmt = new IdentificationAssignment3
                 {
-                    MsgId = Transformers.GenerateId(request.From),
+                    MsgId = !string.IsNullOrWhiteSpace(request.MsgId) ? request.MsgId : Transformers.GenerateId(request.From),
                     CreDtTm = DateTime.UtcNow,
                     Assgnr = new Party40Choice
                     {

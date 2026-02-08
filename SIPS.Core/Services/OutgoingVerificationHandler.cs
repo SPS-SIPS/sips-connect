@@ -44,7 +44,10 @@ public sealed class OutgoingVerificationHandler(
         // Step 1: Validate configuration and request values
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
-        var cid = _correlation.Create();
+        
+        // Step 0: Enforce MsgId as the sovereign anchor (Delta 4)
+        var msgIdAnchor = !string.IsNullOrWhiteSpace(message.MsgId) ? message.MsgId : Transformers.GenerateId(_configuration.BIC!);
+        var cid = _correlation.Create(msgIdAnchor);
 
         if (string.IsNullOrEmpty(message.Alias) ||
             string.IsNullOrEmpty(message.Type) ||
@@ -56,7 +59,7 @@ public sealed class OutgoingVerificationHandler(
         try
         {
             // Step 2: Build and sign the verification request
-            if (!BuildRequest(message, fromBIC, out var signedRequest, out var bizMsgIdr, out var type))
+            if (!BuildRequest(message, fromBIC, msgIdAnchor, out var signedRequest, out var bizMsgIdr, out var type, out var msgId))
             {
                 return Response<VerificationResponseDto>.Fail("Failed to build acmt.023 message from your request", System.Net.HttpStatusCode.BadRequest);
             }
@@ -72,6 +75,9 @@ public sealed class OutgoingVerificationHandler(
                 Status = PostgreSQL.Enums.TransactionStatus.Pending,
                 BizMsgIdr = bizMsgIdr,
                 MsgDefIdr = type,
+                MsgId = msgId,
+                TxId = msgId, // Anchor MsgId in TxId for status requests
+                UETR = msgId
             };
             using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
@@ -128,15 +134,18 @@ public sealed class OutgoingVerificationHandler(
         }
     }
 
-    private bool BuildRequest(VerificationRequestDto message, string fromBIC, out string signedMessage, out string bizMsgIdr, out string type)
+    private bool BuildRequest(VerificationRequestDto message, string fromBIC, string? anchorMsgId, out string signedMessage, out string bizMsgIdr, out string type, out string msgId)
     {
-        (string document, bizMsgIdr, type) = PayeeVerificationBuilder.Build(new PayeeVerificationBuilder.Request
+        var req = new PayeeVerificationBuilder.Request
         {
             From = fromBIC,
             Alias = message.Alias,
             Type = message.Type,
             To = message.ToBIC,
-        });
+            MsgId = anchorMsgId
+        };
+        (string document, bizMsgIdr, type) = PayeeVerificationBuilder.Build(req);
+        msgId = req.MsgId ?? string.Empty;
 
         if (document != null)
         {

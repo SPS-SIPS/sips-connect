@@ -30,6 +30,8 @@ public interface IISOMessageService
     Task<ISOMessageStatus> RecordIncomingStatusAsync(
         ISOMessage isoMessage,
         string rawXml,
+        SIPS.ISO20022.Enums.Pacs002Role role,
+        string? msgId,
         CancellationToken ct);
 
     Task PersistStatusResponseAsync(
@@ -69,6 +71,12 @@ public interface IISOMessageService
     Task<ISOMessage> RecordIncomingReturnAsync(
         ReturnPaymentRequestBuilder.Request request,
         string rawXml,
+        CancellationToken ct);
+
+    Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingReturnAsync(
+        ReturnPaymentRequestBuilder.Request request,
+        string rawXml,
+        string? returnDedupKey,
         CancellationToken ct);
 
     Task PersistReturnResponseAsync(

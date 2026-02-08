@@ -127,14 +127,14 @@ public sealed class IncomingVerificationHandler(
                 return _signer.SignEnvelope(err);
             }
 
-            // Step 2: Validate mandatory MsgId (Critical for verification deduplication)
+            // Step 2: Validate mandatory MsgId (Critical for verification deduplication - Delta 4)
             if (string.IsNullOrWhiteSpace(request.MsgId))
             {
                 path = "MissingMsgId";
                 // [PROTOCOL COMPLIANCE]: Mandatory field missing -> admi.002
                 var err = AdminMessageBuilder.Generate(
                     SIPS.ISO20022.Helpers.AdminRejectReasonCodes.MandatoryElementMissing,
-                    "MsgId is mandatory for VerificationRequest.", 
+                    "MsgId is mandatory for VerificationRequest sovereignty.", 
                     request.SIPSRequestId);
                 return _signer.SignEnvelope(err);
             }

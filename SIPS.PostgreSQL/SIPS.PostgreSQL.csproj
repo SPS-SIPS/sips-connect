@@ -30,4 +30,8 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../SIPS.ISO20022/SIPS.ISO20022.csproj" />
+  </ItemGroup>
+
 </Project>

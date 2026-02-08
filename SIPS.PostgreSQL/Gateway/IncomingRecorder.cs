@@ -56,6 +56,20 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         .Include(x => x.Transactions)
         .FirstOrDefaultAsync(ct);
     }
+    public async Task<List<ISOMessage>> GetISOMessagesByUETRAndTypeAsync(string uetr, ISOMessageType type, CancellationToken ct)
+    {
+        return await _storage.ISOMessages
+            .Where(x => x.UETR == uetr && x.MessageType == type)
+            .OrderByDescending(x => x.Date)
+            .ToListAsync(ct);
+    }
+    public async Task<List<ISOMessage>> GetISOMessagesByOriginalTxIdAndTypeAsync(string orgnlTxId, ISOMessageType type, CancellationToken ct)
+    {
+        return await _storage.ISOMessages
+            .Where(x => x.TxId == orgnlTxId && x.MessageType == type)
+            .OrderByDescending(x => x.Date)
+            .ToListAsync(ct);
+    }
 
     public async Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(ISOMessage entity, CancellationToken ct)
     {
@@ -100,7 +114,59 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
                 if (byMsg != null) return (byMsg, false);
             }
 
-            // If we can't find it (race condition cleared?), return null to trigger admi.002
+            return (null, false);
+        }
+    }
+
+    public async Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingReturnAsync(ISOMessage entity, CancellationToken ct)
+    {
+        try
+        {
+            await _storage.ISOMessages.AddAsync(entity, ct);
+            await _storage.SaveChangesAsync(ct);
+            return (entity, true); // IsNew = true
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx && pgEx.SqlState == "23505")
+        {
+            // Case 1: RtrId duplication (ux_iso_msg_type_rtrid)
+            if (pgEx.ConstraintName == "ux_iso_msg_type_rtrid")
+            {
+                _logger.LogInformation("Structural De-duplication trigger (RtrId) for RtrId: {RtrId}. Loading existing record.", entity.ReturnId);
+                var existing = await _storage.ISOMessages
+                    .Where(x => x.ReturnId == entity.ReturnId && x.MessageType == entity.MessageType)
+                    .FirstOrDefaultAsync(ct);
+                return (existing, false);
+            }
+
+            // Case 2: Deterministic Key duplication (ux_iso_msg_type_rtr_dedup)
+            if (pgEx.ConstraintName == "ux_iso_msg_type_rtr_dedup")
+            {
+                _logger.LogInformation("Structural De-duplication trigger (ReturnDedupKey) for Key: {Key}. Loading existing record.", entity.ReturnDedupKey);
+                var existing = await _storage.ISOMessages
+                    .Where(x => x.ReturnDedupKey == entity.ReturnDedupKey && x.MessageType == entity.MessageType)
+                    .FirstOrDefaultAsync(ct);
+                return (existing, false);
+            }
+
+            // Fallback lookup
+            _logger.LogWarning("Structural De-duplication trigger (Return - Unknown Constraint: {ConstraintName}). Attempting fallback lookup.", pgEx.ConstraintName);
+            
+            if (!string.IsNullOrEmpty(entity.ReturnId))
+            {
+                var byRtrId = await _storage.ISOMessages
+                    .Where(x => x.ReturnId == entity.ReturnId && x.MessageType == entity.MessageType)
+                    .FirstOrDefaultAsync(ct);
+                if (byRtrId != null) return (byRtrId, false);
+            }
+
+            if (!string.IsNullOrEmpty(entity.ReturnDedupKey))
+            {
+                var byKey = await _storage.ISOMessages
+                    .Where(x => x.ReturnDedupKey == entity.ReturnDedupKey && x.MessageType == entity.MessageType)
+                    .FirstOrDefaultAsync(ct);
+                if (byKey != null) return (byKey, false);
+            }
+
             return (null, false);
         }
     }

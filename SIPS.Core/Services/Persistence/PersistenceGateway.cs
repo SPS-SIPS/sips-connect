@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using SIPS.PostgreSQL.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using SIPS.PostgreSQL.Models;
 using SIPS.PostgreSQL.Enums;
 
@@ -17,9 +18,13 @@ public interface IPersistenceGateway
     Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByTxIdAndTypeAsync(string txId, ISOMessageType type, CancellationToken ct);
     Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(ISOMessage entity, CancellationToken ct);
+    Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingReturnAsync(ISOMessage entity, CancellationToken ct);
     Task<(ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy)> TryRecordIncomingVerificationAsync(ISOMessage entity, CancellationToken ct);
     Task<List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct);
     Task<int> AppendAuditLedgerEventAsync(int isoMessageId, object ledgerEvent, uint xmin, CancellationToken ct);
+    Task<List<ISOMessage>> GetISOMessagesByUETRAndTypeAsync(string uetr, ISOMessageType type, CancellationToken ct);
+    Task<List<ISOMessage>> GetISOMessagesByOriginalTxIdAndTypeAsync(string orgnlTxId, ISOMessageType type, CancellationToken ct);
+    Task<Transaction?> GetTransactionByTxIdAsync(string txId, CancellationToken ct);
 }
 
 public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceGateway
@@ -53,6 +58,9 @@ public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceG
     public Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(ISOMessage entity, CancellationToken ct)
         => _record.TryRecordIncomingTransactionAsync(entity, ct);
 
+    public Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingReturnAsync(ISOMessage entity, CancellationToken ct)
+        => _record.TryRecordIncomingReturnAsync(entity, ct);
+
     public Task<(ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy)> TryRecordIncomingVerificationAsync(ISOMessage entity, CancellationToken ct)
         => _record.TryRecordIncomingVerificationAsync(entity, ct);
 
@@ -61,4 +69,17 @@ public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceG
 
     public Task<int> AppendAuditLedgerEventAsync(int isoMessageId, object ledgerEvent, uint xmin, CancellationToken ct)
         => _record.AppendAuditLedgerEventAsync(isoMessageId, ledgerEvent, xmin, ct);
+
+    public Task<List<ISOMessage>> GetISOMessagesByUETRAndTypeAsync(string uetr, ISOMessageType type, CancellationToken ct)
+        => _record.GetISOMessagesByUETRAndTypeAsync(uetr, type, ct);
+
+    public Task<List<ISOMessage>> GetISOMessagesByOriginalTxIdAndTypeAsync(string orgnlTxId, ISOMessageType type, CancellationToken ct)
+        => _record.GetISOMessagesByOriginalTxIdAndTypeAsync(orgnlTxId, type, ct);
+
+    public async Task<Transaction?> GetTransactionByTxIdAsync(string txId, CancellationToken ct)
+    {
+        // This is a direct storage call because it's simpler here
+        var ctx = (IStorageBroker)_record.GetType().GetField("_storage", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(_record)!;
+        return await ctx.Transactions.Where(t => t.TxId == txId).FirstOrDefaultAsync(ct);
+    }
 }

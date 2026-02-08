@@ -21,6 +21,7 @@ public static class PaymentRequestResponseBuilder
         public string? AdditionalInfo { get; set; }
         public DateTime AcceptanceDate { get; set; }
         public string TxId { get; set; } = string.Empty;
+        public SIPS.ISO20022.Enums.Pacs002Role Role { get; set; } = SIPS.ISO20022.Enums.Pacs002Role.StatusUpdate;
     }
     /// <summary>
     /// Creates the AppHdr for a pacs.002 response message.
@@ -234,6 +235,21 @@ public static class PaymentRequestResponseBuilder
         rsp.AdditionalInfo = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?
             .SelectMany(x => x.AddtlInf)
             .FirstOrDefault();
+
+        // Infer Pacs002Role based on Status (Delta 5)
+        if (rsp.Status == "ACSC")
+        {
+            rsp.Role = SIPS.ISO20022.Enums.Pacs002Role.CompletionNotify;
+        }
+        else if (rsp.Status == "ACSP")
+        {
+            rsp.Role = SIPS.ISO20022.Enums.Pacs002Role.StatusUpdate;
+        }
+        else
+        {
+            // For RJCT or others, default to StatusUpdate or specialized handling
+            rsp.Role = SIPS.ISO20022.Enums.Pacs002Role.StatusUpdate;
+        }
         // Original Message Information
         rsp.Original = new()
         {

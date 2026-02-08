@@ -11,6 +11,8 @@ public class ISOMessageStatus
     public DateTimeOffset Date { get; set; }
     public byte[] Message { get; set; } = null!;
     public byte[]? Response { get; set; }
+    public string? MsgId { get; set; }
+    public SIPS.ISO20022.Enums.Pacs002Role MessageRole { get; set; }
     public ISOMessage ISOMessage { get; set; } = null!;
     public int ISOMessageId { get; set; }
 }
@@ -22,11 +24,20 @@ public sealed class ISOMessageStatusConfiguration : IEntityTypeConfiguration<ISO
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).ValueGeneratedOnAdd();
 
+        // [SMARTVISTA COMPLIANCE]: Composite de-duplication for status reports
+        // Collapses storms (same role + status + MsgId) into deterministic replays.
+        builder.HasIndex(e => new { e.ISOMessageId, e.MessageRole, e.Status, e.MsgId })
+            .IsUnique()
+            .HasDatabaseName("ux_iso_status_dedup");
+
         builder.Property(e => e.Date)
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
         builder.Property(e => e.Status)
+            .HasConversion<string>();
+
+        builder.Property(e => e.MessageRole)
             .HasConversion<string>();
 
         builder.Property(e => e.Message)

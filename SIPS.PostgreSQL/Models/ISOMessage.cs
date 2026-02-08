@@ -25,6 +25,8 @@ public class ISOMessage
     public byte[]? Response { get; set; }
     public string? CoreBankResponse { get; set; }
     public string? ReturnId { get; set; }
+    public string? ReturnDedupKey { get; set; }
+    public SIPS.ISO20022.Enums.Pacs002Role Pacs002Role { get; set; }
     public ICollection<Transaction> Transactions { get; set; } = [];
     public ICollection<ISOMessageStatus> Statuses { get; set; } = [];
     public uint xmin { get; private set; }
@@ -41,6 +43,9 @@ public sealed class ISOMessageConfiguration : IEntityTypeConfiguration<ISOMessag
             .HasConversion<string>();
 
         builder.Property(e => e.Status)
+            .HasConversion<string>();
+
+        builder.Property(e => e.Pacs002Role)
             .HasConversion<string>();
 
         builder.Property(e => e.Date)
@@ -75,6 +80,22 @@ public sealed class ISOMessageConfiguration : IEntityTypeConfiguration<ISOMessag
             .HasDatabaseName("ux_iso_msg_type_msgid")
             // Fix: Use lowercase "msgid" because UseLowerCaseNamingConvention() is active
             .HasFilter("\"msgid\" IS NOT NULL AND \"msgid\" <> ''");
+
+        // [SAFETY INVARIANT C]: Return de-duplication
+        // RtrId = primary key if present; ReturnDedupKey = fallback deterministic key (SmartVista spec)
+        builder.HasIndex(e => new { e.MessageType, e.ReturnId })
+            .IsUnique()
+            .HasDatabaseName("ux_iso_msg_type_rtrid")
+            .HasFilter("\"returnid\" IS NOT NULL AND \"returnid\" <> ''");
+
+        builder.HasIndex(e => new { e.MessageType, e.ReturnDedupKey })
+            .IsUnique()
+            .HasDatabaseName("ux_iso_msg_type_rtr_dedup")
+            .HasFilter("\"returndedupkey\" IS NOT NULL AND \"returndedupkey\" <> ''");
+
+        // [SAFETY INVARIANT D]: OrgnlTxId anchor
+        builder.HasIndex(e => new { e.TxId })
+            .HasDatabaseName("ix_iso_msg_txid_anchor");
 
         // Secondary index for UETR correlation and audit
         builder.HasIndex(e => e.UETR)

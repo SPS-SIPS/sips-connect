@@ -101,12 +101,26 @@ public sealed class IncomingReturnTransactionHandler(
         if (!isValid || request == null)
             return ErrorResponse("Failed to verify the signature or parse the message.");
 
-        // Step 2: Save the message as you received it via service
-        var record = await _isoService.RecordIncomingReturnAsync(request, message, ct);
+        // Step 1.1: Enforce OrgnlTxId as the mandatory anchor (Delta 2)
+        if (string.IsNullOrWhiteSpace(request.OrgnlTxId))
+        {
+            _logger.LogWarning("[{CorrelationId}] Return rejected: Mandatory OrgnlTxId is missing", cid);
+            return ErrorResponse("Mandatory OrgnlTxId is missing.");
+        }
+
+        // Step 2: Save the message using Gold Pattern (INSERT-First with de-dup)
+        var (record, isNew) = await _isoService.TryRecordIncomingReturnAsync(request, message, null, ct);
 
         // Step 3: Get the original message
         var originalMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.OrgnlTxId, ct);
         var response = BuildInitialResponse(request);
+
+        // Gold Pattern Check: If NOT new, and we have a record, this is a replay.
+        if (!isNew && record != null)
+        {
+            _logger.LogInformation("[{CorrelationId}] Replay detected for Return Request {MsgId}. Returning previous response.", cid, request.MsgId);
+            return _signer.SignEnvelope(record.Response != null ? Encoding.UTF8.GetString(record.Response) : ErrorResponse("Duplicate return request, but no previous response found."));
+        }
         _logger.LogInformation("[{CorrelationId}] Retrieved original message response (IRTH): {response}", cid, JsonSerializer.Serialize(response, _jsonSerializerOptions));
 
         // Step 4: Validate original message exists and is a transaction request

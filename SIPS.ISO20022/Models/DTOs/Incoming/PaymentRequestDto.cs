@@ -23,4 +23,5 @@ public sealed class PaymentRequestDto
     public string CreditorIssuer { get; set; } = "C";
 
     public string RemittanceInformation { get; set; } = default!;
+    public string? TxId { get; set; }
 }

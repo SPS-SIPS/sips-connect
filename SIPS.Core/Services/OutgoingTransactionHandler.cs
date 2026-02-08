@@ -44,7 +44,9 @@ public sealed class OutgoingTransactionHandler(
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var ourAgentBic = _configuration.Agent ?? throw new InvalidOperationException("Agent BIC not found in configuration.");
-        var txId = Transformers.GenerateId(_configuration.BIC!);
+        
+        // Step 0: Enforce TxId as the sovereign anchor (Delta 2)
+        var txId = !string.IsNullOrWhiteSpace(message.TxId) ? message.TxId : Transformers.GenerateId(_configuration.BIC!);
         var cid = _correlation.Create(txId);
 
         try

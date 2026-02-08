@@ -46,8 +46,10 @@ public sealed class OutgoingReturnTransactionHandler(
     {
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
-        var txId = Transformers.GenerateId(_configuration.BIC!);
-        var cid = _correlation.Create(txId);
+        // Step 0: Enforce ReturnId as the sovereign anchor (Delta 2)
+        var returnId = !string.IsNullOrWhiteSpace(message.ReturnId) ? message.ReturnId : Transformers.GenerateId(_configuration.BIC!);
+        var cid = _correlation.Create(returnId);
+        var txId = returnId; // Use returnId as the internal TxId proxy for the return message
 
         try
         {
@@ -59,6 +61,46 @@ public sealed class OutgoingReturnTransactionHandler(
             {
                 _logger.LogWarning("[{CorrelationId}] Return rejected: Original transaction {TxId} not found", cid, message.OriginalTxId);
                 return Response<ReturnPaymentResponseDto>.Fail("Transaction not found: " + message.OriginalTxId, System.Net.HttpStatusCode.NotFound);
+            }
+
+            // Delta 3: Multi-Return Safety Gate (Protocol Aligned)
+            // Anchor on OrgnlTxId per SmartVista spec.
+            var existingReturns = await _persistence.GetISOMessagesByOriginalTxIdAndTypeAsync(message.OriginalTxId, PostgreSQL.Enums.ISOMessageType.ReturnRequest, dbCt);
+            var activeReturn = existingReturns.FirstOrDefault(r => 
+                r.Status == PostgreSQL.Enums.TransactionStatus.Success || 
+                r.Status == PostgreSQL.Enums.TransactionStatus.Pending ||
+                r.Status == PostgreSQL.Enums.TransactionStatus.CheckStatus);
+
+            if (activeReturn != null)
+            {
+                _logger.LogWarning("[{CorrelationId}] Return blocked: Original transaction {TxId} already has an active return {ReturnId} with status {Status}",
+                    cid, message.OriginalTxId, activeReturn.ReturnId, activeReturn.Status);
+                return Response<ReturnPaymentResponseDto>.Fail(
+                    $"MULTI-RETURN BLOCKED: A return for this transaction is already in progress or completed (ReturnId: {activeReturn.ReturnId}, Status: {activeReturn.Status}).",
+                    System.Net.HttpStatusCode.Conflict);
+            }
+
+            // Delta 3.1: Return Eligibility (Audit-Grade)
+            // T+0/T+1 Time Window Check
+            var now = DateTime.UtcNow.Date;
+            var txDate = originalMessage.Date.Date;
+            if (now > txDate.AddDays(1))
+            {
+                _logger.LogWarning("[{CorrelationId}] Return rejected: T+1 window exceeded. OriginalDate: {Date}", cid, txDate);
+                return Response<ReturnPaymentResponseDto>.Fail(
+                    "PROTOCOL ERROR: Return window (T+1) has expired for this transaction.",
+                    System.Net.HttpStatusCode.Forbidden);
+            }
+
+            // Initiator Rule: Enforce CreditorFI authority (Recipient side)
+            // Note: transaction.CreditorAgentBIC comes from the original message's receipt side.
+            if (transaction.CreditorAgentBIC != _configuration.BIC)
+            {
+                _logger.LogWarning("[{CorrelationId}] Return rejected: Initiator is not the original CreditorFI. AgentBic: {Bic}, OurBic: {OurBic}", 
+                    cid, transaction.CreditorAgentBIC, _configuration.BIC);
+                return Response<ReturnPaymentResponseDto>.Fail(
+                    "INSUFFICIENT AUTHORITY: Only the recipient bank (CreditorFI) can initiate a return for this transaction.",
+                    System.Net.HttpStatusCode.Forbidden);
             }
 
             // Step 2: Validate original transaction was successfully completed (ACSC)
@@ -215,7 +257,8 @@ public sealed class OutgoingReturnTransactionHandler(
             Message = Encoding.UTF8.GetBytes(signedMessage),
             BizMsgIdr = bizMsgIdr,
             MsgDefIdr = msgDefIdr,
-            MsgId = msgId
+            MsgId = msgId,
+            UETR = transaction.TxId // Delta 3: Store OriginalTxId in UETR for return correlation
         };
         entity.Transactions.Add(new Transaction
         {
