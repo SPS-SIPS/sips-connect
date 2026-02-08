@@ -1,0 +1,38 @@
+{
+  "InterBankTransactions": [],
+  "Accounts": [
+    {
+      "Id": 305005007605,
+      "IBAN": "SO140010202305005007605",
+      "CustomerName": "SIPS Business",
+      "Address": "Mogadishu",
+      "Phone": "620050014",
+      "Currency": "USD",
+      "Balance": 9850,
+      "Active": true,
+      "WalletId": "5432"
+    },
+    {
+      "Id": 401005007403,
+      "IBAN": "SO730010201401005007403",
+      "CustomerName": "Abdulshakur Ahmed",
+      "Address": "Burao",
+      "Phone": "620030078",
+      "Currency": "USD",
+      "Balance": 10000,
+      "Active": true,
+      "WalletId": "5433"
+    },
+    {
+      "Id": 402005007303,
+      "IBAN": "SO120010201402005007303",
+      "CustomerName": "Abdikarim Osman",
+      "Address": "Burao",
+      "Phone": "620080019",
+      "Currency": "USD",
+      "Balance": 10000,
+      "Active": true,
+      "WalletId": "5434"
+    }
+  ]
+}
