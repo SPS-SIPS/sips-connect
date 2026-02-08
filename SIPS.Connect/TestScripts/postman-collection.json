@@ -1,0 +1,277 @@
+{
+  "info": {
+    "name": "SIPS Handlers Test Collection",
+    "description": "Test collection for SIPS incoming message handlers",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "1"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "IncomingTransactionHandler",
+      "item": [
+        {
+          "name": "Process pacs.008 Payment Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              },
+              {
+                "key": "Accept",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{pacs008Payload}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/transaction",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "transaction"]
+            },
+            "description": "Processes an incoming pacs.008 payment request"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "IncomingVerificationHandler",
+      "item": [
+        {
+          "name": "Process acmt.023 Verification Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              },
+              {
+                "key": "Accept",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{acmt023Payload}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/verification",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "verification"]
+            },
+            "description": "Processes an incoming acmt.023 verification request"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "IncomingTransactionStatusHandler",
+      "item": [
+        {
+          "name": "Process pacs.002 Transaction Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              },
+              {
+                "key": "Accept",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{pacs002StatusPayload}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "status"]
+            },
+            "description": "Processes an incoming pacs.002 transaction status report"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "IncomingPaymentStatusReportHandler",
+      "item": [
+        {
+          "name": "Process pacs.002 Payment Status - Generic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              },
+              {
+                "key": "Accept",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{pacs002PaymentStatusPayload}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/payment-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "payment-status"]
+            },
+            "description": "Processes an incoming pacs.002 payment status report"
+          },
+          "response": []
+        },
+        {
+          "name": "Process pacs.002 Payment Status - ACSC (Success)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              },
+              {
+                "key": "Accept",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{pacs002AcscPayload}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/payment-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "payment-status"]
+            },
+            "description": "Tests successful payment status (ACSC)"
+          },
+          "response": []
+        },
+        {
+          "name": "Process pacs.002 Payment Status - RJCT (Rejection)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              },
+              {
+                "key": "Accept",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{pacs002RjctPayload}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/payment-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "payment-status"]
+            },
+            "description": "Tests rejected payment status (RJCT)"
+          },
+          "response": []
+        },
+        {
+          "name": "Process pacs.002 Payment Status - Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              },
+              {
+                "key": "Accept",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{pacs002NotFoundPayload}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/payment-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "payment-status"]
+            },
+            "description": "Tests transaction not found scenario (should return 404 or admi.002)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Error Scenarios",
+      "item": [
+        {
+          "name": "Invalid XML Format",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<InvalidXML>This is not valid ISO 20022</InvalidXML>"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/transaction",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "transaction"]
+            },
+            "description": "Tests error handling for invalid XML (should return 400)"
+          },
+          "response": []
+        },
+        {
+          "name": "Empty Request Body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/incoming/transaction",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "incoming", "transaction"]
+            },
+            "description": "Tests error handling for empty request (should return 400)"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

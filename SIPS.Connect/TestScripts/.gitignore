@@ -1,0 +1,14 @@
+# Internal/Environment-specific files
+SUCCESS_SUMMARY.md
+IMPROVEMENTS_SUMMARY.md
+CONTEXT_FOR_API_PROJECT.md
+DELIVERY_SUMMARY.md
+INDEX.md
+GIT_COMMIT_GUIDE.md
+LOCAL_SETUP.md
+
+# Test reports (generated at runtime)
+test-report-*.json
+
+# Environment-specific config (users should create their own)
+test-config.local.json
