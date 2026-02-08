@@ -10,9 +10,7 @@ namespace SIPS.PostgreSQL.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "ix_isomessagestatuses_isomessageid",
-                table: "isomessagestatuses");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS ix_isomessagestatuses_isomessageid;");
 
             migrationBuilder.AddColumn<string>(
                 name: "messagerole",
