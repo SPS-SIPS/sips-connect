@@ -171,6 +171,18 @@ public sealed class IncomingVerificationHandler(
             }
             else
             {
+                // [LOOPBACK DETECTION]: Fix for self-addressed messages (e.g. simulation/loopback) failing with DuplicatePending
+                if (request.From == request.To && isoMessage.Status == TransactionStatus.Pending && (isoMessage.Response == null || isoMessage.Response.Length == 0))
+                {
+                     _logger.LogInformation("[{CorrelationId}] [LOOPBACK_DETECTED] MsgId={MsgId} is self-addressed. Taking ownership of pending Outgoing record.", cid, request.MsgId);
+                     await _isoService.AppendAuditLedgerEventAsync(isoMessage.Id, new { 
+                         @event = "VerificationLoopbackDetected", 
+                         status = "OwnershipTaken",
+                         timestampUtc = DateTimeOffset.UtcNow 
+                     }, gct);
+                     goto ProcessAsOwner;
+                }
+
                 // [GOLD PATTERN]: Follower Logic
                 path = "DuplicateFollower";
                 
@@ -241,6 +253,7 @@ public sealed class IncomingVerificationHandler(
             }
 
             // --- OWNER PATH ---
+            ProcessAsOwner:
 
             // Step 4: Prepare internal response state
             response = new PayeeVerificationResponseBuilder.Request
