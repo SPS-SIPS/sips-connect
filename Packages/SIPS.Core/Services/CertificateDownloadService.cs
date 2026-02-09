@@ -35,6 +35,12 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
         if (loginResult.Error != null)
             return (null, loginResult.Error);
 
+        // [FIX]: Inject the retrieved access token into the repository client
+        if (loginResult.Token != null)
+        {
+            _httpService.AddAuthHeaders(loginResult.Token.AccessToken);
+        }
+
         // Step 4: Build request and call API
         var request = new CertificateRequest(sn, issuerDN);
         var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(url, request, cancellationToken);
