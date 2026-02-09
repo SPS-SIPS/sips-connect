@@ -81,6 +81,7 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx && pgEx.SqlState == "23505")
         {
+            _storage.Entry(entity).State = EntityState.Detached;
             // [SMARTVISTA COMPLIANCE]: Constraint-specific conflict handling
             
             // Case 1: Message-level duplication (ux_iso_msg_type_msgid)
@@ -128,6 +129,7 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx && pgEx.SqlState == "23505")
         {
+            _storage.Entry(entity).State = EntityState.Detached;
             // Case 1: RtrId duplication (ux_iso_msg_type_rtrid)
             if (pgEx.ConstraintName == "ux_iso_msg_type_rtrid")
             {
@@ -181,6 +183,7 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg && pg.SqlState == "23505")
         {
+            _storage.Entry(entity).State = EntityState.Detached;
             // Prefer constraint-name routing
             if (pg.ConstraintName == "ux_iso_msg_type_msgid")
             {
