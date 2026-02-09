@@ -36,12 +36,18 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
             return (null, loginResult.Error);
 
         // [FIX]: Inject the retrieved access token into the repository client
-        if (loginResult.Token != null)
+        if (loginResult.Token != null && !string.IsNullOrEmpty(loginResult.Token.AccessToken))
         {
+            _logger.LogInformation("Authentication successful. Attaching Bearer token (Length: {Length}) to certificate request.", loginResult.Token.AccessToken.Length);
             _httpService.AddAuthHeaders(loginResult.Token.AccessToken);
+        }
+        else
+        {
+            _logger.LogWarning("Authentication failed or returned empty token. Proceeding without Auth header (Likely 401). Error: {Error}", loginResult.Error);
         }
 
         // Step 4: Build request and call API
+        _logger.LogInformation("Sending certificate download request to {Url}. SN: {SN}, Issuer: {Issuer}", url, sn, issuerDN);
         var request = new CertificateRequest(sn, issuerDN);
         var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(url, request, cancellationToken);
 
