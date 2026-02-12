@@ -39,15 +39,30 @@ public class AuthService(CoreOptions options, ILogger<AuthService> logger, IRepo
         }
 
         // Cache the login response for future use
-        await _cacheService.SetAsync($"auth:login:{username}", response, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
+        // [FIX]: standard OAuth2 expires_in is in seconds, not minutes. 
+        // We also deduct a small buffer (30s) to avoid race conditions.
+        var bufferSeconds = 30;
+        var effectiveExpiresIn = Math.Max(0, response.Data.ExpiresIn - bufferSeconds);
+
+        await _cacheService.SetAsync($"auth:login:{username}", response.Data, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
         {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(response!.Data.ExpiresIn)
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(effectiveExpiresIn)
         }, cancellationToken);
 
         // important: to add the access token to the http service
         _httpService.AddAuthHeaders(response!.Data.AccessToken);
 
         return (response.Data, null);
+    }
+
+    public async Task ClearCacheAsync(CancellationToken cancellationToken = default)
+    {
+        var username = _configuration.Username;
+        if (!string.IsNullOrEmpty(username))
+        {
+            _logger.LogInformation("Clearing auth cache for user {Username} due to 401/Invalidation request.", username);
+            await _cacheService.RemoveAsync($"auth:login:{username}", cancellationToken);
+        }
     }
 
     private async Task<LoginResponse?> GetTokenAsync(string username, CancellationToken cancellationToken = default)
