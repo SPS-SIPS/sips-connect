@@ -46,14 +46,31 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
             _logger.LogWarning("Authentication failed or returned empty token. Proceeding without Auth header (Likely 401). Error: {Error}", loginResult.Error);
         }
 
-        // Step 4: Build request and call API
+        // Step 4: Build request and call API (with 401 retry logic)
         _logger.LogInformation("Sending certificate download request to {Url}. SN: {SN}, Issuer: {Issuer}", url, sn, issuerDN);
         var request = new CertificateRequest(sn, issuerDN);
         var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(url, request, cancellationToken);
 
+        // [HARDENING]: Handle 401 Unauthorized via token refresh
+        if (response.StatusCode == 401)
+        {
+            _logger.LogWarning("Certificate download returned 401 Unauthorized. Forcing token refresh and retrying...");
+            
+            // Clear cache and re-login
+            await _authService.ClearCacheAsync(cancellationToken);
+            var retryLogin = await _authService.LoginAsync(cancellationToken);
+            
+            if (retryLogin.Error == null && retryLogin.Token != null)
+            {
+                _logger.LogInformation("Re-authentication successful. Retrying certificate download...");
+                _httpService.AddAuthHeaders(retryLogin.Token.AccessToken);
+                response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(url, request, cancellationToken);
+            }
+        }
+
         if (!response.IsSuccess)
         {
-            _logger.LogError("Failed to get certificates: {Error}", response.Message);
+            _logger.LogError("Failed to get certificates: {Error} (Status: {Status})", response.Message, response.StatusCode);
             return (null, response.Message);
         }
 

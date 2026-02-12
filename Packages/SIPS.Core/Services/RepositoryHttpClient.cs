@@ -30,7 +30,7 @@ public class RepositoryHttpClient(ILogger<RepositoryHttpClient> logger, HttpClie
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("GET request failed: {StatusCode}, URL: {Url}", response.StatusCode, url);
-                return RepositoryResponse<T>.BadRequest("GET request failed");
+                return RepositoryResponse<T>.Fail("GET request failed", (int)response.StatusCode);
             }
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
             var data = JsonSerializer.Deserialize<RepositoryResponse<T>>(content, serializerOptions);
@@ -58,7 +58,7 @@ public class RepositoryHttpClient(ILogger<RepositoryHttpClient> logger, HttpClie
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url}", response.StatusCode, url);
-                return RepositoryResponse<TResponse>.BadRequest("POST request failed");
+                return RepositoryResponse<TResponse>.Fail("POST request failed", (int)response.StatusCode);
             }
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
@@ -90,7 +90,7 @@ public class RepositoryHttpClient(ILogger<RepositoryHttpClient> logger, HttpClie
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("POST request failed: {StatusCode}, URL: {Url}", response.StatusCode, url);
-                return RepositoryResponse<T>.BadRequest("POST request failed");
+                return RepositoryResponse<T>.Fail("POST request failed", (int)response.StatusCode);
             }
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
