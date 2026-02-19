@@ -22,8 +22,13 @@ public static class QRHelpers
         var payload = merchantDecoder.BuildPayload(tlvs);
         payload.CRC = crc;
 
+        var validationResults = new System.Collections.Generic.List<ValidationResult>();
         var validationContext = new ValidationContext(payload);
-        Validator.ValidateObject(payload, validationContext, true);
+        if (!Validator.TryValidateObject(payload, validationContext, validationResults, true))
+        {
+            var errors = string.Join("; ", validationResults.Select(r => r.ErrorMessage));
+            throw new ValidationException($"Merchant QR Payload validation failed: {errors}");
+        }
         return payload;
     }
 
@@ -40,8 +45,13 @@ public static class QRHelpers
         var payload = p2pDecoder.BuildPayloadP2P(tlvs);
         payload.CRC = crc;
 
+        var validationResults = new System.Collections.Generic.List<ValidationResult>();
         var validationContext = new ValidationContext(payload);
-        Validator.ValidateObject(payload, validationContext, true);
+        if (!Validator.TryValidateObject(payload, validationContext, validationResults, true))
+        {
+            var errors = string.Join("; ", validationResults.Select(r => r.ErrorMessage));
+            throw new ValidationException($"P2P QR Payload validation failed: {errors}");
+        }
         return payload;
     }
 

@@ -38,4 +38,9 @@ public sealed class StorageBroker(DbContextOptions<StorageBroker> options) : DbC
     {
         return Database.BeginTransactionAsync(cancellationToken);
     }
+
+    public void Detach<TEntity>(TEntity entity) where TEntity : class
+    {
+        Entry(entity).State = EntityState.Detached;
+    }
 }
