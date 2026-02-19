@@ -81,6 +81,11 @@ public class PayloadDecoder : IPayloadDecoder<MerchantPayload>
 
     public string ValidateCrc(string qrData)
     {
+        if (qrData.Length < 4)
+        {
+            throw new QRDecodingException("QR data is too short to contain a CRC", position: 0);
+        }
+
         var data = qrData[..^4];
         var crc = new Crc(CrcStandardParams.StandardParameters[CrcAlgorithms.Crc16CcittFalse]).ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
         var crcValue = crc.ToHex(true).GetLast(4);
@@ -88,7 +93,7 @@ public class PayloadDecoder : IPayloadDecoder<MerchantPayload>
 
         if (0 != StringComparer.Ordinal.Compare(crcValue, qrDataCrc.ToUpperInvariant()))
         {
-            throw new SecurityException("QR data has an invalid CRC: " + crcValue);
+            throw new System.Security.SecurityException($"QR data has an invalid CRC. Expected: {qrDataCrc.ToUpperInvariant()}, Computed: {crcValue}");
         }
 
         return crcValue;
@@ -97,6 +102,8 @@ public class PayloadDecoder : IPayloadDecoder<MerchantPayload>
     public ICollection<Tlv> DecodeQR(string qrData, bool containsChildren, bool isP2P = false)
     {
         var collection = new List<Tlv>();
+
+        ValidateCrc(qrData);
 
         /// Remove CRC
         var data = qrData[..^8];
@@ -121,11 +128,21 @@ public class PayloadDecoder : IPayloadDecoder<MerchantPayload>
     {
         for (int index = 0; index < data.Length; index++)
         {
+            int currentStartIndex = index;
+            if (data.Length - index < 2)
+            {
+                throw new QRDecodingException("Insufficient data to read Tag", position: index);
+            }
+
             var tag = data.Substring(index, 2);
             index += 2;
 
             if (isP2P && tag == "02")
             {
+                if (data.Length - index < 2)
+                {
+                    throw new QRDecodingException("Insufficient data to read Schema ID for Tag 02", tag: tag, position: index);
+                }
                 var schemaId = data.Substring(index, 2);
                 if (_schemaIds.Contains(schemaId))
                 {
@@ -134,16 +151,21 @@ public class PayloadDecoder : IPayloadDecoder<MerchantPayload>
                 }
             }
 
-            var schemaLength = data.Substring(index, 2);
-            if (!int.TryParse(schemaLength, out int length))
+            if (data.Length - index < 2)
             {
-                throw new InvalidOperationException("Failed to decode the QR code");
+                throw new QRDecodingException("Insufficient data to read Length for Tag", tag: tag, position: index);
+            }
+
+            var lengthStr = data.Substring(index, 2);
+            if (!int.TryParse(lengthStr, out int length))
+            {
+                throw new QRDecodingException($"Failed to parse length '{lengthStr}' for Tag {tag}", tag: tag, position: index);
             }
             index += 2;
 
-            if (data.Length - 4 < length)
+            if (data.Length - index < length)
             {
-                break;
+                throw new QRDecodingException($"Incomplete value for Tag {tag}. Expected {length} characters, but only {data.Length - index} remaining.", tag: tag, position: index);
             }
 
             var value = data.Substring(index, length);

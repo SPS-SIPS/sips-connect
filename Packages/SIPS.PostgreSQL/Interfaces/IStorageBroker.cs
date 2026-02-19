@@ -19,4 +19,5 @@ public interface IStorageBroker
 
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
     Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class;
+    void Detach<TEntity>(TEntity entity) where TEntity : class;
 }
