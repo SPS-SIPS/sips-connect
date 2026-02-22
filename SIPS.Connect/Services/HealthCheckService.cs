@@ -48,20 +48,76 @@ public class HealthCheckService : IHealthCheckService
             CheckDatabaseAsync(cancellationToken)
         };
 
+        // Determine if we are in Reviewer (PKI-Off) mode
+        var isReviewerMode = _xadesConfig.WithoutPKI;
+
         // 3. Check SIPS Core: login endpoint
-        if (!string.IsNullOrEmpty(_coreConfig.BaseUrl))
+        if (isReviewerMode)
+        {
+            tasks.Add(Task.FromResult(new ComponentHealth
+            {
+                Name = "sips-core",
+                Status = "ok",
+                EndpointStatus = "skipped",
+                HttpResult = "Skipped (WITHOUT_PKI=true)",
+                LastChecked = DateTime.UtcNow
+            }));
+        }
+        else if (!string.IsNullOrEmpty(_coreConfig.BaseUrl))
         {
             tasks.Add(CheckSipsCoreLoginAsync(cancellationToken));
         }
 
         // 4. Check Xades Certificate Availability
-        tasks.Add(CheckXadesCertificateAsync(cancellationToken));
+        if (isReviewerMode)
+        {
+            tasks.Add(Task.FromResult(new ComponentHealth
+            {
+                Name = "xades-certificate",
+                Status = "ok",
+                EndpointStatus = "skipped",
+                HttpResult = "Skipped (WITHOUT_PKI=true)",
+                LastChecked = DateTime.UtcNow
+            }));
+        }
+        else
+        {
+            tasks.Add(CheckXadesCertificateAsync(cancellationToken));
+        }
 
         // 5. Check Keycloak Availability
-        tasks.Add(CheckKeycloakAsync(cancellationToken));
+        if (isReviewerMode)
+        {
+            tasks.Add(Task.FromResult(new ComponentHealth
+            {
+                Name = "keycloak",
+                Status = "ok",
+                EndpointStatus = "skipped",
+                HttpResult = "Skipped (WITHOUT_PKI=true)",
+                LastChecked = DateTime.UtcNow
+            }));
+        }
+        else
+        {
+            tasks.Add(CheckKeycloakAsync(cancellationToken));
+        }
 
         // 6. Check Balance Status
-        tasks.Add(CheckBalanceStatusAsync(cancellationToken));
+        if (isReviewerMode)
+        {
+            tasks.Add(Task.FromResult(new ComponentHealth
+            {
+                Name = "balance-status",
+                Status = "ok",
+                EndpointStatus = "skipped",
+                HttpResult = "Skipped (WITHOUT_PKI=true)",
+                LastChecked = DateTime.UtcNow
+            }));
+        }
+        else
+        {
+            tasks.Add(CheckBalanceStatusAsync(cancellationToken));
+        }
 
         // Wait for all checks to complete
         var results = await Task.WhenAll(tasks);
