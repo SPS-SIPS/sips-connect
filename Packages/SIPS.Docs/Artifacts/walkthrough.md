@@ -22,6 +22,11 @@ Each node is integrated with its own local mock CoreBank instance.
 ### 4. Verified uetr Migration
 The `20260222185945_AddUetrColumnToIsoMessages` migration is applied to both Node A and Node B databases.
 
+### 5. API Key Role Alignment
+Updated `ApiKeyAuthenticationHandler` to assign `ManageTransactions` and `ManageMassages` roles to API keys.
+- **Benefit**: Resolves `403 Forbidden` errors when using API keys to access audit endpoints like `/api/v1/Transactions/iso-messages`.
+- **File**: `SIPS.Connect/Services/ApiKeyAuthenticationHandler.cs`
+
 ## Verification Status
 
 1. **Dual Startup**: Both `sips-a` and `sips-b` projects start healthy with no port conflicts.
