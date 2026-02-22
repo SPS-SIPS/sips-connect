@@ -1,0 +1,89 @@
+name: sips-reviewer-env
+
+services:
+  postgresql:
+    image: postgres:16-alpine
+    container_name: sips-postgresql
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-SIPS.Connect.DB}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - sips_pg_data:/var/lib/postgresql/data
+    networks:
+      - sips-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sips-connect:
+    build:
+      context: .
+      dockerfile: SIPS.Connect/Dockerfile
+    container_name: sips-connect
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      - ConnectionStrings__db=Host=postgresql;Database=${DB_NAME:-SIPS.Connect.DB};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:-postgres};Include Error Detail=True;
+      - Xades__BIC=${BANK_CODE:-ZKBASOS0}
+      - Xades__WithoutPKI=${WITHOUT_PKI:-true}
+      - ISO20022__SIPS=${SIPS_LOOPBACK_URL:-http://sips-connect:8080/api/v1/incoming}
+      - ISO20022__Agent=${BANK_CODE:-ZKBASOS0}
+      - ISO20022__BIC=${BANK_CODE:-ZKBASOS0}
+      - Emv__AcquirerId=${ACQUIRER_ID:-0000}
+      - Emv__FIType=${FI_TYPE:-01}
+      - Emv__FIName=${FI_NAME:-Reviewer Bank}
+      - ISO20022__Verification=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/cb/verify
+      # PKI Discovery Settings (Optional / PKI-On mode only)
+      - Core__BaseUrl=${SIPS_CORE_BASE_URL:-}
+      - Core__PublicKeysRepUrl=${SIPS_CORE_PUBLIC_KEYS_REP_URL:-}
+      - Core__LoginEndpoint=${SIPS_CORE_LOGIN_ENDPOINT:-}
+      - Core__LiveParticipantsEndpoint=${SIPS_CORE_LIVE_PARTICIPANTS_ENDPOINT:-}
+      - Core__BalanceStatusEndpoint=${SIPS_CORE_BALANCE_STATUS_ENDPOINT:-}
+      - Core__Username=${SIPS_CORE_USERNAME:-}
+      - Core__Password=${SIPS_CORE_PASSWORD:-}
+      - ISO20022__Transfer=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/CB/Transfer
+      - ISO20022__Return=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/CB/Return
+      - ISO20022__Status=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/CB/Status
+      - ISO20022__CompletionNotification=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/CB/CompletionNotification
+      - ASPNETCORE_ENVIRONMENT=Development
+    ports:
+      - "${SIPS_CONNECT_PORT:-8080}:8080"
+      - "${SIPS_CONNECT_HTTPS_PORT:-9443}:443"
+    volumes:
+      - ./logs:/app/logs:rw
+      - ./certs:/app/certs:ro
+      - ./keys:/app/keys:rw
+    networks:
+      - sips-network
+
+  sips-corebank:
+    image: hanad/sips-consumer:1.1.2
+    container_name: sips-corebank
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    ports:
+      - "${SIPS_COREBANK_PORT:-8081}:8080"
+    env_file:
+      - ./.env
+    volumes:
+      - ./mock-corebank.json:/app/db.json:rw
+      - ./certs:/certs:ro
+    networks:
+      - sips-network
+
+networks:
+  sips-network:
+    driver: bridge
+
+volumes:
+  sips_pg_data:

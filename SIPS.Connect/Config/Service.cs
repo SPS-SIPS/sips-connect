@@ -8,6 +8,7 @@ using Microsoft.OpenApi.Models;
 using SIPS.Adapter.Models;
 using SIPS.Connect.Filters;
 using SIPS.Connect.Services;
+using SIPS.Connect.Services.Internal;
 using SIPS.Core;
 using SIPS.Core.Interfaces;
 using SIPS.Core.Options;
@@ -125,15 +126,53 @@ public static class DI
             });
         });
 
-        services.AddSingleton<IRepositoryHttpClient, RepositoryHttpClient>(sp =>
+        // Check WithoutPKI flag for conditional registration
+        var withoutPki = configuration.GetValue<bool>("Xades:WithoutPKI") || configuration.GetValue<bool>("Xades__WithoutPKI");
+
+        if (withoutPki)
         {
-            var clientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var logger = sp.GetRequiredService<ILogger<RepositoryHttpClient>>();
-            var client = clientFactory.CreateClient();
-            var baseUrl = configuration["Core:BaseUrl"] ?? throw new ArgumentNullException("Core:BaseUrl is required in appSettings.json");
-            client.BaseAddress = new Uri(baseUrl);
-            return new RepositoryHttpClient(logger, client);
-        });
+            services.AddSingleton<IRepositoryHttpClient, NoOpRepositoryHttpClient>();
+        }
+        else
+        {
+            // Broad PKI-On Fail-Fast Validation
+            var baseUrl = configuration["Core:BaseUrl"];
+            var pubKeyUrl = configuration["Core:PublicKeysRepUrl"];
+            var loginUrl = configuration["Core:LoginEndpoint"];
+            var username = configuration["Core:Username"];
+            var password = configuration["Core:Password"];
+
+            var missingFields = new List<string>();
+            if (string.IsNullOrWhiteSpace(baseUrl)) missingFields.Add("Core:BaseUrl");
+            if (string.IsNullOrWhiteSpace(pubKeyUrl)) missingFields.Add("Core:PublicKeysRepUrl");
+            if (string.IsNullOrWhiteSpace(loginUrl)) missingFields.Add("Core:LoginEndpoint");
+            if (string.IsNullOrWhiteSpace(username)) missingFields.Add("Core:Username");
+            if (string.IsNullOrWhiteSpace(password)) missingFields.Add("Core:Password");
+
+            if (missingFields.Count != 0)
+            {
+                throw new InvalidOperationException($"PKI Mode is enabled (WithoutPKI=false) but required Core discovery settings are missing or empty: {string.Join(", ", missingFields)}. Please provide these in appsettings.json or .env.");
+            }
+
+            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
+            {
+                throw new InvalidOperationException($"PKI Mode is enabled (WithoutPKI=false) but Core:BaseUrl is not a valid absolute URI: '{baseUrl}'. Please check your configuration.");
+            }
+
+            if (!Uri.TryCreate(pubKeyUrl, UriKind.Absolute, out _))
+            {
+                throw new InvalidOperationException($"PKI Mode is enabled (WithoutPKI=false) but Core:PublicKeysRepUrl is not a valid absolute URI: '{pubKeyUrl}'. Please check your configuration.");
+            }
+
+            services.AddSingleton<IRepositoryHttpClient, RepositoryHttpClient>(sp =>
+            {
+                var clientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                var logger = sp.GetRequiredService<ILogger<RepositoryHttpClient>>();
+                var client = clientFactory.CreateClient();
+                client.BaseAddress = baseUri;
+                return new RepositoryHttpClient(logger, client);
+            });
+        }
 
         services.AddSingleton<IInterfaceHttpClient, InterfaceHttpClient>(sp =>
         {

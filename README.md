@@ -53,25 +53,87 @@ Shared internal libraries providing the heavy lifting:
 
 ---
 
-## ⚙️ Getting Started
+## ⚙️ Reviewer Quick Start (Minimal Stack)
 
-### Prerequisites
+For auditors who wish to verify the system in an isolated environment, we provide a root-level Docker Compose configuration. This setup starts the **Gateway**, a **Mock CoreBank**, and the **PostgreSQL** database.
+
+### 1. Prerequisites
 - **Docker** & **Docker Compose**
-- **.NET 8.0 SDK** (for local development)
+- **TLS Certificate**: Place a PKCS#12 certificate (`.pfx`) in the `./certs` directory.
 
-### Quick Start
-1.  **Clone & Configure**:
-    ```bash
-    git clone https://github.com/SPS-SIPS/SIPS.git
-    cd SIPS/SIPS.Connect
-    cp .env.example .env
-    ```
-2.  **Launch Infrastructure**:
-    ```bash
-    docker-compose up -d
-    ```
-3.  **Access Documentation**:
-    Swagger/OpenAPI documentation is available at `http://localhost:8080/swagger` when the service is running.
+### 2. Startup
+Run the following commands from the repository root:
+```bash
+# 1. Prepare environment variables
+cp .env.example .env
+
+# 2. Build and start the stack (3 services)
+docker compose up -d --build
+
+# 3. Verify health
+docker compose ps
+```
+
+### PKI-Off Mode (Reviewer Mode)
+
+By default, the reviewer environment runs with `WITHOUT_PKI=true`. This "Reviewer Mode" is designed for local technical assessment without requiring connection to a central SIPS Core instance.
+
+**Implications of PKI-Off Mode:**
+- **Decoupled Discovery**: The gateway does not attempt to connect to SIPS Core discovery services (Live Participants, Balance Status, etc.).
+- **No-Op Core Client**: Internal outbound discovery calls are handled by a `NoOpRepositoryHttpClient`, preventing unintended network traffic.
+- **Gated Health Checks**: PKI-specific health checks (**Sips Core**, **Xades Certificate**, **Balance Status**) and **Keycloak** checks are automatically marked as `skipped` in the health report.
+- **Overall System Status**: These skipped checks do NOT degrade the overall system status, which will remain `ok` as long as the database and local CoreBank integration are healthy.
+
+**Enabling PKI Mode (`WITHOUT_PKI=false`):**
+If you wish to test with full PKI and Core discovery enabled:
+1. Set `WITHOUT_PKI=false` in `.env`.
+2. Provide valid `SIPS_CORE_*` variables in `.env` (see `.env.example`).
+3. The gateway will perform a **Fail-Fast Validation** at startup. If any required discovery URLs or credentials are missing, the container will exit with an error.
+
+### Health Monitoring
+
+The gateway exposes a comprehensive health endpoint at `http://localhost:8080/health`.
+
+| Component | Status (Reviewer Mode) | Description |
+| :--- | :--- | :--- |
+| **database** | `ok` | Connection to PostgreSQL ledger. |
+| **corebank** | `ok` | Connectivity to the mock CoreBank system. |
+| **sips-core** | `skipped` | SIPS Core discovery endpoint (Gated). |
+| **xades-certificate** | `skipped` | Local PKI certificate file check (Gated). |
+| **keycloak** | `skipped` | Identity Provider connectivity (Gated). |
+| **balance-status** | `skipped` | External balance monitoring (Gated). |
+
+### 3. Service Map
+| Service | Image/Source | Description |
+| :--- | :--- | :--- |
+| **sips-connect** | Local Build | The SIPS Connect Gateway (Middleware under review). |
+| **sips-corebank** | `hanad/sips-consumer` | A mock CoreBank system for end-to-end testing. |
+| **postgresql** | `postgres:16-alpine` | Authoritative participant ledger and audit store. |
+
+---
+
+## 🔍 Compliance & Verification Toggles
+
+To facilitate isolated review without external dependencies (like the central SIPS Switch), the gateway supports several "Reviewer Toggles" via the `.env` file:
+
+### 🔄 Self-Calling (Loopback) Mode
+You can force the gateway to act as its own "switch" by pointing the SIPS endpoint to its own internal incoming handler. This allows end-to-end verification of the financial message lifecycle on a single node.
+- **Config**: `SIPS_LOOPBACK_URL=http://sips-connect:8080/api/v1/incoming`
+
+### 🏦 CoreBank Integration Overlay
+The gateway endpoints for interacting with the Core Banking System (Verification, Transfer, etc.) can be centralized via a single base URL.
+- **Config**: `COREBANK_BASE_URL=http://sips-corebank:8080`
+- **Derived Endpoints**: The gateway automatically appends standard paths like `/api/cb/verify` and `/api/CB/Transfer` to this base URL.
+
+### 🔓 Disabling PKI Signing (`WithoutPKI`)
+To simplify flow verification without managing X.509 signing certificates for every message, you can bypass the XAdES signature layer.
+- **Config**: `WITHOUT_PKI=true`
+- **Effect**: The `NativeSigner` will bypass the cryptographic signing process, allowing raw ISO 20022 message inspection.
+
+### 🔐 TLS Configuration
+The gateway is configured to start an HTTPS listener on port 443 (Host port `9443` by default).
+- **Certificate Path**: `./certs/sips-connect.pfx` (mapped via volume).
+- **Configuration**: Managed via the `Kestrel` section in `appsettings.json`.
 
 ---
 
