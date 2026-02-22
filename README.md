@@ -53,87 +53,72 @@ Shared internal libraries providing the heavy lifting:
 
 ---
 
-## ⚙️ Reviewer Quick Start (Minimal Stack)
+## ⚙️ Reviewer Quick Start (Two-Node Topology)
 
-For auditors who wish to verify the system in an isolated environment, we provide a root-level Docker Compose configuration. This setup starts the **Gateway**, a **Mock CoreBank**, and the **PostgreSQL** database.
+For technical assessment, we provide a **Two-Node Topology** that simulates a real-world interaction between two independent participant banks (**Bank A** and **Bank B**). This topology is essential for verifying end-to-end flows while avoiding database/ledger collisions that occur in single-node loopback setups.
 
-### 1. Prerequisites
-- **Docker** & **Docker Compose**
-- **TLS Certificate**: Place a PKCS#12 certificate (`.pfx`) in the `./certs` directory.
+### Why two nodes?
+The SIPS Connect gateway enforces strict de-duplication on `(MessageType, TxId)`. In a single-node loopback mode, the same database would attempt to store both the "Outbound" and "Inbound" side of the same transaction with the same ID, causing a database unique constraint violation (`ux_iso_msg_type_txid`). 
 
-### 2. Startup
-Run the following commands from the repository root:
+The two-node setup provides:
+- **Ledger Isolation**: Each node has its own PostgreSQL database.
+- **Realistic Routing**: Nodes communicate via standard HTTP mapping over host ports.
+- **Collision-Free Logic**: Verification and Transfers flow naturally from one participant to another.
+
+### 1. Startup
+
+Open two separate terminal windows or tabs:
+
+**Node A (Bank A - Port 8080)**
 ```bash
-# 1. Prepare environment variables
-cp .env.example .env
-
-# 2. Build and start the stack (3 services)
-docker compose up -d --build
-
-# 3. Verify health
-docker compose ps
+cp .env.node-a.example .env.node-a
+docker compose -f docker-compose.node-a.yml --env-file .env.node-a up -d --build
 ```
 
-### PKI-Off Mode (Reviewer Mode)
+**Node B (Bank B - Port 9080)**
+```bash
+cp .env.node-b.example .env.node-b
+docker compose -f docker-compose.node-b.yml --env-file .env.node-b up -d --build
+```
 
-By default, the reviewer environment runs with `WITHOUT_PKI=true`. This "Reviewer Mode" is designed for local technical assessment without requiring connection to a central SIPS Core instance.
+### 2. Peer Routing Matrix
 
-**Implications of PKI-Off Mode:**
-- **Decoupled Discovery**: The gateway does not attempt to connect to SIPS Core discovery services (Live Participants, Balance Status, etc.).
-- **No-Op Core Client**: Internal outbound discovery calls are handled by a `NoOpRepositoryHttpClient`, preventing unintended network traffic.
-- **Gated Health Checks**: PKI-specific health checks (**Sips Core**, **Xades Certificate**, **Balance Status**) and **Keycloak** checks are automatically marked as `skipped` in the health report.
-- **Overall System Status**: These skipped checks do NOT degrade the overall system status, which will remain `ok` as long as the database and local CoreBank integration are healthy.
-
-**Enabling PKI Mode (`WITHOUT_PKI=false`):**
-If you wish to test with full PKI and Core discovery enabled:
-1. Set `WITHOUT_PKI=false` in `.env`.
-2. Provide valid `SIPS_CORE_*` variables in `.env` (see `.env.example`).
-3. The gateway will perform a **Fail-Fast Validation** at startup. If any required discovery URLs or credentials are missing, the container will exit with an error.
-
-### Health Monitoring
-
-The gateway exposes a comprehensive health endpoint at `http://localhost:8080/health`.
-
-| Component | Status (Reviewer Mode) | Description |
+| Flow | Source Node | Target URL |
 | :--- | :--- | :--- |
-| **database** | `ok` | Connection to PostgreSQL ledger. |
-| **corebank** | `ok` | Connectivity to the mock CoreBank system. |
-| **sips-core** | `skipped` | SIPS Core discovery endpoint (Gated). |
-| **xades-certificate** | `skipped` | Local PKI certificate file check (Gated). |
-| **keycloak** | `skipped` | Identity Provider connectivity (Gated). |
-| **balance-status** | `skipped` | External balance monitoring (Gated). |
+| **A → B** | Node A (8080) | `http://host.docker.internal:9080/api/v1/incoming` |
+| **B → A** | Node B (9080) | `http://host.docker.internal:8080/api/v1/incoming` |
 
-### 3. Service Map
-| Service | Image/Source | Description |
+### 3. Health Monitoring
+
+Check the health of both gateways to ensure the environments are ready.
+
+| Node | URL | Status (Reviewer Mode) |
 | :--- | :--- | :--- |
-| **sips-connect** | Local Build | The SIPS Connect Gateway (Middleware under review). |
-| **sips-corebank** | `hanad/sips-consumer` | A mock CoreBank system for end-to-end testing. |
-| **postgresql** | `postgres:16-alpine` | Authoritative participant ledger and audit store. |
+| **Node A** | `http://localhost:8080/health` | `ok` (PKI checks `skipped`) |
+| **Node B** | `http://localhost:9080/health` | `ok` (PKI checks `skipped`) |
 
 ---
 
 ## 🔍 Compliance & Verification Toggles
 
-To facilitate isolated review without external dependencies (like the central SIPS Switch), the gateway supports several "Reviewer Toggles" via the `.env` file:
-
-### 🔄 Self-Calling (Loopback) Mode
-You can force the gateway to act as its own "switch" by pointing the SIPS endpoint to its own internal incoming handler. This allows end-to-end verification of the financial message lifecycle on a single node.
-- **Config**: `SIPS_LOOPBACK_URL=http://sips-connect:8080/api/v1/incoming`
+To facilitate isolated review, each node uses "Reviewer Toggles" via its `.env` file:
 
 ### 🏦 CoreBank Integration Overlay
-The gateway endpoints for interacting with the Core Banking System (Verification, Transfer, etc.) can be centralized via a single base URL.
-- **Config**: `COREBANK_BASE_URL=http://sips-corebank:8080`
-- **Derived Endpoints**: The gateway automatically appends standard paths like `/api/cb/verify` and `/api/CB/Transfer` to this base URL.
+Each node points to its own local virtual CoreBank system within its isolated Docker network.
+- **Node A**: `COREBANK_BASE_URL=http://sips-corebank-a:8080`
+- **Node B**: `COREBANK_BASE_URL=http://sips-corebank-b:8080`
 
 ### 🔓 Disabling PKI Signing (`WithoutPKI`)
-To simplify flow verification without managing X.509 signing certificates for every message, you can bypass the XAdES signature layer.
-- **Config**: `WITHOUT_PKI=true`
-- **Effect**: The `NativeSigner` will bypass the cryptographic signing process, allowing raw ISO 20022 message inspection.
+By default, `WITHOUT_PKI=true` is enabled for reviewers. This allows message inspection and flow verification without managing X.509 signing certificates for every message.
+- **Effect**: Cryptographic signing is bypassed; health checks for SIPS Core and Certificates are marked as `skipped`.
 
-### 🔐 TLS Configuration
-The gateway is configured to start an HTTPS listener on port 443 (Host port `9443` by default).
-- **Certificate Path**: `./certs/sips-connect.pfx` (mapped via volume).
-- **Configuration**: Managed via the `Kestrel` section in `appsettings.json`.
+### 🔐 Multi-Instance Port Mapping
+| Node | Service | Port (Host) |
+| :--- | :--- | :--- |
+| **A** | Connect HTTP / HTTPS | `8080` / `9443` |
+| **A** | PostgreSQL | `5432` |
+| **B** | Connect HTTP / HTTPS | `9080` / `10443` |
+| **B** | PostgreSQL | `6432` |
 
 ---
 
