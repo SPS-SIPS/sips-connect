@@ -1,0 +1,1183 @@
+{
+  "info": {
+    "_postman_id": "47c7568d-bcbc-4b00-b63d-609ade719687",
+    "name": "SIPSConnectTest",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "9813047"
+  },
+  "item": [
+    {
+      "name": "QR Codes",
+      "item": [
+        {
+          "name": "Generate P2P QR (Dynamic)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-SECRET",
+                "value": "{{api_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"amount\": \"30\",\n    \"accountName\": \"Abdullahi Farah Geedi\",\n    \"iban\": \"SO2920293382828383333\",\n    \"currencyCode\": \"840\",\n    \"particulars\": \"Customer tito\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/SomQR/GeneratePersonQR",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "SomQR",
+                "GeneratePersonQR"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Parse QR (P2P)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-SECRET",
+                "value": "{{api_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/SomQR/ParsePersonQR?code=0002020102112702010314Ziraat Katılım0423SO7100142024010050074030527Abdulshakur Ahmed (ZIRAT_S)10048E20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "SomQR",
+                "ParsePersonQR"
+              ],
+              "query": [
+                {
+                  "key": "code",
+                  "value": "0002020102122702010314Ziraat%20Kat%C4%B1l%C4%B1m0423SO7100142024010050074030527Abdulshakur%20Ahmed%20(ZIRAT_S)0602100716Dynamic%20Transfer100421CC",
+                  "description": "enable if you want to parse dynamic code",
+                  "disabled": true
+                },
+                {
+                  "key": "code",
+                  "value": "0002020102112702010314Ziraat Katılım0423SO7100142024010050074030527Abdulshakur Ahmed (ZIRAT_S)10048E20",
+                  "description": "enable if you want to parse static code"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Parse QR (P2M)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-SECRET",
+                "value": "{{api_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/SomQR/ParseMerchantQR?code=00020101021126430013so.somqr.sips010601001244123050050076055204581453038405802SO5923SIPS Business (ZIRAT_S)6009Mogadishu6304052E",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "SomQR",
+                "ParseMerchantQR"
+              ],
+              "query": [
+                {
+                  "key": "code",
+                  "value": "00020101021226430013so.somqr.sips010601001444123050050076055204581453038405802SO5923SIPS%20Business%20(ZIRAT_S)6009Mogadishu61050000054021063042CF7",
+                  "description": "enable if you want to parse dynamic code",
+                  "disabled": true
+                },
+                {
+                  "key": "code",
+                  "value": "00020101021126430013so.somqr.sips010601001444123050050076055204581453038405802SO5923SIPS%20Business%20(ZIRAT_S)6009Mogadishu61050000063042E70",
+                  "description": "enable if you want to parse static code",
+                  "disabled": true
+                },
+                {
+                  "key": "code",
+                  "value": "00020101021126430013so.somqr.sips010601001244123050050076055204581453038405802SO5923SIPS Business (ZIRAT_S)6009Mogadishu6304052E",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate P2P QR (Static)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-SECRET",
+                "value": "{{api_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"amount\": \"0\",\n    \"accountName\": \"Abdullahi Farah Geedi\",\n    \"iban\": \"SO2920293382828383333\",\n    \"currencyCode\": \"840\",\n    \"particulars\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/SomQR/GeneratePersonQR",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "SomQR",
+                "GeneratePersonQR"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate P2M QR (Static)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-SECRET",
+                "value": "{{api_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"type\": 1,\n    \"method\": 1,\n    \"merchantId\": \"305005007605\",\n    \"merchantCategoryCode\": \"5814\",\n    \"currencyCode\": \"840\",\n    \"merchantName\": \"SIPS Business (ZIRAT_S)\",\n    \"merchantCity\": \"Mogadishu\",\n    \"postalCode\": \"\",\n    \"storeLabel\": \"\",\n    \"terminalLabel\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/SomQR/GenerateMerchantQR",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "SomQR",
+                "GenerateMerchantQR"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate P2M QR (Dynamic)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-SECRET",
+                "value": "{{api_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"type\": 2,\n    \"method\": 1,\n    \"merchantId\": \"305005007605\",\n    \"merchantCategoryCode\": \"5814\",\n    \"currencyCode\": \"840\",\n    \"merchantName\": \"SIPS Business (ZIRAT_S)\",\n    \"merchantCity\": \"Mogadishu\",\n    \"postalCode\": \"\",\n    \"storeLabel\": \"\",\n    \"terminalLabel\": \"\",\n    \"amount\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/SomQR/GenerateMerchantQR",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "SomQR",
+                "GenerateMerchantQR"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Transfer",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "if (!pm.collectionVariables.get(\"accountName\")) {",
+              "    throw new Error(\"Missing required configuration: accountName\");",
+              "}",
+              "if (!pm.collectionVariables.get(\"account\")) {",
+              "    throw new Error(\"Missing required configuration: account\");",
+              "}",
+              "if (!pm.collectionVariables.get(\"creditorAccountType\")) {",
+              "    throw new Error(\"Missing required configuration: creditorAccountType\");",
+              "}",
+              "if (!pm.collectionVariables.get(\"agent\")) {",
+              "    throw new Error(\"Missing required configuration: agent\");",
+              "}",
+              "",
+              "if (!pm.collectionVariables.get(\"crIssuer\")) {",
+              "    throw new Error(\"Missing required configuration: crIssuer\");",
+              "}",
+              "",
+              "if (!pm.collectionVariables.get(\"defaultCurrency\")) {",
+              "    throw new Error(\"Missing required configuration: defaultCurrency\");",
+              "}",
+              "",
+              "const predefinedCategories = [\"C2CCRT\", \"C2CRTP\", \"C2BBPT\", \"C2BSQR\", \"C2BDQR\", \"C2BRTP\"];",
+              "const predefinedInstruments = [\"CRTRM\", \"CRTAM\"];",
+              "",
+              "// Parse the request payload to get user-inserted values",
+              "let payload = {};",
+              "try {",
+              "    payload = pm.request.body && pm.request.body.raw ? JSON.parse(pm.request.body.raw) : {};",
+              "} catch (e) {",
+              "    throw new Error(\"Invalid JSON in request body.\");",
+              "}",
+              "",
+              "if (!predefinedCategories.includes(payload.ctgPurp)) {",
+              "    throw new Error(`Invalid category: ${payload.ctgPurp}. Valid categories are: ${predefinedCategories.join(\", \")}`);",
+              "}",
+              "",
+              "if (!predefinedInstruments.includes(payload.lclInstrument)) {",
+              "    throw new Error(`Invalid instrument: ${payload.lclInstrument}. Valid instruments are: ${predefinedInstruments.join(\", \")}`);",
+              "}",
+              "// set the request payload properties",
+              "const localIdPrefix = \"{{agent}}\";",
+              "const localIdSuffix = Math.floor(Math.random() * 100000000).toString().padStart(8, '0');",
+              "payload.localId = localIdPrefix + localIdSuffix;",
+              "if (!payload.amount) {",
+              "    payload.amount = Math.floor(Math.random() * 9999) + 1;",
+              "}",
+              "// sender",
+              "payload.drName = pm.collectionVariables.get(\"accountName\");",
+              "payload.drAccount = pm.collectionVariables.get(\"account\");",
+              "payload.drAccountType = pm.collectionVariables.get(\"accountType\");",
+              "// receiver",
+              "payload.crName = pm.collectionVariables.get(\"creditorName\");",
+              "payload.crAccount = pm.collectionVariables.get(\"creditorAccount\");",
+              "payload.crAccountType = pm.collectionVariables.get(\"creditorAccountType\");",
+              "payload.crAgentBIC = pm.collectionVariables.get(\"agent\");",
+              "",
+              "payload.lclInstrument = payload.lclInstrument || \"Postman\";",
+              "payload.ctgPurp = payload.ctgPurp || \"C2CCRT\";",
+              "payload.narration = payload.narration || \"Test Transaction\";",
+              "payload.crIssuer = pm.collectionVariables.get(\"crIssuer\");",
+              "payload.currency = pm.collectionVariables.get(\"defaultCurrency\");",
+              "payload.agent = pm.collectionVariables.get(\"agent\");",
+              "// update the request",
+              "pm.request.body.raw = JSON.stringify(payload);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"lclInstrument\": \"CRTRM\",\n  \"amount\": \"1\",\n  \"ctgPurp\": \"C2CCRT\",\n  \"narration\": \"Moneaypl\"\n}\n",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/gateway/Payment",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "gateway",
+            "Payment"
+          ],
+          "query": [
+            {
+              "key": "",
+              "value": null,
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Status",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "if (!pm.collectionVariables.get(\"agent\")) {",
+              "    throw new Error(\"Missing required configuration: agent\");",
+              "}",
+              "// Parse the request payload to get user-inserted values",
+              "let payload = {};",
+              "try {",
+              "    payload = pm.request.body && pm.request.body.raw ? JSON.parse(pm.request.body.raw) : {};",
+              "} catch (e) {",
+              "    throw new Error(\"Invalid JSON in request body.\");",
+              "}",
+              "",
+              "// validate txId and endToEndId",
+              "if (!payload.txId || !payload.endToEndId) {",
+              "    throw new Error(\"Missing required fields: txId, endToEndId\");",
+              "}",
+              "",
+              "payload.agent = pm.collectionVariables.get(\"agent\");",
+              "// update the request",
+              "pm.request.body.raw = JSON.stringify(payload);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"endToEndId\": \"ZKBASOS006295870\",\n  \"txId\": \"ZKBASOS0536208639025067007434270\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/gateway/Status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "gateway",
+            "Status"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Verify",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const responseJson = pm.response.json();",
+              "console.log('responseJson', responseJson)",
+              "if (pm.response.code === 200 && responseJson.isVerified) {",
+              "    if (responseJson.isVerified) {",
+              "        pm.collectionVariables.set(\"creditorName\", responseJson.customer_name);",
+              "        pm.collectionVariables.set(\"creditorAccount\", responseJson.pam);",
+              "        pm.collectionVariables.set(\"creditorAccountType\", responseJson.type);",
+              "    } else {",
+              "        throw new Error(\"Verification failed: \" + responseJson.message);",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "if (!pm.collectionVariables.get(\"agent\")) {",
+              "    throw new Error(\"Missing required configuration: agent\");",
+              "}",
+              "",
+              "// Parse the request payload to get user-inserted values",
+              "let payload = {};",
+              "try {",
+              "    payload = pm.request.body && pm.request.body.raw ? JSON.parse(pm.request.body.raw) : {};",
+              "} catch (e) {",
+              "    throw new Error(\"Invalid JSON in request body.\");",
+              "}",
+              "",
+              "",
+              "payload.agent = pm.collectionVariables.get(\"agent\");",
+              "// update the request",
+              "pm.request.body.raw = JSON.stringify(payload);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accNo\": \"401005007403\",\n  \"accType\": \"ACCT\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/gateway/Verify",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "gateway",
+            "Verify"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Retry",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const responseJson = pm.response.json();",
+              "console.log('responseJson', responseJson)",
+              "if (pm.response.code === 200 && responseJson.isVerified) {",
+              "    if (responseJson.isVerified) {",
+              "        pm.collectionVariables.set(\"creditorName\", responseJson.customer_name);",
+              "        pm.collectionVariables.set(\"creditorAccount\", responseJson.pam);",
+              "        pm.collectionVariables.set(\"creditorAccountType\", responseJson.type);",
+              "    } else {",
+              "        throw new Error(\"Verification failed: \" + responseJson.message);",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "if (!pm.collectionVariables.get(\"agent\")) {",
+              "    throw new Error(\"Missing required configuration: agent\");",
+              "}",
+              "",
+              "// Parse the request payload to get user-inserted values",
+              "let payload = {};",
+              "try {",
+              "    payload = pm.request.body && pm.request.body.raw ? JSON.parse(pm.request.body.raw) : {};",
+              "} catch (e) {",
+              "    throw new Error(\"Invalid JSON in request body.\");",
+              "}",
+              "",
+              "",
+              "payload.agent = pm.collectionVariables.get(\"agent\");",
+              "// update the request",
+              "pm.request.body.raw = JSON.stringify(payload);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accNo\": \"402005007303\",\n  \"accType\": \"ACCT\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/gateway/Verify",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "gateway",
+            "Verify"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Return",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "if (!pm.collectionVariables.get(\"agent\")) {",
+              "    throw new Error(\"Missing required configuration: agent\");",
+              "}",
+              "// Parse the request payload to get user-inserted values",
+              "let payload = {};",
+              "try {",
+              "    payload = pm.request.body && pm.request.body.raw ? JSON.parse(pm.request.body.raw) : {};",
+              "} catch (e) {",
+              "    throw new Error(\"Invalid JSON in request body.\");",
+              "}",
+              "",
+              "// validate txId and endToEndId",
+              "if (!payload.txId || !payload.endToEndId) {",
+              "    throw new Error(\"Missing required fields: txId, endToEndId\");",
+              "}",
+              "// set the request payload properties",
+              "const returnIdPrefix = \"{{agent}}\";",
+              "const returnIdSuffix = Math.floor(Math.random() * 100000000).toString().padStart(8, '0');",
+              "payload.returnId = returnIdPrefix + returnIdSuffix;",
+              "payload.agent = pm.collectionVariables.get(\"agent\");",
+              "// update the request",
+              "pm.request.body.raw = JSON.stringify(payload);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"txId\": \"AGROSOS061716639042628590808241\",\n  \"endToEndId\": \"ZKBASOS060410271\",\n  \"reason\": \"Can't Process3333\",\n  \"additionalInfo\": \"CB Not Available-2387433\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/gateway/Return",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "gateway",
+            "Return"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Incoming",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<FPEnvelope   xmlns:header=\"urn:iso:std:iso:20022:tech:xsd:head.001.001.03\"   xmlns:document=\"urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12\"   xmlns=\"urn:iso:std:iso:20022:tech:xsd:payment_response\">   <header:AppHdr>     <header:Fr>       <header:FIId>         <header:FinInstnId>           <header:Othr>             <header:Id>ZKBASOS0</header:Id>           </header:Othr>         </header:FinInstnId>       </header:FIId>     </header:Fr>     <header:To>       <header:FIId>         <header:FinInstnId>           <header:Othr>             <header:Id>AGROSOS0</header:Id>           </header:Othr>         </header:FinInstnId>       </header:FIId>     </header:To>     <header:BizMsgIdr>ZKBASOS0532011638988885017353710</header:BizMsgIdr>     <header:MsgDefIdr>pacs.002.001.12</header:MsgDefIdr>     <header:CreDt>2025-11-16T11:15:01.735434Z</header:CreDt>     <header:Rltd>       <header:Fr>         <header:FIId>           <header:FinInstnId>             <header:Othr>               <header:Id>AGROSOS0</header:Id>             </header:Othr>           </header:FinInstnId>         </header:FIId>       </header:Fr>       <header:To>         <header:FIId>           <header:FinInstnId>             <header:Othr>               <header:Id>ZKBASOS0</header:Id>             </header:Othr>           </header:FinInstnId>         </header:FIId>       </header:To>       <header:BizMsgIdr>AGROSOS0532011638988885014975590</header:BizMsgIdr>       <header:MsgDefIdr>pacs.008.001.10</header:MsgDefIdr>       <header:CreDt>2025-11-16T11:15:01.506297Z</header:CreDt>     </header:Rltd>   </header:AppHdr>   <document:Document>     <document:FIToFIPmtStsRpt>       <document:GrpHdr>         <document:MsgId>ZKBASOS0532011638988885017397410</document:MsgId>         <document:CreDtTm>2025-11-16T11:15:01.739863Z</document:CreDtTm>         <document:InstgAgt>           <document:FinInstnId>             <document:Othr>               <document:Id>ZKBASOS0</document:Id>             </document:Othr>           </document:FinInstnId>         </document:InstgAgt>         <document:InstdAgt>           <document:FinInstnId>             <document:Othr>               <document:Id>AGROSOS0</document:Id>             </document:Othr>           </document:FinInstnId>         </document:InstdAgt>       </document:GrpHdr>       <document:TxInfAndSts>         <document:OrgnlGrpInf>           <document:OrgnlMsgId>AGROSOS0532011638988885014975590</document:OrgnlMsgId>           <document:OrgnlMsgNmId>pacs.008.001.10</document:OrgnlMsgNmId>           <document:OrgnlCreDtTm>2025-11-16T11:15:01.506297Z</document:OrgnlCreDtTm>         </document:OrgnlGrpInf>         <document:OrgnlEndToEndId>ZKBASOS005655346</document:OrgnlEndToEndId>         <document:OrgnlTxId>AGROSOS0532011638988885014941740</document:OrgnlTxId>         <document:TxSts>ACSC</document:TxSts>         <document:AccptncDtTm>2025-11-16T14:15:01.741+03:00</document:AccptncDtTm>         <document:OrgnlTxRef>           <document:IntrBkSttlmAmt             Ccy=\"USD\">15</document:IntrBkSttlmAmt>           <document:Amt>             <document:InstdAmt               Ccy=\"USD\">15</document:InstdAmt>           </document:Amt>           <document:Dbtr>             <document:Pty>               <document:Nm>SIPS Business</document:Nm>               <document:PstlAdr>                 <document:AdrLine>NA</document:AdrLine>               </document:PstlAdr>             </document:Pty>           </document:Dbtr>           <document:DbtrAcct>             <document:Id>               <document:Othr>                 <document:Id>SO140010202305005007605</document:Id>                 <document:SchmeNm>                   <document:Prtry>IBAN</document:Prtry>                 </document:SchmeNm>                 <document:Issr>C</document:Issr>               </document:Othr>             </document:Id>           </document:DbtrAcct>           <document:CdtrAcct>             <document:Id>               <document:Othr>                 <document:Id>SO120010201402005007303</document:Id>                 <document:SchmeNm>                   <document:Prtry>IBAN</document:Prtry>                 </document:SchmeNm>                 <document:Issr>c</document:Issr>               </document:Othr>             </document:Id>           </document:CdtrAcct>         </document:OrgnlTxRef>       </document:TxInfAndSts>     </document:FIToFIPmtStsRpt>   </document:Document> </FPEnvelope>",
+          "options": {
+            "raw": {
+              "language": "xml"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/Incoming",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "Incoming"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Configuration",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Parse JSON body and set collection variables",
+              "var jsonData = pm.request.body.raw;",
+              "var parsedData = JSON.parse(jsonData);",
+              "for (var key in parsedData) {",
+              "    if (parsedData.hasOwnProperty(key)) {",
+              "        pm.collectionVariables.set(key, parsedData[key]);",
+              "    }",
+              "}",
+              "",
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"baseUrl\": \"http://localhost:8080/api/v1\",\n    \"api_secret\": \"123\",\n    \"api_key\": \"123\",\n    \"agent\": \"ZKBASOS0\",\n    \"accountName\": \"Abdulshakur Ahmed\",\n    \"account\": \"SO140010202305005007605\",\n    \"defaultCurrency\":\"USD\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/config",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "config"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "StatusMessages",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJDaU9PSm5hSm5sWG1fYVh2S2txM19ESTJkRWlFeWkwdGd3REhHX2M0VHFJIn0.eyJleHAiOjE3NjcwMDYxODYsImlhdCI6MTc2NzAwNTg4NiwiYXV0aF90aW1lIjoxNzY3MDA1ODg0LCJqdGkiOiJvbnJ0YWM6NWQxMDM1Y2YtZTlmYi00NjRhLTkyZTItNzAxOTcyZGYzNDVhIiwiaXNzIjoiaHR0cHM6Ly8xMC4xMjguMjAwLjI0NDo2MDIxL3JlYWxtcy9tZ3QiLCJhdWQiOiJzYy1hcGkiLCJzdWIiOiI0YmQ1NzY5MC0wNDgxLTQwNmItODQ2OS02NmY2NTM4YmMxNzAiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJzYy1wb3J0YWwiLCJzaWQiOiIwYjNlMWIzNy01YWY1LTRhNzgtODUwNS1jMzBlNDFlNDRmYzIiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6MzAwMSIsImh0dHBzOi8vMTAuMTI4LjIwMC4yNDQ6NjAyNSJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsic29tX3FyIiwiY29uZmlndXJhdGlvbiIsIm9mZmxpbmVfYWNjZXNzIiwicmVjb24iLCJ0cmFuc2FjdGlvbnMiLCJBZG1pbiIsImlzb19tZXNzYWdlcyIsImdhdGV3YXkiXX0sInNjb3BlIjoib3BlbmlkIHByb2ZpbGUgZW1haWwiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IkFiZGloYWtpbSBNb2hhbWVkIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiYWRtaW5Ac2lwcy5jb20iLCJnaXZlbl9uYW1lIjoiQWJkaWhha2ltIiwiZmFtaWx5X25hbWUiOiJNb2hhbWVkIiwiZW1haWwiOiJhZG1pbkBzaXBzLmNvbSJ9.jgM0DGsnvozckzVL7GAyJce00XtjRoNX4C_oJYrg4DaFf9h2QWWb3JKkcyoaVIKbz5zJiTO9GtH4HJN6N1Lkjffa9yGx8ZIGLlrs3fAqCQB2HrlC3E-DOwXp8EkQyKrHLiDVCfX_P1QQUz4GXJHE2aC1PAbX_G10GBOZA1A-6j17QTTdikspmM9Zt7EXMNenQBMg7IYGdaHjQYv5bvZh2sy4_q5cLM6A9taial4YZbjKBM8yAqT6aay2ndzAWKWI7fQpkaJMAX1o3jEYpBuOFQnQl9xqfQI3KUNb0N3wqosQFYL2d8WRT-6qIPTM15TxxdU9feAJ1JbrBmeAaenqVA",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text",
+            "disabled": true
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/StatusMessages?RelatedToISOMessageId=575",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "StatusMessages"
+          ],
+          "query": [
+            {
+              "key": "RelatedToISOMessageId",
+              "value": "575"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "iso-messages",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJDaU9PSm5hSm5sWG1fYVh2S2txM19ESTJkRWlFeWkwdGd3REhHX2M0VHFJIn0.eyJleHAiOjE3NjcwMDYxODYsImlhdCI6MTc2NzAwNTg4NiwiYXV0aF90aW1lIjoxNzY3MDA1ODg0LCJqdGkiOiJvbnJ0YWM6NWQxMDM1Y2YtZTlmYi00NjRhLTkyZTItNzAxOTcyZGYzNDVhIiwiaXNzIjoiaHR0cHM6Ly8xMC4xMjguMjAwLjI0NDo2MDIxL3JlYWxtcy9tZ3QiLCJhdWQiOiJzYy1hcGkiLCJzdWIiOiI0YmQ1NzY5MC0wNDgxLTQwNmItODQ2OS02NmY2NTM4YmMxNzAiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJzYy1wb3J0YWwiLCJzaWQiOiIwYjNlMWIzNy01YWY1LTRhNzgtODUwNS1jMzBlNDFlNDRmYzIiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6MzAwMSIsImh0dHBzOi8vMTAuMTI4LjIwMC4yNDQ6NjAyNSJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsic29tX3FyIiwiY29uZmlndXJhdGlvbiIsIm9mZmxpbmVfYWNjZXNzIiwicmVjb24iLCJ0cmFuc2FjdGlvbnMiLCJBZG1pbiIsImlzb19tZXNzYWdlcyIsImdhdGV3YXkiXX0sInNjb3BlIjoib3BlbmlkIHByb2ZpbGUgZW1haWwiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IkFiZGloYWtpbSBNb2hhbWVkIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiYWRtaW5Ac2lwcy5jb20iLCJnaXZlbl9uYW1lIjoiQWJkaWhha2ltIiwiZmFtaWx5X25hbWUiOiJNb2hhbWVkIiwiZW1haWwiOiJhZG1pbkBzaXBzLmNvbSJ9.jgM0DGsnvozckzVL7GAyJce00XtjRoNX4C_oJYrg4DaFf9h2QWWb3JKkcyoaVIKbz5zJiTO9GtH4HJN6N1Lkjffa9yGx8ZIGLlrs3fAqCQB2HrlC3E-DOwXp8EkQyKrHLiDVCfX_P1QQUz4GXJHE2aC1PAbX_G10GBOZA1A-6j17QTTdikspmM9Zt7EXMNenQBMg7IYGdaHjQYv5bvZh2sy4_q5cLM6A9taial4YZbjKBM8yAqT6aay2ndzAWKWI7fQpkaJMAX1o3jEYpBuOFQnQl9xqfQI3KUNb0N3wqosQFYL2d8WRT-6qIPTM15TxxdU9feAJ1JbrBmeAaenqVA",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text",
+            "disabled": true
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/Transactions/iso-messages",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "Transactions",
+            "iso-messages"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "participants-live",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/participants/live",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "participants",
+            "live"
+          ],
+          "query": [
+            {
+              "key": "isLive",
+              "value": "false",
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "balance status",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-SECRET",
+            "value": "{{api_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/participants/balance-status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "participants",
+            "balance-status"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": ""
+    },
+    {
+      "key": "api_secret",
+      "value": ""
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    },
+    {
+      "key": "agent",
+      "value": ""
+    },
+    {
+      "key": "accountName",
+      "value": ""
+    },
+    {
+      "key": "account",
+      "value": ""
+    },
+    {
+      "key": "accountType",
+      "value": ""
+    },
+    {
+      "key": "defaultCurrency",
+      "value": ""
+    },
+    {
+      "key": "crIssuer",
+      "value": ""
+    },
+    {
+      "key": "creditorName",
+      "value": ""
+    },
+    {
+      "key": "creditorAccount",
+      "value": ""
+    },
+    {
+      "key": "creditorAccountType",
+      "value": ""
+    }
+  ]
+}

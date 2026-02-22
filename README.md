@@ -122,4 +122,19 @@ By default, `WITHOUT_PKI=true` is enabled for reviewers. This allows message ins
 
 ---
 
+### 🧪 Postman Quick Validation
+
+A ready-to-use Postman collection is included at `SIPSConnectTest.postman_collection.json`.
+
+1. **Import** the collection into Postman.
+2. **Run Configuration first** (`{{baseUrl}}/config`) to initialize environment variables:
+   - `baseUrl` (Node A: `http://localhost:8080/api/v1`, Node B: `http://localhost:9080/api/v1`)
+   - `api_key`, `api_secret`, `agent`, and sender defaults.
+   - > [!IMPORTANT]
+   - > Ensure `baseUrl` includes the `/api/v1` suffix (e.g., `http://localhost:8080/api/v1`).
+3. **Run flows**: Execute `Verify`, `Transfer`, `Status`, and `Return` requests to validate end-to-end participant-to-participant flows.
+4. **Audit & Debug**: Use `StatusMessages` and `iso-messages` requests to inspect the underlying ISO 20022 message store and response signals.
+
+---
+
 *Prepared for World Bank Technical Assessment - Somalia SIPS Modernization (Feb 2026)*
