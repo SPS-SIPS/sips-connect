@@ -1,0 +1,27 @@
+{
+  "InterBankTransactions": [],
+  "Accounts": [
+    {
+      "Id": 401005007403,
+      "IBAN": "SO730010201401005007403",
+      "CustomerName": "Karol Karpinski",
+      "Address": "Washington, DC",
+      "Phone": "-----",
+      "Currency": "USD",
+      "Balance": 10000,
+      "Active": true,
+      "WalletId": "5433"
+    },
+    {
+      "Id": 305005007605,
+      "IBAN": "SO140010202305005007605",
+      "CustomerName": "Abdulshakur Ahmed",
+      "Address": "Hargeisa",
+      "Phone": "620050014",
+      "Currency": "USD",
+      "Balance": 10000,
+      "Active": true,
+      "WalletId": "5432"
+    }
+  ]
+}
