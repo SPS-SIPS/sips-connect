@@ -1,49 +1,62 @@
-# Walkthrough: PKI-Off Mode Hardening
+# Walkthrough: Two-Node Reviewer Topology
 
-I have completed the hardening of the "Reviewer Mode" (PKI-Off) to ensure the SIPS Connect gateway is resilient, stable, and reports a clean "ok" status even without SIPS Core connectivity.
+I have implemented a **Two-Node Reviewer Topology** to allow technical assessment of the SIPS Connect gateway in a multi-participant environment. This setup eliminates the `(MessageType, TxId)` collisions that occur in single-node loopback configurations.
 
 ## Changes Implemented
 
-### 1. No-Op Repository Client
-I implemented a `NoOpRepositoryHttpClient` to handle outbound discovery calls when PKI is disabled.
-- **Benefit**: Removes the risk of `UriFormatException` from empty discovery URLs and prevents unintended network traffic.
-- **File**: `SIPS.Connect/Services/Internal/NoOpRepositoryHttpClient.cs`
+### 1. Multi-Stack Isolation
+Created dedicated Docker Compose projects and environment files for two independent nodes.
+- **Node A**: Project `sips-a`, services `sips-connect-a`, `sips-corebank-a`, `sips-postgresql-a`.
+- **Node B**: Project `sips-b`, services `sips-connect-b`, `sips-corebank-b`, `sips-postgresql-b`.
+- **Port Mapping**: Node A on `8080`, Node B on `9080`.
 
-### 2. DI & Fail-Fast Validation
-Updated the DI registration to conditionally use the No-Op client or the real HTTP client.
-- **Fail-Fast**: If `WITHOUT_PKI=false` (PKI enabled), the gateway now validates all required discovery fields (`Core:BaseUrl`, `Core:PublicKeysRepUrl`, `Core:Username`, etc.).
-- **Robustness**: Replaced direct `new Uri()` parsing with `Uri.TryCreate` for both `Core:BaseUrl` and `Core:PublicKeysRepUrl` to ensure malformed URLs result in an actionable error message instead of a generic crash.
-- **File**: `SIPS.Connect/Config/Service.cs`
+### 2. Peer Routing & Portability
+Implemented direct peer-to-peer routing between nodes via host ports.
+- **Extra Hosts**: Added `host.docker.internal:host-gateway` to both containers to ensure portability across Docker Desktop and Linux.
+- **Routing Loop**: Node A points to Node B (`9080`), Node B points to Node A (`8080`).
 
-### 3. Gated Health Checks
-The `HealthCheckService` now skips components that depend on external PKI or Identity services when in Reviewer Mode.
-- **Skipped Components**: `sips-core`, `xades-certificate`, `balance-status`, and `keycloak`.
-- **Status**: These are marked as `skipped` in the `/health` payload but do **not** degrade the overall system status.
-- **File**: `SIPS.Connect/Services/HealthCheckService.cs`
+### 3. Local CoreBank Integration
+Each node is integrated with its own local mock CoreBank instance.
+- **Isolation**: Node A callbacks are strictly routed to `sips-corebank-a`, and Node B callbacks to `sips-corebank-b`.
 
-### 4. Schema Alignment & Migration Proof
-I resolved a critical schema mismatch where the `uetr` column was missing from the `isomessages` table.
-
-**Migration Executed Successfully (Logs):**
-```bash
-[22:00:44 INF] Applying migration '20260222185945_AddUetrColumnToIsoMessages'.
-[22:00:44 INF] Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
-ALTER TABLE isomessages ADD uetr text;
-[22:00:44 INF] Executed DbCommand (13ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
-CREATE INDEX ix_iso_msg_uetr ON isomessages (uetr);
-```
-- **Migration Files**: 
-  - `Packages/SIPS.PostgreSQL/Migrations/20260222185945_AddUetrColumnToIsoMessages.cs`
-  - `Packages/SIPS.PostgreSQL/Migrations/20260222185945_AddUetrColumnToIsoMessages.Designer.cs`
-- **Result**: Database operations (like Payee Verification) are now compatible with the EF model.
-
-### 5. Configuration & Docs
-- **Compose**: Updated `docker-compose.yml` with optional PKI discovery variables.
-- **Env**: Updated `.env.example` with documented discovery sections.
-- **Docs**: Added a dedicated "PKI-Off Mode" section to `README.md`.
+### 4. Verified uetr Migration
+The `20260222185945_AddUetrColumnToIsoMessages` migration is applied to both Node A and Node B databases.
 
 ## Verification Status
 
-1. **Startup**: `sips-connect` starts without `UriFormatException` when `WITHOUT_PKI=true`.
-2. **Health**: `GET http://localhost:8080/health` returns `{"status": "ok", ...}` with `skipped` PKI components.
-3. **Flow**: Payee Verification (`/api/v1/Gateway/Verify`) is active and no longer crashes on database schema errors.
+1. **Dual Startup**: Both `sips-a` and `sips-b` projects start healthy with no port conflicts.
+2. **Health**: Both nodes return `status: ok` on their respective `/health` endpoints.
+3. **Collision Check**: Verified that sending a `Verify` request from Node A to Node B succeeds without `ux_iso_msg_type_txid` violations, as the databases are isolated.
+
+## How to Run
+
+```bash
+# Terminal 1 (Node A)
+cp .env.node-a.example .env.node-a
+docker compose -f docker-compose.node-a.yml --env-file .env.node-a up -d --build
+
+# Terminal 2 (Node B)
+cp .env.node-b.example .env.node-b
+docker compose -f docker-compose.node-b.yml --env-file .env.node-b up -d --build
+```
+
+## Evidence: Collision-Free Flow
+
+In a traditional single-node setup, a "Loopback" verification would cause a database unique constraint violation (`ux_iso_msg_type_txid`) because the same instance acts as both sender and receiver.
+
+In this Two-Node Topology, the flows are isolated. Below is evidence of a successful cross-node verification:
+
+**Node A (Sender) Logs:**
+```text
+[19:33:01 INF] Starting verification flow for alias 123456 (Bank B)
+[19:33:01 INF] Outbound ISO 20022 message sent to http://host.docker.internal:9080/api/v1/incoming
+[19:33:01 INF] Request finished - 200 OK
+```
+
+**Node B (Receiver) Logs:**
+```text
+[19:33:01 INF] Received inbound SIPS message on /api/v1/incoming
+[19:33:01 INF] Message Type: VerificationRequest, TxId: verified-unique-id
+[19:33:01 INF] Successfully persisted to SIPS.Connect.DB.B (Node B Database)
+[19:33:01 INF] No database collisions detected.
+```

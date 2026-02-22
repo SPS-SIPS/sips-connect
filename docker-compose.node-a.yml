@@ -1,0 +1,83 @@
+name: sips-a
+
+services:
+  sips-postgresql-a:
+    image: postgres:16-alpine
+    container_name: sips-postgresql-a
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-SIPS.Connect.DB.A}
+    ports:
+      - "${SIPS_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - sips_pg_data_a:/var/lib/postgresql/data
+    networks:
+      - sips-network-a
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sips-connect-a:
+    build:
+      context: .
+      dockerfile: SIPS.Connect/Dockerfile
+    container_name: sips-connect-a
+    restart: unless-stopped
+    depends_on:
+      sips-postgresql-a:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - ConnectionStrings__db=Host=sips-postgresql-a;Database=${DB_NAME:-SIPS.Connect.DB.A};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:-postgres};Include Error Detail=True;
+      - Xades__BIC=${BANK_CODE:-ZKBASOS0}
+      - Xades__WithoutPKI=${WITHOUT_PKI:-true}
+      - ISO20022__SIPS=${SIPS_PEER_URL}
+      - ISO20022__Agent=${BANK_CODE:-ZKBASOS0}
+      - ISO20022__BIC=${BANK_CODE:-ZKBASOS0}
+      - Emv__AcquirerId=${ACQUIRER_ID:-0000}
+      - Emv__FIType=${FI_TYPE:-01}
+      - Emv__FIName=${FI_NAME:-Reviewer Bank A}
+      - ISO20022__Verification=${COREBANK_BASE_URL}/api/cb/verify
+      - ISO20022__Transfer=${COREBANK_BASE_URL}/api/CB/Transfer
+      - ISO20022__Return=${COREBANK_BASE_URL}/api/CB/Return
+      - ISO20022__Status=${COREBANK_BASE_URL}/api/CB/Status
+      - ISO20022__CompletionNotification=${COREBANK_BASE_URL}/api/CB/CompletionNotification
+      - ASPNETCORE_ENVIRONMENT=Development
+    ports:
+      - "${SIPS_CONNECT_PORT:-8080}:8080"
+      - "${SIPS_CONNECT_HTTPS_PORT:-9443}:443"
+    volumes:
+      - ./logs/node-a:/app/logs:rw
+      - ./certs:/app/certs:ro
+      - ./keys/node-a:/app/keys:rw
+    networks:
+      - sips-network-a
+
+  sips-corebank-a:
+    image: hanad/sips-consumer:1.1.2
+    container_name: sips-corebank-a
+    restart: unless-stopped
+    depends_on:
+      sips-postgresql-a:
+        condition: service_healthy
+    ports:
+      - "${SIPS_COREBANK_PORT:-8081}:8080"
+    environment:
+      - COREBANK_PORT=8080
+    volumes:
+      - ./mock-corebank.json:/app/db.json:rw
+      - ./certs:/certs:ro
+    networks:
+      - sips-network-a
+
+networks:
+  sips-network-a:
+    driver: bridge
+
+volumes:
+  sips_pg_data_a:
