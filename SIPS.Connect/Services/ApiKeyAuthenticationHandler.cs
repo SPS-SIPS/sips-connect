@@ -43,7 +43,9 @@ public class ApiKeyAuthenticationHandler(
                 new Claim(ClaimTypes.Name, cfgName),
                 new Claim("Type", "ApiKey"),
                 new Claim(ClaimTypes.Role, Gateway),
-                new Claim(ClaimTypes.Role, QR)
+                new Claim(ClaimTypes.Role, QR),
+                new Claim(ClaimTypes.Role, ManageTransactions),
+                new Claim(ClaimTypes.Role, ManageMassages)
                 ], ApiKeyDefaults.AuthenticationScheme);
             var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), ApiKeyDefaults.AuthenticationScheme);
             return Task.FromResult(AuthenticateResult.Success(ticket));
