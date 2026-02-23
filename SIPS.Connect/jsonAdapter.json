@@ -169,6 +169,11 @@
           "Type": "string"
         },
         {
+          "InternalField": "DebtorAddress",
+          "UserField": "drAddress",
+          "Type": "string"
+        },
+        {
           "InternalField": "DebtorAccountType",
           "UserField": "drAccountType",
           "Type": "string"
@@ -186,6 +191,11 @@
         {
           "InternalField": "CreditorAccountType",
           "UserField": "crAccountType",
+          "Type": "string"
+        },
+        {
+          "InternalField": "CreditorAddress",
+          "UserField": "crAddress",
           "Type": "string"
         },
         {

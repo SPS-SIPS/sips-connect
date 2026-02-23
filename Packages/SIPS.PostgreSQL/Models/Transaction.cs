@@ -20,6 +20,7 @@ public class Transaction
     // Debtor
     public string DebtorName { get; set; } = default!;
     public string DebtorAccount { get; set; } = default!;
+    public string DebtorAddress { get; set; } = string.Empty;
     public string DebtorAccountType { get; set; } = default!;
     public string DebtorAgentBIC { get; set; } = default!;
     public string DebtorIssuer { get; set; } = "C";
@@ -27,12 +28,14 @@ public class Transaction
     // Creditor
     public string CreditorName { get; set; } = default!;
     public string CreditorAccount { get; set; } = default!;
+    public string CreditorAddress { get; set; } = string.Empty;
     public string CreditorAccountType { get; set; } = default!;
     public string CreditorAgentBIC { get; set; } = default!;
     public string CreditorIssuer { get; set; } = "C";
 
     public string RemittanceInformation { get; set; } = default!;
 }
+
 
 
 public sealed class TransactionConfiguration : IEntityTypeConfiguration<Transaction>

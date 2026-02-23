@@ -180,11 +180,13 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             Currency = request.Currency,
             DebtorName = request.Debtor.Name,
             DebtorAccount = request.Debtor.Account,
+            DebtorAddress = request.Debtor.Address ?? string.Empty,
             DebtorAccountType = request.Debtor.AccountType,
             DebtorAgentBIC = request.Debtor.AgentBIC,
             DebtorIssuer = request.Debtor.Issuer ?? "C",
             CreditorName = request.Creditor.Name,
             CreditorAccount = request.Creditor.Account,
+            CreditorAddress = request.Creditor.Address ?? string.Empty,
             CreditorAccountType = request.Creditor.AccountType,
             CreditorAgentBIC = request.Creditor.AgentBIC,
             CreditorIssuer = request.Creditor.Issuer ?? "C",
@@ -228,17 +230,20 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             Amount = request.Amount,
             Currency = request.Currency,
             CreditorAccount = request.Creditor.Account,
+            CreditorAddress = request.Creditor.Address ?? string.Empty,
             CreditorAccountType = request.Creditor.AccountType ?? string.Empty,
             CreditorAgentBIC = request.Creditor.AgentBIC ?? string.Empty,
             CreditorIssuer = request.Creditor.Issuer ?? "C",
             CreditorName = request.Creditor.Name ?? string.Empty,
             DebtorAccount = request.Debtor.Account,
+            DebtorAddress = request.Debtor.Address ?? string.Empty,
             DebtorAccountType = request.Debtor.AccountType ?? string.Empty,
             DebtorAgentBIC = request.Debtor.AgentBIC ?? string.Empty,
             DebtorIssuer = request.Debtor.Issuer ?? "C",
             DebtorName = request.Debtor.Name ?? string.Empty,
             EndToEndId = request.EndToEndId ?? string.Empty,
             RemittanceInformation = request.Ustrd ?? string.Empty
+
         });
 
         var result = await _persistence.TryRecordIncomingTransactionAsync(entity, ct);
@@ -339,8 +344,10 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             DebtorAgentBIC = string.Empty,
             DebtorIssuer = string.Empty,
             DebtorName = string.Empty,
+            DebtorAddress = string.Empty,
             CreditorAccountType = string.Empty,
             CreditorAgentBIC = string.Empty,
+            CreditorAddress = string.Empty,
             CreditorIssuer = string.Empty,
             CreditorName = string.Empty,
             RemittanceInformation = request.ReturnReason + " " + request.AdditionalInfo
@@ -396,8 +403,11 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             DebtorAccountType = string.Empty,
             DebtorAgentBIC = string.Empty,
             DebtorIssuer = "C",
-            DebtorName = string.Empty
+            DebtorName = string.Empty,
+            DebtorAddress = string.Empty,
+            CreditorAddress = string.Empty
         });
+
 
         var result = await _persistence.TryRecordIncomingReturnAsync(entity, ct);
         sw.Stop();
