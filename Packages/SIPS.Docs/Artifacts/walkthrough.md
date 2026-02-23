@@ -32,6 +32,12 @@ Implemented a `NoOpCertificateService` to prevent the gateway from attempting to
 - **Fix**: Conditional DI registration in `AddXades()` now provides a safe, non-file-loading service in Reviewer Mode.
 - **Detailed Evidence**: See [PKIOffHardening.md](./PKIOffHardening.md) for automated test results and log captures.
 
+### 7. Zero-Rebuild JSON Adapter Mounts
+Mounted `jsonAdapter.json` individually per node to allow custom API field mappings without forcing image rebuilds.
+- **Node A Mount**: `./SIPS.Connect/jsonAdapter.node-a.json`
+- **Node B Mount**: `./SIPS.Connect/jsonAdapter.node-b.json`
+- **Application**: Changes are applied instantly via `docker compose -f docker-compose.node-X.yml restart sips-connect-X` for a rapid, low-downtime review cycle.
+
 ## Verification Status
 
 1. **Dual Startup**: Both `sips-a` and `sips-b` projects start healthy with no port conflicts.
