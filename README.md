@@ -97,6 +97,22 @@ Check the health of both gateways to ensure the environments are ready.
 | **Node A** | `http://localhost:8080/health` | `ok` (PKI checks `skipped`) |
 | **Node B** | `http://localhost:9080/health` | `ok` (PKI checks `skipped`) |
 
+### 🔄 Updating JSON Adapter Configurations (Low-Downtime)
+
+The API JSON mapping adapter is mounted as a volume to prevent the need for full image rebuilds during review.
+To customize the JSON mappings per node, edit:
+- Node A: `SIPS.Connect/jsonAdapter.node-a.json`
+- Node B: `SIPS.Connect/jsonAdapter.node-b.json`
+
+Apply changes instantly with a low-downtime container restart:
+```bash
+# Node A
+docker compose -f docker-compose.node-a.yml restart sips-connect-a
+
+# Node B
+docker compose -f docker-compose.node-b.yml restart sips-connect-b
+```
+
 ---
 
 ## 🔍 Compliance & Verification Toggles
