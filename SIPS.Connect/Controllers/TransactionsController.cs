@@ -114,11 +114,13 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
                 Currency = tr.Currency,
                 DebtorName = tr.DebtorName,
                 DebtorAccount = tr.DebtorAccount,
+                DebtorAddress = tr.DebtorAddress,
                 DebtorAccountType = tr.DebtorAccountType,
                 DebtorAgentBIC = tr.DebtorAgentBIC,
                 DebtorIssuer = tr.DebtorIssuer,
                 CreditorName = tr.CreditorName,
                 CreditorAccount = tr.CreditorAccount,
+                CreditorAddress = tr.CreditorAddress,
                 CreditorAccountType = tr.CreditorAccountType,
                 CreditorAgentBIC = tr.CreditorAgentBIC,
                 CreditorIssuer = tr.CreditorIssuer,
@@ -290,7 +292,7 @@ public sealed class TransactionDto
     public string? DebtorName { get; set; }
 
     public string? DebtorAccount { get; set; }
-
+    public string? DebtorAddress { get; set; }
     public string? DebtorAccountType { get; set; }
 
     public string? DebtorAgentBIC { get; set; }
@@ -301,7 +303,7 @@ public sealed class TransactionDto
     public string? CreditorName { get; set; }
 
     public string? CreditorAccount { get; set; }
-
+    public string? CreditorAddress { get; set; }
     public string? CreditorAccountType { get; set; }
 
     public string? CreditorAgentBIC { get; set; }

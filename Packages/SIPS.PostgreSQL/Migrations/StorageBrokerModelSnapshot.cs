@@ -245,6 +245,11 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("creditoraccounttype");
 
+                    b.Property<string>("CreditorAddress")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("creditoraddress");
+
                     b.Property<string>("CreditorAgentBIC")
                         .IsRequired()
                         .HasColumnType("text")
@@ -274,6 +279,11 @@ namespace SIPS.PostgreSQL.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("debtoraccounttype");
+
+                    b.Property<string>("DebtorAddress")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("debtoraddress");
 
                     b.Property<string>("DebtorAgentBIC")
                         .IsRequired()

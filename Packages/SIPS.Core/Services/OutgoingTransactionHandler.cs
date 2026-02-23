@@ -147,14 +147,17 @@ public sealed class OutgoingTransactionHandler(
                 Account = message.DebtorAccount,
                 AccountType = message.DebtorAccountType,
                 AgentBIC = agentBIC,
+                Address = message.DebtorAddress ?? string.Empty,
                 Issuer = "C"
             },
+
             Creditor = new ISO20022.Models.Person
             {
                 Name = message.CreditorName,
                 Account = message.CreditorAccount,
                 AccountType = message.CreditorAccountType,
                 AgentBIC = message.CreditorAgentBIC,
+                Address = message.CreditorAddress ?? string.Empty,
                 Issuer = message.CreditorIssuer ?? "C"
             },
             Ustrd = message.RemittanceInformation ?? string.Empty,
@@ -188,12 +191,14 @@ public sealed class OutgoingTransactionHandler(
             Currency = message.Currency,
             DebtorName = message.DebtorName,
             DebtorAccount = message.DebtorAccount,
+            DebtorAddress = message.DebtorAddress ?? string.Empty,
             DebtorAccountType = message.DebtorAccountType,
             DebtorAgentBIC = agentBIC,
             DebtorIssuer = message.DebtorIssuer ?? "C",
 
             CreditorName = message.CreditorName,
             CreditorAccount = message.CreditorAccount,
+            CreditorAddress = message.CreditorAddress ?? string.Empty,
             CreditorAccountType = message.CreditorAccountType,
             CreditorAgentBIC = message.CreditorAgentBIC,
             CreditorIssuer = message.CreditorIssuer ?? "C",

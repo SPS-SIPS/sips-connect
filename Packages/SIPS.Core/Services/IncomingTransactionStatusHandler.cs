@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using SIPS.Adapter;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Interfaces;
+using SIPS.ISO20022.Models;
 using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Options;
 using SIPS.PostgreSQL.Interfaces;
@@ -156,6 +157,19 @@ public sealed class IncomingTransactionStatusHandler(
 
         response.AdditionalInfo = isoMessage.AdditionalInfo;
         
+        // Propagate addresses from ledger to response for full disclosure in pacs.002 Rltd block
+        var tx = isoMessage.Transactions.FirstOrDefault();
+        if (tx != null)
+        {
+            response.Original.Debtor ??= new Person();
+            response.Original.Debtor.Name = tx.DebtorName ?? string.Empty;
+            response.Original.Debtor.Address = tx.DebtorAddress ?? string.Empty;
+            response.Original.Creditor ??= new Person();
+            response.Original.Creditor.Name = tx.CreditorName ?? string.Empty;
+            response.Original.Creditor.Address = tx.CreditorAddress ?? string.Empty;
+        }
+        
+            
         var localRsp = PaymentStatusRequestResponseBuilder.Build(response);
         await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, response.Reason, response.AdditionalInfo ?? string.Empty, localRsp, ct);
         return _signer.SignEnvelope(localRsp);
@@ -198,14 +212,17 @@ public sealed class IncomingTransactionStatusHandler(
         response.Original.Currency = deserializedContent.Currency ?? string.Empty;
         response.Original.Debtor.Name = deserializedContent.DebtorName ?? string.Empty;
         response.Original.Debtor.Account = deserializedContent.DebtorAccount ?? string.Empty;
+        response.Original.Debtor.Address = deserializedContent.DebtorAddress ?? string.Empty;
         response.Original.Debtor.AccountType = deserializedContent.DebtorAccountType ?? string.Empty;
         response.Original.Debtor.AgentBIC = deserializedContent.DebtorAgentBIC ?? string.Empty;
         response.Original.Debtor.Issuer = deserializedContent.DebtorIssuer ?? string.Empty;
         response.Original.Creditor.Name = deserializedContent.CreditorName ?? string.Empty;
         response.Original.Creditor.Account = deserializedContent.CreditorAccount ?? string.Empty;
+        response.Original.Creditor.Address = deserializedContent.CreditorAddress ?? string.Empty;
         response.Original.Creditor.AccountType = deserializedContent.CreditorAccountType ?? string.Empty;
         response.Original.Creditor.AgentBIC = deserializedContent.CreditorAgentBIC ?? string.Empty;
         response.Original.Creditor.Issuer = deserializedContent.CreditorIssuer ?? string.Empty;
+
         response.Original.Ustrd = deserializedContent.RemittanceInformation ?? string.Empty;
     }
     // status recording/persisting now handled by IISOMessageService
