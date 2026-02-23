@@ -51,6 +51,11 @@
     "VerificationResponse": {
       "FieldMappings": [
         {
+          "InternalField": "Address",
+          "UserField": "address",
+          "Type": "string"
+        },
+        {
           "InternalField": "IsVerified",
           "UserField": "isVerified",
           "Type": "bool"
@@ -217,6 +222,16 @@
     },
     "CB_PaymentRequest": {
       "FieldMappings": [
+        {
+          "InternalField": "DebtorAddress",
+          "UserField": "debtorPostalAddress",
+          "Type": "string"
+        },
+        {
+          "InternalField": "CreditorAddress",
+          "UserField": "creditorPostalAddress",
+          "Type": "string"
+        },
         {
           "InternalField": "FromBIC",
           "UserField": "fromBIC",
