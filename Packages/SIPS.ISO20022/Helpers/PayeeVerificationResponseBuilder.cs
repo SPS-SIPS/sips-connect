@@ -251,10 +251,10 @@ public static class PayeeVerificationResponseBuilder
         if (response.Verified)
         {
             response.Name = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Pty?.Nm ?? "";
+            response.Address = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Pty?.PstlAdr?.AdrLine?.FirstOrDefault();
             response.Id = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Acct?.Id?.Othr?.Id ?? "";
             response.Type = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Acct?.Id?.Othr?.SchmeNm?.Prtry ?? "";
             response.Currency = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Acct?.Ccy ?? "";
-            response.VerificationId = document.IdVrfctnRpt?.Rpt?[0]?.OrgnlId ?? "";
         }
         return response;
     }

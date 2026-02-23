@@ -36,17 +36,17 @@ services:
       - ConnectionStrings__db=Host=sips-postgresql-a;Database=${DB_NAME:-SIPS.Connect.DB.A};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:-postgres};Include Error Detail=True;
       - Xades__BIC=${BANK_CODE:-ZKBASOS0}
       - Xades__WithoutPKI=${WITHOUT_PKI:-true}
-      - ISO20022__SIPS=${SIPS_PEER_URL}
-      - ISO20022__Agent=${BANK_CODE:-ZKBASOS0}
-      - ISO20022__BIC=${BANK_CODE:-ZKBASOS0}
-      - Emv__AcquirerId=${ACQUIRER_ID:-0000}
-      - Emv__FIType=${FI_TYPE:-01}
-      - Emv__FIName=${FI_NAME:-Reviewer Bank A}
-      - ISO20022__Verification=${COREBANK_BASE_URL}/api/cb/verify
-      - ISO20022__Transfer=${COREBANK_BASE_URL}/api/CB/Transfer
-      - ISO20022__Return=${COREBANK_BASE_URL}/api/CB/Return
-      - ISO20022__Status=${COREBANK_BASE_URL}/api/CB/Status
-      - ISO20022__CompletionNotification=${COREBANK_BASE_URL}/api/CB/CompletionNotification
+      - ISO20022__SIPS=${SIPS_PEER_URL:?SIPS_PEER_URL is required}
+      - ISO20022__Agent=${BANK_CODE:?BANK_CODE is required}
+      - ISO20022__BIC=${BANK_CODE:?BANK_CODE is required}
+      - Emv__AcquirerId=${ACQUIRER_ID:?ACQUIRER_ID is required}
+      - Emv__FIType=${FI_TYPE:?FI_TYPE is required}
+      - Emv__FIName=${FI_NAME:?FI_NAME is required}
+      - ISO20022__Verification=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/cb/verify
+      - ISO20022__Transfer=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/CB/Transfer
+      - ISO20022__Return=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/CB/Return
+      - ISO20022__Status=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/CB/Status
+      - ISO20022__CompletionNotification=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/CB/CompletionNotification
       - ASPNETCORE_ENVIRONMENT=Development
     ports:
       - "${SIPS_CONNECT_PORT:-8080}:8080"

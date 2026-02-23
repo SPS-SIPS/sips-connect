@@ -138,7 +138,14 @@ By default, `WITHOUT_PKI=true` is enabled for reviewers. This allows message ins
 
 ---
 
-### 🧪 Postman Quick Validation
+## Configuration Modes
+
+> [!IMPORTANT]
+> **Single-Node Loopback** and **Two-Node Peer** modes are mutually exclusive. 
+> - Use `docker-compose.yml` for single-node development/debugging with loopback routing.
+> - Use `docker-compose.node-a.yml` and `docker-compose.node-b.yml` for full two-node peer topology simulations. Ensure `SIPS_PEER_URL` is explicitly configured in your node-specific `.env` files.
+
+## 🧪 Postman Quick Validation
 
 A ready-to-use Postman collection is included at `SIPSConnectTest.postman_collection.json`.
 

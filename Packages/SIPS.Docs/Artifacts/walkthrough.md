@@ -38,22 +38,32 @@ Mounted `jsonAdapter.json` individually per node to allow custom API field mappi
 - **Node B Mount**: `./jsonAdapter.node-b.json`
 - **Application**: Changes are applied instantly via `docker compose -f docker-compose.node-X.yml restart sips-connect-X` for a rapid, low-downtime review cycle.
 
+### 8. Mode Exclusivity Enforcement
+> [!IMPORTANT]
+> **Single-Node Loopback** and **Two-Node Peer** modes are mutually exclusive. 
+> - **Loopback Mode** (via `docker-compose.yml`) uses self-routing and a single database.
+> - **Peer Mode** (via `docker-compose.node-*.yml`) enforces explicit peer routing with isolated databases and fail-fast environment checks.
+
 ## Verification Status
 
-1. **Dual Startup**: Both `sips-a` and `sips-b` projects start healthy with no port conflicts.
-2. **Health**: Both nodes return `status: ok` on their respective `/health` endpoints.
-3. **Collision Check**: Verified that sending a `Verify` request from Node A to Node B succeeds without `ux_iso_msg_type_txid` violations, as the databases are isolated.
+1. **Gate Check**: `docker compose config` verifies `ISO20022__SIPS` points to the correct peer.
+2. **Fail-Fast**: Services fail to start if `SIPS_PEER_URL` is missing.
+3. **Dual Startup**: Both `sips-a` and `sips-b` projects start healthy with no port conflicts.
+4. **Health**: Both nodes return `status: ok` on their respective `/health` endpoints.
+5. **Collision Check**: Verified that sending a `Verify` request from Node A to Node B succeeds without `ux_iso_msg_type_txid` violations.
 
 ## How to Run
 
 ```bash
 # Terminal 1 (Node A)
 cp .env.node-a.example .env.node-a
-docker compose -f docker-compose.node-a.yml --env-file .env.node-a up -d --build
+# (Edit .env.node-a if needed)
+docker compose --env-file .env.node-a -f docker-compose.node-a.yml up -d --build
 
 # Terminal 2 (Node B)
 cp .env.node-b.example .env.node-b
-docker compose -f docker-compose.node-b.yml --env-file .env.node-b up -d --build
+# (Edit .env.node-b if needed)
+docker compose --env-file .env.node-b -f docker-compose.node-b.yml up -d --build
 ```
 
 ## Evidence: Collision-Free Flow

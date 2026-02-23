@@ -6,9 +6,14 @@ public sealed class VerificationResponseDto
     // Absent if IsVerified is true.
     public string Reason { get; set; } = string.Empty;
     public string SIPSRequestId { get; set; } = string.Empty;
-    public string? Id { get; set; }
-    public string? Type { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("accountNo")]
+    public string? AccountNo { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("accountType")]
+    public string? AccountType { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("name")]
     public string? Name { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("address")]
     public string? Address { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("currency")]
     public string? Currency { get; set; }
 }

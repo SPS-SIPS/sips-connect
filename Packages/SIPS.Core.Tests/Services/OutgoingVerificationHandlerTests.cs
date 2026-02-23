@@ -58,12 +58,17 @@ namespace SIPS.Core.Tests.Verification
                 To = "TESTBIC",
                 MsgDefIdr = "acmt.024.001.03",
                 MsgId = "ResMsgId",
-                Verified = false,
-                Reason = "WARN",
+                Verified = true,
+                Reason = "SUCC",
+                Address = "Washington, DC",
+                Id = "401005007403",
+                Type = "ACCT",
+                Name = "John Doe",
+                Currency = "USD",
                 Original = new SIPS.ISO20022.Helpers.PayeeVerificationBuilder.Request
                 {
                     SIPSRequestId = "FP",
-                    MsgId = "OriginalMsgId",
+                    MsgId = "ORIGINAL_MSG_ID", // Match trackingRecord.MsgId
                     MsgDefIdr = "acmt.023.001.03",
                     From = "TESTBIC",
                     To = "SIPS"
@@ -104,6 +109,10 @@ namespace SIPS.Core.Tests.Verification
             var result = await handler.HandleAsync(request, CancellationToken.None);
 
             // Assert
+            Assert.True(result.IsSuccess);
+            Assert.Equal("ORIGINAL_MSG_ID", result.Data!.SIPSRequestId); // Re-anchored to MsgId
+            Assert.Equal("Washington, DC", result.Data!.Address);
+
             mockPersistence.Verify(p => p.ISOMessageResponseAsync(It.Is<ISOMessage>(m => 
                 m.TxId == "ORIGINAL_MSG_ID" && 
                 m.AdditionalInfo == "FP"), It.IsAny<CancellationToken>()), Times.Once);
