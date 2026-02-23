@@ -152,7 +152,7 @@ public sealed class IncomingVerificationHandler(
                     BizMsgIdr = request.BizMsgIdr,
                     MsgDefIdr = request.MsgDefIdr,
                     MsgId = request.MsgId,
-                    TxId = request.SIPSRequestId,
+                    TxId = request.MsgId,
                     UETR = request.MsgId // Proxy UETR
                 }, gct);
 
@@ -223,7 +223,7 @@ public sealed class IncomingVerificationHandler(
                         {
                             MessageType = ISOMessageType.VerificationRequest,
                             MsgId = request.MsgId,
-                            TxId = request.SIPSRequestId
+                            TxId = request.MsgId
                         }, gct);
                     
                     var freshRecord = retryResult.record;
