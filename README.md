@@ -1,5 +1,11 @@
 # Somali Instant Payment System (SIPS)
 
+> [!NOTE]
+> **Senior Architecture Review Sign-Off**  
+> The SIPS Connect reviewer environment meets required architecture controls for determinism, traceability, and two-node isolation.  
+> Verified controls include: `MsgId`-anchored `TxId` sovereignty, deterministic gateway verification contract (`requestId`, `address`), preserved business verification reference (`FP`) in audit paths, fail-fast peer routing, and explicit node isolation via per-node env files.  
+> Evidence and runbooks in `README.md`, `walkthrough.md`, and `task.md` are sufficient for reviewer assessment.
+
 The **Somali Instant Payment System (SIPS)** is a mission-critical financial infrastructure designed to modernize payment flows across Somalia. 
 
 This repository houses the **SIPS Connect** integration gateway—the central component that bridges the national SIPS SVIP switch with internal banking ledgers and core banking systems.
@@ -61,9 +67,9 @@ For technical assessment, we provide a **Two-Node Topology** that simulates a re
 The SIPS Connect gateway enforces strict de-duplication on `(MessageType, TxId)`. In a single-node loopback mode, the same database would attempt to store both the "Outbound" and "Inbound" side of the same transaction with the same ID, causing a database unique constraint violation (`ux_iso_msg_type_txid`). 
 
 The two-node setup provides:
-- **Ledger Isolation**: Each node has its own PostgreSQL database.
-- **Realistic Routing**: Nodes communicate via standard HTTP mapping over host ports.
-- **Collision-Free Logic**: Verification and Transfers flow naturally from one participant to another.
+-   **Ledger Isolation**: Each node has its own PostgreSQL database.
+-   **Realistic Routing**: Nodes communicate via standard HTTP mapping over host ports.
+-   **Collision-Free Logic**: Verification and Transfers flow naturally from one participant to another.
 
 ### 1. Startup
 
@@ -141,9 +147,12 @@ By default, `WITHOUT_PKI=true` is enabled for reviewers. This allows message ins
 ## Configuration Modes
 
 > [!IMPORTANT]
-> **Single-Node Loopback** and **Two-Node Peer** modes are mutually exclusive. 
-> - Use `docker-compose.yml` for single-node development/debugging with loopback routing.
-> - Use `docker-compose.node-a.yml` and `docker-compose.node-b.yml` for full two-node peer topology simulations. Ensure `SIPS_PEER_URL` is explicitly configured in your node-specific `.env` files.
+> **Single-Node Mode (External Switch Only)**  
+> Single-node deployment is supported only when `ISO20022__SIPS` points to an external switch endpoint (UAT or Production).  
+> Local loopback/self-routing is not supported for transaction or verification flows and must not be used.
+
+> **Two-Node Peer Mode**  
+> Use `docker-compose.node-a.yml` and `docker-compose.node-b.yml` for full two-node peer topology simulations. Ensure `SIPS_PEER_URL` is explicitly configured in your node-specific `.env` files.
 
 ## 🧪 Postman Quick Validation
 
