@@ -101,8 +101,8 @@ Check the health of both gateways to ensure the environments are ready.
 
 The API JSON mapping adapter is mounted as a volume to prevent the need for full image rebuilds during review.
 To customize the JSON mappings per node, edit:
-- Node A: `SIPS.Connect/jsonAdapter.node-a.json`
-- Node B: `SIPS.Connect/jsonAdapter.node-b.json`
+- Node A: `jsonAdapter.node-a.json`
+- Node B: `jsonAdapter.node-b.json`
 
 Apply changes instantly with a low-downtime container restart:
 ```bash
