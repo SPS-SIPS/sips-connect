@@ -1,0 +1,112 @@
+using System;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Xunit;
+using SIPS.Core.Options;
+using SIPS.Core.Services;
+using SIPS.Core.Services.Abstractions;
+using SIPS.Core.Services.Correlation;
+using SIPS.Core.Services.Persistence;
+using SIPS.Core.Services.Verification;
+using SIPS.Core.Interfaces;
+using SIPS.ISO20022.Models.DTOs;
+using SIPS.ISO20022.Options;
+using SIPS.PostgreSQL.Enums;
+using SIPS.PostgreSQL.Interfaces;
+using SIPS.PostgreSQL.Models;
+using SIPS.XMLDsig.Xades.Interfaces;
+
+namespace SIPS.Core.Tests.Verification
+{
+    public class OutgoingVerificationHandlerTests
+    {
+        [Fact]
+        public async Task HandleAsync_DoesNotOverwriteTxId_WithVerificationId()
+        {
+            // Arrange
+            var options = new ISO20022Options { BIC = "TESTBIC", SIPS = "http://sips" };
+            var coreOptions = Microsoft.Extensions.Options.Options.Create(new CoreOptions { DbPersistTimeoutSeconds = 10 });
+            var mockSigner = new Mock<INativeSigner>();
+            var mockSignature = new Mock<ISignatureService>();
+            var mockPersistence = new Mock<IPersistenceGateway>();
+            var mockCorrelation = new Mock<ICorrelationService>();
+            var mockSips = new Mock<ISipsRequestSender>();
+            var mockStatus = new Mock<IStatusOrchestrator>();
+
+            // Mock correlation
+            mockCorrelation.Setup(c => c.Create(It.IsAny<string?[]>())).Returns("corr-id");
+
+            // Mock building request (returns true and generates valid signature)
+            mockSigner.Setup(s => s.SignEnvelope(It.IsAny<string>(), It.IsAny<string>())).Returns("signed-xml");
+
+            // RecordISOMessageAsync returns the tracking object.
+            var trackingRecord = new ISOMessage
+            {
+                TxId = "ORIGINAL_MSG_ID",
+                MsgId = "ORIGINAL_MSG_ID"
+            };
+            mockPersistence.Setup(p => p.RecordISOMessageAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                           .ReturnsAsync(trackingRecord);
+
+            // Mock SIPS HTTP response using actual builder
+            var mockResponseData = new SIPS.ISO20022.Helpers.PayeeVerificationResponseBuilder.Request
+            {
+                From = "SIPS",
+                To = "TESTBIC",
+                MsgDefIdr = "acmt.024.001.03",
+                MsgId = "ResMsgId",
+                Verified = false,
+                Reason = "WARN",
+                Original = new SIPS.ISO20022.Helpers.PayeeVerificationBuilder.Request
+                {
+                    SIPSRequestId = "FP",
+                    MsgId = "OriginalMsgId",
+                    MsgDefIdr = "acmt.023.001.03",
+                    From = "TESTBIC",
+                    To = "SIPS"
+                }
+            };
+            string responseXml = SIPS.ISO20022.Helpers.PayeeVerificationResponseBuilder.Build(mockResponseData);
+            
+            mockSips.Setup(s => s.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
+                    .ReturnsAsync(SIPS.ISO20022.Models.DTOs.Response<string>.Success(responseXml));
+
+            // Mock Signature verification success
+            mockSignature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                         .ReturnsAsync((true, "OK"));
+
+            mockStatus.Setup(s => s.MapSingleStatus(It.IsAny<string>(), It.IsAny<string>()))
+                      .Returns(TransactionStatus.Failed);
+
+            var handler = new OutgoingVerificationHandler(
+                options,
+                NullLogger<OutgoingVerificationHandler>.Instance,
+                mockSigner.Object,
+                mockSignature.Object,
+                mockPersistence.Object,
+                mockCorrelation.Object,
+                mockSips.Object,
+                mockStatus.Object,
+                coreOptions
+            );
+
+            // Act
+            var request = new VerificationRequestDto
+            {
+                Alias = "Alias123",
+                Type = "MSISDN",
+                ToBIC = "DESTBIC"
+            };
+
+            var result = await handler.HandleAsync(request, CancellationToken.None);
+
+            // Assert
+            mockPersistence.Verify(p => p.ISOMessageResponseAsync(It.Is<ISOMessage>(m => 
+                m.TxId == "ORIGINAL_MSG_ID" && 
+                m.AdditionalInfo == "FP"), It.IsAny<CancellationToken>()), Times.Once);
+        }
+    }
+}
