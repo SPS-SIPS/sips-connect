@@ -38,7 +38,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
                 BizMsgIdr = request.BizMsgIdr,
                 MsgDefIdr = request.MsgDefIdr,
                 MsgId = request.MsgId,
-                TxId = request.SIPSRequestId,
+                TxId = request.MsgId,
                 UETR = (request as PayeeVerificationBuilder.Request)?.MsgId // Verification usually uses MsgId as TxId/UETR proxy
             }, ct);
         sw.Stop();
