@@ -138,3 +138,5 @@ A ready-to-use Postman collection is included at `SIPSConnectTest.postman_collec
 ---
 
 *Prepared for World Bank Technical Assessment - Somalia SIPS Modernization (Feb 2026)*
+### 🧪 Verification
+For detailed evidence of the system's resilience in Reviewer Mode, including automated test results for PKI-off stability, see the [PKI-Off Hardening Evidence](Packages/SIPS.Docs/Artifacts/PKIOffHardening.md).

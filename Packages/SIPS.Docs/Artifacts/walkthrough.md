@@ -25,7 +25,12 @@ The `20260222185945_AddUetrColumnToIsoMessages` migration is applied to both Nod
 ### 5. API Key Role Alignment
 Updated `ApiKeyAuthenticationHandler` to assign `ManageTransactions` and `ManageMassages` roles to API keys.
 - **Benefit**: Resolves `403 Forbidden` errors when using API keys to access audit endpoints like `/api/v1/Transactions/iso-messages`.
-- **File**: `SIPS.Connect/Services/ApiKeyAuthenticationHandler.cs`
+
+### 6. PKI-Off Mode Hardening (Resilience)
+Implemented a `NoOpCertificateService` to prevent the gateway from attempting to load certificate files from disk when `WithoutPKI` is enabled.
+- **Problem**: Previously, DI would resolve `CertificateService` which read files in its constructor, causing crashes if `/app/certs` was empty.
+- **Fix**: Conditional DI registration in `AddXades()` now provides a safe, non-file-loading service in Reviewer Mode.
+- **Detailed Evidence**: See [PKIOffHardening.md](./PKIOffHardening.md) for automated test results and log captures.
 
 ## Verification Status
 
