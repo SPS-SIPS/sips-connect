@@ -62,7 +62,7 @@ public class IncomingVerificationHandler_Tests
 
         var adapter = new FakeJsonAdapter();
         // Configure FakeJsonAdapter to return success response
-        adapter.SetToObjectResponse(new VerificationResponseDto { IsVerified = true, Name = "John", Id = "ID1", Currency = "USD" });
+        adapter.SetToObjectResponse(new VerificationResponseDto { IsVerified = true, Name = "John", AccountNo = "ID1", Currency = "USD" });
 
         var recorder = new Mock<IIncomingRecorder>();
         recorder.Setup(r => r.ISOMessageAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
@@ -137,7 +137,7 @@ public class IncomingVerificationHandler_Tests
                    return jo;
                });
         adapter.Setup(a => a.ToObject<VerificationResponseDto>(It.IsAny<JsonObject>()))
-               .Returns(new VerificationResponseDto { IsVerified = true, Name = "John", Id = "ID1", Currency = "USD" });
+               .Returns(new VerificationResponseDto { IsVerified = true, Name = "John", AccountNo = "ID1", Currency = "USD" });
 
         var recorder = new Mock<IIncomingRecorder>();
         recorder.Setup(r => r.ISOMessageAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))

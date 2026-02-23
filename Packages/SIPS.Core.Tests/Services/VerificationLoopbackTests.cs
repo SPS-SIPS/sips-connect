@@ -130,7 +130,7 @@ namespace SIPS.Core.Tests.Verification
                 .Returns(new VerificationResponseDto 
                 { 
                     IsVerified = true,
-                    Id = "ACCT123",
+                    AccountNo = "ACCT123",
                     Name = "Test Name",
                     Address = "Test Address",
                     Currency = "USD"

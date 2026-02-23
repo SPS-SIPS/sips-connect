@@ -119,11 +119,12 @@ public sealed class OutgoingVerificationHandler(
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto
             {
                 IsVerified = parsedResponse.Verified,
-                SIPSRequestId = parsedResponse.VerificationId ?? string.Empty,
+                SIPSRequestId = parsedResponse.MsgId ?? string.Empty, // Anchor to MsgId
                 Reason = parsedResponse.Reason ?? string.Empty,
-                Id = parsedResponse.Verified ? parsedResponse.Id : null,
-                Type = parsedResponse.Verified ? parsedResponse.Type : null,
+                AccountNo = parsedResponse.Verified ? parsedResponse.Id : null,
+                AccountType = parsedResponse.Verified ? parsedResponse.Type : null,
                 Name = parsedResponse.Verified ? parsedResponse.Name : null,
+                Address = parsedResponse.Verified ? parsedResponse.Address : null,
                 Currency = parsedResponse.Verified ? parsedResponse.Currency : null
             });
         }

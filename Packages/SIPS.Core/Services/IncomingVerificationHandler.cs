@@ -451,7 +451,7 @@ public sealed class IncomingVerificationHandler(
         _logger.LogInformation("Callback Response: {Response}", data.ToJsonString(_jsonSerializerOptions));
 
         // First, transform the raw callback payload using our configured mapping
-        // so fields like accountNo/accountType map to Id/Type regardless of casing.
+        // so fields like accountNo/accountType map to AccountNo/AccountType regardless of casing.
         JsonObject mapped;
         try
         {
@@ -469,8 +469,9 @@ public sealed class IncomingVerificationHandler(
 
         response.Verified = deserializedContent?.IsVerified ?? false;
         response.Reason = response.Verified ? SUCC : MISS;
-        response.Id = deserializedContent?.Id ?? string.Empty;
-        response.Type = IBAN;
+        response.Id = deserializedContent?.AccountNo ?? string.Empty;
+        // Map Type from callback; default to IBAN only if unspecified
+        response.Type = string.IsNullOrWhiteSpace(deserializedContent?.AccountType) ? IBAN : deserializedContent.AccountType;
         response.Name = deserializedContent?.Name ?? string.Empty;
         response.Address = deserializedContent?.Address ?? string.Empty;
         response.Currency = deserializedContent?.Currency ?? string.Empty;

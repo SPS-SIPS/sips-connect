@@ -66,12 +66,12 @@
           "Type": "string"
         },
         {
-          "InternalField": "Id",
+          "InternalField": "AccountNo",
           "UserField": "pam",
           "Type": "string"
         },
         {
-          "InternalField": "Type",
+          "InternalField": "AccountType",
           "UserField": "type",
           "Type": "string"
         },
@@ -105,12 +105,12 @@
           "Type": "string"
         },
         {
-          "InternalField": "Id",
+          "InternalField": "AccountNo",
           "UserField": "accountNo",
           "Type": "string"
         },
         {
-          "InternalField": "Type",
+          "InternalField": "AccountType",
           "UserField": "accountType",
           "Type": "string"
         },
