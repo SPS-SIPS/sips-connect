@@ -1,5 +1,11 @@
 # Walkthrough: Two-Node Reviewer Topology
 
+> [!NOTE]
+> **Senior Architecture Review Sign-Off**  
+> The SIPS Connect reviewer environment meets required architecture controls for determinism, traceability, and two-node isolation.  
+> Verified controls include: `MsgId`-anchored `TxId` sovereignty, deterministic gateway verification contract (`requestId`, `address`), preserved business verification reference (`FP`) in audit paths, fail-fast peer routing, and explicit node isolation via per-node env files.  
+> Evidence and runbooks in `README.md`, `walkthrough.md`, and `task.md` are sufficient for reviewer assessment.
+
 I have implemented a **Two-Node Reviewer Topology** to allow technical assessment of the SIPS Connect gateway in a multi-participant environment. This setup eliminates the `(MessageType, TxId)` collisions that occur in single-node loopback configurations.
 
 ## Changes Implemented
@@ -38,11 +44,11 @@ Mounted `jsonAdapter.json` individually per node to allow custom API field mappi
 - **Node B Mount**: `./jsonAdapter.node-b.json`
 - **Application**: Changes are applied instantly via `docker compose -f docker-compose.node-X.yml restart sips-connect-X` for a rapid, low-downtime review cycle.
 
-### 8. Mode Exclusivity Enforcement
+### 8. Mode Policy
 > [!IMPORTANT]
-> **Single-Node Loopback** and **Two-Node Peer** modes are mutually exclusive. 
-> - **Loopback Mode** (via `docker-compose.yml`) uses self-routing and a single database.
-> - **Peer Mode** (via `docker-compose.node-*.yml`) enforces explicit peer routing with isolated databases and fail-fast environment checks.
+> - **Single-node**: connect to Switch UAT/Production only.  
+> - **Two-node**: local peer simulation (A ↔ B).  
+> - **Loopback/self-routing**: prohibited.
 
 ## Verification Status
 

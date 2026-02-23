@@ -34,7 +34,7 @@ services:
       - ConnectionStrings__db=Host=postgresql;Database=${DB_NAME:-SIPS.Connect.DB};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:-postgres};Include Error Detail=True;
       - Xades__BIC=${BANK_CODE:-ZKBASOS0}
       - Xades__WithoutPKI=${WITHOUT_PKI:-true}
-      - ISO20022__SIPS=${SIPS_LOOPBACK_URL:-http://sips-connect:8080/api/v1/incoming}
+      - ISO20022__SIPS=${SIPS_SWITCH_URL:?SIPS_SWITCH_URL is required}
       - ISO20022__Agent=${BANK_CODE:-ZKBASOS0}
       - ISO20022__BIC=${BANK_CODE:-ZKBASOS0}
       - Emv__AcquirerId=${ACQUIRER_ID:-0000}
