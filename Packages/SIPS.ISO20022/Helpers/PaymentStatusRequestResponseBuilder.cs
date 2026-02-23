@@ -209,6 +209,14 @@ public static class PaymentStatusRequestResponseBuilder
                                     }
                                 }
                             },
+                            Cdtr = new Party40Choice {
+                                Pty = new Schemas.PSRDocument.PartyIdentification135 {
+                                    Nm = request.Original?.Creditor?.Name ?? string.Empty,
+                                    PstlAdr = new Schemas.PSRDocument.PostalAddress24 {
+                                        AdrLine = new[] { request.Original?.Creditor?.Address ?? string.Empty }
+                                    }
+                                }
+                            },
                             CdtrAcct = new CashAccount40 {
                                 Id = new AccountIdentification4Choice {
                                     Othr = new GenericAccountIdentification1 {
