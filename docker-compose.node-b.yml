@@ -55,6 +55,7 @@ services:
       - ./logs/node-b:/app/logs:rw
       - ./certs:/app/certs:ro
       - ./keys/node-b:/app/keys:rw
+      - ./SIPS.Connect/jsonAdapter.node-b.json:/app/jsonAdapter.json:ro
     networks:
       - sips-network-b
 
