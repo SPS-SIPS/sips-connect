@@ -61,7 +61,7 @@ services:
       - ./logs:/app/logs:rw
       - ./certs:/app/certs:ro
       - ./keys:/app/keys:rw
-      - ./SIPS.Connect/jsonAdapter.json:/app/jsonAdapter.json:ro
+      - ./jsonAdapter.json:/app/jsonAdapter.json:ro
     networks:
       - sips-network
 
