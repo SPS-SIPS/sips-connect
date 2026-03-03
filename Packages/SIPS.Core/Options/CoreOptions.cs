@@ -23,4 +23,5 @@ public class CoreOptions
     // DO NOT modify these budgets without a formal IPS contract review.
     public int CallbackSlaSeconds { get; set; } = 10;
     public int CallbackInternalBudgetSeconds { get; set; } = 9;
+    public bool VerificationOnlyMode { get; set; } = false;
 }
