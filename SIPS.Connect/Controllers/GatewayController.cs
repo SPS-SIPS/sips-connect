@@ -8,6 +8,9 @@ using static SIPS.Connect.Helpers.APIResponseRenderer;
 using static SIPS.Connect.Constants;
 using static SIPS.Connect.KnownRoles;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
+using SIPS.Core.Options;
+
 namespace SIPS.Connect.Controllers;
 [ApiController]
 [Produces("application/json")]
@@ -18,7 +21,8 @@ public class GatewayController(
     IOutgoingTransactionHandler transactionService,
     IOutgoingTransactionStatusHandler transactionStatusService,
     IOutgoingReturnTransactionHandler returnTransactionService,
-    IReturnRetryHandler returnRetryHandler
+    IReturnRetryHandler returnRetryHandler,
+    IOptions<CoreOptions> coreOptions
     ) : ControllerBase
 {
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
@@ -27,6 +31,7 @@ public class GatewayController(
     private readonly IOutgoingTransactionStatusHandler _transactionStatusService = transactionStatusService;
     private readonly IOutgoingReturnTransactionHandler _returnTransactionService = returnTransactionService;
     private readonly IReturnRetryHandler _returnRetryHandler = returnRetryHandler;
+    private readonly CoreOptions _coreOptions = coreOptions.Value;
 
     [HttpPost("Verify")]
     [Authorize(Roles = Gateway)]
@@ -42,6 +47,11 @@ public class GatewayController(
     [Authorize(Roles = Gateway)]
     public async Task<ActionResult> MakePayment([FromBody] JsonObject body, CancellationToken ct)
     {
+        if (_coreOptions.VerificationOnlyMode)
+        {
+            return BadRequest(new { Error = "SIPS Connect is configured in Verification Only mode. This operation is not allowed." });
+        }
+
         JsonObject md = _jsonAdapter.Transform(body, PaymentRequest);
         var query = _jsonAdapter.ToObject<PaymentRequestDto>(md);
         var response = await _transactionService.HandleAsync(query, ct);
@@ -52,6 +62,11 @@ public class GatewayController(
     [Authorize(Roles = Gateway)]
     public async Task<ActionResult> GetStatus([FromBody] JsonObject body, CancellationToken ct)
     {
+        if (_coreOptions.VerificationOnlyMode)
+        {
+            return BadRequest(new { Error = "SIPS Connect is configured in Verification Only mode. This operation is not allowed." });
+        }
+
         JsonObject md = _jsonAdapter.Transform(body, StatusRequest);
         var query = _jsonAdapter.ToObject<StatusRequestDto>(md);
         var response = await _transactionStatusService.HandleAsync(query, ct);
@@ -62,6 +77,11 @@ public class GatewayController(
     [Authorize(Roles = Gateway)]
     public async Task<ActionResult> GetReturn([FromBody] JsonObject body, CancellationToken ct)
     {
+        if (_coreOptions.VerificationOnlyMode)
+        {
+            return BadRequest(new { Error = "SIPS Connect is configured in Verification Only mode. This operation is not allowed." });
+        }
+
         JsonObject md = _jsonAdapter.Transform(body, ReturnRequest);
         var query = _jsonAdapter.ToObject<ReturnPaymentRequestDto>(md);
         var response = await _returnTransactionService.HandleAsync(query, ct);
@@ -73,6 +93,11 @@ public class GatewayController(
     [Authorize(Roles = Recon)]
     public async Task<ActionResult> Retry([FromRoute] string id, CancellationToken ct)
     {
+        if (_coreOptions.VerificationOnlyMode)
+        {
+            return BadRequest(new { Error = "SIPS Connect is configured in Verification Only mode. This operation is not allowed." });
+        }
+
         var response = await _returnRetryHandler.RetryReturnAsync(id, ct);
         return GenerateAdminMessage(new Response<ReturnRetryResult>(response), _jsonAdapter, PaymentResponse);
     }
