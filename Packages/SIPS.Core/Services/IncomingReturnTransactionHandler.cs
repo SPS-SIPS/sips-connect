@@ -237,6 +237,10 @@ public sealed class IncomingReturnTransactionHandler(
                         { API_Secret, _callbackLinks.Secret! }
                     };
 
+                // [FIX 2]: Scoped timeout matching pacs.008 handler pattern
+                using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
+
                 var result = await _callbacks.SendJsonAsync(
                     _callbackLinks.Return!,
                     headers,
@@ -246,7 +250,7 @@ public sealed class IncomingReturnTransactionHandler(
                     _correlation,
                     _jsonSerializerOptions,
                     _callback,
-                    ct,
+                    coreBankCts.Token,
                     cid
                 );
 
@@ -265,19 +269,69 @@ public sealed class IncomingReturnTransactionHandler(
                         
                         var rspReject = ReturnPaymentResponseBuilder.Build(response);
                         // User Requirement: Return RJCT to switch, but persist as Pending (PDNG) locally
-                        // to allow for downsteam/manual resolution or waiting for switch confirmation (if applicable).
+                        // to allow for downstream/manual resolution or waiting for switch confirmation (if applicable).
                         if (record != null)
                         {
                             await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspReject, dbCt);
+
+                            // [FIX 3]: Audit ledger event for PDNG status divergence
+                            var ev = new
+                            {
+                                schemaVersion = 1,
+                                eventId = Guid.NewGuid(),
+                                actor = "System",
+                                @event = "ReturnRejectedByCoreBankPersistedAsPDNG",
+                                timestampUtc = DateTimeOffset.UtcNow,
+                                correlation = new { transactionId = request.OrgnlTxId, returnId = request.ReturnId, msgId = request.MsgId },
+                                coreBankDecision = new { status = cbResult.Status, reason = cbResult.Reason },
+                                reconciliationState = "Open"
+                            };
+                            await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, ct);
                         }
                         return _signer.SignEnvelope(rspReject);
                     }
                 }
             }
+            catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+            {
+                // [FIX 2]: CoreBank timeout — matching pacs.008 handler pattern
+                _logger.LogWarning(ex, "[{CorrelationId}] CoreBank callback timed out for Return TxId {TxId} (>{Timeout}s). Rejecting for safety.", cid, request.OrgnlTxId, _core.CoreBankTimeoutSeconds);
+                response.Status = RJCT;
+                response.Reason = "System Unavailable";
+                response.AdditionalInfo = "CoreBank response exceeded internal SLA.";
+                var rspTimeout = ReturnPaymentResponseBuilder.Build(response);
+                if (record != null)
+                {
+                    await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspTimeout, dbCt);
+
+                    var ev = new
+                    {
+                        schemaVersion = 1,
+                        eventId = Guid.NewGuid(),
+                        actor = "System",
+                        @event = "ReturnCoreBankTimeout",
+                        timestampUtc = DateTimeOffset.UtcNow,
+                        correlation = new { transactionId = request.OrgnlTxId, returnId = request.ReturnId, msgId = request.MsgId },
+                        coreBank = new { timeoutSeconds = _core.CoreBankTimeoutSeconds },
+                        reconciliationState = "Open"
+                    };
+                    await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, ct);
+                }
+                return _signer.SignEnvelope(rspTimeout);
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[{CorrelationId}] Error communicating with CoreBank for Return {TxId}. Proceeding with default flow.", cid, request.OrgnlTxId);
-                // Fallback: Proceed to accept locally if CoreBank fails (don't block return on transient CB errors)
+                // [FIX 1]: Unified failure policy — RJCT on CoreBank connectivity failure (matching pacs.008 handler)
+                _logger.LogError(ex, "[{CorrelationId}] Failed to call CoreBank for Return {TxId} (Connectivity issue). Rejecting for safety.", cid, request.OrgnlTxId);
+                response.Status = RJCT;
+                response.Reason = "System Unavailable";
+                response.AdditionalInfo = "Failed to reach CoreBank for authorization.";
+                var rspErr = ReturnPaymentResponseBuilder.Build(response);
+                if (record != null)
+                {
+                    await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspErr, dbCt);
+                }
+                return _signer.SignEnvelope(rspErr);
             }
         }
 
