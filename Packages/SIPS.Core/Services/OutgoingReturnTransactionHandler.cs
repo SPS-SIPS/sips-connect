@@ -13,6 +13,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using SIPS.Core.Services.Metrics;
 using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 public sealed class OutgoingReturnTransactionHandler(
@@ -44,6 +45,7 @@ public sealed class OutgoingReturnTransactionHandler(
     private readonly CoreOptions _core = coreOptions.Value;
     public async Task<Response<ReturnPaymentResponseDto>> HandleAsync(ReturnPaymentRequestDto message, CancellationToken ct)
     {
+        using var _totalTrack = SipsMetrics.TrackStep("Outgoing", "Return", "Total");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         // Step 0: Enforce ReturnId as the sovereign anchor (Delta 2)
@@ -140,13 +142,26 @@ public sealed class OutgoingReturnTransactionHandler(
 
             // Step 4: Build, sign, and persist outgoing return request
             originalMessage.ReturnId = message.ReturnId;
-            var (document, bizMsgIdr, type, msgId) = BuildRequest(transaction, fromBIC, message.ReturnId, reason: message.Reason, additionalInfo: message.AdditionalInfo);
-            var signed = _signer.SignEnvelope(document);
-            var entity = CreateISOMessage(message, transaction, fromBIC, txId, signed, msgId, type, bizMsgIdr);
-            var record = await _persistence.RecordISOMessageAsync(entity, dbCt);
+            ISOMessage entity;
+            using (SipsMetrics.TrackStep("Outgoing", "Return", "BuildAndSign"))
+            {
+                var (document, bizMsgIdr, type, msgId) = BuildRequest(transaction, fromBIC, message.ReturnId, reason: message.Reason, additionalInfo: message.AdditionalInfo);
+                var signed = _signer.SignEnvelope(document);
+                entity = CreateISOMessage(message, transaction, fromBIC, txId, signed, msgId, type, bizMsgIdr);
+            }
+            
+            ISOMessage record;
+            using (SipsMetrics.TrackStep("Outgoing", "Return", "DbSave"))
+            {
+                record = await _persistence.RecordISOMessageAsync(entity, dbCt);
+            }
 
             // Step 5: Call IPS and handle response
-            var responseMessage = await CallSIPSAsync(url, signed, ct, cid);
+            Response<string> responseMessage;
+            using (SipsMetrics.TrackStep("Outgoing", "Return", "SipsCall"))
+            {
+                responseMessage = await CallSIPSAsync(url, entity.Message != null ? Encoding.UTF8.GetString(entity.Message) : string.Empty, ct, cid);
+            }
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, originalMessage, responseMessage, dbCt, cid);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;

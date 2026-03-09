@@ -21,6 +21,7 @@ using SIPS.Core.Services.Callback;
 using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
+using SIPS.Core.Services.Metrics;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 using static SIPS.Core.Constants;
@@ -85,6 +86,7 @@ public sealed class IncomingVerificationHandler(
 
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
+        using var _totalTrack = SipsMetrics.TrackStep("Incoming", "Verification", "Total");
         var sw = System.Diagnostics.Stopwatch.StartNew();
         string path = "Normal";
         var cid = _correlation.Create();
@@ -105,16 +107,21 @@ public sealed class IncomingVerificationHandler(
         try
         {
             // Step 1: Verify signature and parse message via helper
-            var (isValid, parsedRequest) = await _inbound.VerifyAndParseAsync(
-                message,
-                (xml) =>
-                {
-                    if (!_parser.TryParse(xml, out var req)) return (false, (PayeeVerificationBuilder.Request?)null);
-                    return (true, req);
-                },
-                gct,
-                cid);
-            request = parsedRequest; // Assign to outer scope variable
+            bool isValid = false;
+            using (SipsMetrics.TrackStep("Incoming", "Verification", "ParsingAndSignature"))
+            {
+                var (valid, parsedRequest) = await _inbound.VerifyAndParseAsync(
+                    message,
+                    (xml) =>
+                    {
+                        if (!_parser.TryParse(xml, out var req)) return (false, (PayeeVerificationBuilder.Request?)null);
+                        return (true, req);
+                    },
+                    gct,
+                    cid);
+                isValid = valid;
+                request = parsedRequest; // Assign to outer scope variable
+            }
 
             if (!isValid || request == null)
             {
@@ -123,7 +130,7 @@ public sealed class IncomingVerificationHandler(
                 var err = AdminMessageBuilder.Generate(
                     SIPS.ISO20022.Helpers.AdminRejectReasonCodes.InvalidXML, 
                     "Failed to verify the signature or parse the message.", 
-                    parsedRequest?.SIPSRequestId);
+                    request?.SIPSRequestId);
                 return _signer.SignEnvelope(err);
             }
 
@@ -140,21 +147,25 @@ public sealed class IncomingVerificationHandler(
             }
             
             // Step 3: Record incoming message (INSERT-First)
-            var recordResult = await _isoService.TryRecordIncomingVerificationAsync(
-                new ISOMessage
-                {
-                    MessageType = ISOMessageType.VerificationRequest,
-                    Date = System.DateTimeOffset.Now.ToUniversalTime(),
-                    FromBIC = request.From,
-                    ToBIC = request.To,
-                    Message = Encoding.UTF8.GetBytes(message),
-                    Status = TransactionStatus.Pending,
-                    BizMsgIdr = request.BizMsgIdr,
-                    MsgDefIdr = request.MsgDefIdr,
-                    MsgId = request.MsgId,
-                    TxId = request.MsgId,
-                    UETR = request.MsgId // Proxy UETR
-                }, gct);
+            (ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string duplicateBy) recordResult;
+            using (SipsMetrics.TrackStep("Incoming", "Verification", "DbSave"))
+            {
+                recordResult = await _isoService.TryRecordIncomingVerificationAsync(
+                    new ISOMessage
+                    {
+                        MessageType = ISOMessageType.VerificationRequest,
+                        Date = System.DateTimeOffset.Now.ToUniversalTime(),
+                        FromBIC = request.From,
+                        ToBIC = request.To,
+                        Message = Encoding.UTF8.GetBytes(message),
+                        Status = TransactionStatus.Pending,
+                        BizMsgIdr = request.BizMsgIdr,
+                        MsgDefIdr = request.MsgDefIdr,
+                        MsgId = request.MsgId,
+                        TxId = request.MsgId,
+                        UETR = request.MsgId // Proxy UETR
+                    }, gct);
+            }
 
             isoMessage = recordResult.record;
             var outcome = recordResult.outcome;
@@ -298,17 +309,21 @@ public sealed class IncomingVerificationHandler(
             using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(gct);
             coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
 
-            var responseMessage = await _callbacks.SendJsonAsync(
-                _callbackLinks.Verification!,
-                headers,
-                dto,
-                CB_VerificationRequest,
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                coreBankCts.Token, // Use bounded token
-                cid);
+            SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? responseMessage = null;
+            using (SipsMetrics.TrackStep("Incoming", "Verification", "CoreBankCall"))
+            {
+                responseMessage = await _callbacks.SendJsonAsync(
+                    _callbackLinks.Verification!,
+                    headers,
+                    dto,
+                    CB_VerificationRequest,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    coreBankCts.Token, // Use bounded token
+                    cid);
+            }
 
             _logger.LogInformation("[IncomingVerificationHandler] Callback for ReqId={ReqId} returned StatusCode={StatusCode}", request.SIPSRequestId, responseMessage?.StatusCode);
             if (responseMessage != null && responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
