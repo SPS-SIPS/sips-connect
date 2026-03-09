@@ -290,7 +290,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             if (isoMessage.Status == TransactionStatus.ReadyForReturn)
             {
                 _logger.LogInformation("[{CorrelationId}] pacs.002 confirms incoming return (Type=ReturnRequest) for TxId {TxId}. Calling CoreBank to reverse credit.", cid, request.TxId);
-                response = await CallCoreBankReturnAsync(isoMessage, transaction, statusReq, response, ct, cid, dbCt);
+                response = await CallCoreBankReturnAsync(isoMessage, transaction, statusReq, response, ct, cid);
 
                 // Build and persist final response
                 response.TxId = statusReq.OrgnlTxId ?? response.TxId;
@@ -300,7 +300,8 @@ public sealed class IncomingPaymentStatusReportHandler(
                 // Status already set by CallCoreBankReturnAsync
                 using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
                 {
-                    await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return completed", isoMessage.AdditionalInfo, rspReturn, dbCt);
+                    using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                    await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return completed", isoMessage.AdditionalInfo, rspReturn, updateCts.Token);
                 }
                 return _signer.SignEnvelope(rspReturn);
             }
@@ -316,7 +317,8 @@ public sealed class IncomingPaymentStatusReportHandler(
                 var rspGeneric = PaymentStatusRequestResponseBuilder.Build(response);
                 using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
                 {
-                    await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return Status Mismatch", isoMessage.AdditionalInfo, rspGeneric, dbCt);
+                    using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                    await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return Status Mismatch", isoMessage.AdditionalInfo, rspGeneric, updateCts.Token);
                 }
                 return _signer.SignEnvelope(rspGeneric);
             }
@@ -347,7 +349,8 @@ public sealed class IncomingPaymentStatusReportHandler(
             // Persist status record to maintain audit trail (idempotent)
             using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
             {
-                await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, response.Reason, response.AdditionalInfo, rspMirror, dbCt);
+                using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, response.Reason, response.AdditionalInfo, rspMirror, updateCts.Token);
             }
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] NonPending response: {Response}", rspMirror);
             var signedMirror = _signer.SignEnvelope(rspMirror);
@@ -407,8 +410,9 @@ public sealed class IncomingPaymentStatusReportHandler(
                      isoMessage.CoreBankResponse = JsonSerializer.Serialize(rejectResult, _jsonSerializerOptions);
                      using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
                      {
+                         using var localCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
                          await _isoService.PersistResponseAsync(isoMessage, isoMessage.Status, isoMessage.Reason ?? "", isoMessage.AdditionalInfo, 
-                            isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "", ct);
+                            isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "", localCts.Token);
                      }
                 }
                 
@@ -429,7 +433,8 @@ public sealed class IncomingPaymentStatusReportHandler(
 
             using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
             {
-                await _isoService.PersistStatusResponseAsync(record, rjctChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, dbCt);
+                using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                await _isoService.PersistStatusResponseAsync(record, rjctChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, updateCts.Token);
             }
             var signedRej = _signer.SignEnvelope(rspRej);
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning RJCT signed response: {Signed}", signedRej);
@@ -734,7 +739,8 @@ public sealed class IncomingPaymentStatusReportHandler(
         string currentResponseXml = isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "";
         using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
         {
-            await _isoService.PersistResponseAsync(isoMessage, parentStatus, reason, additionalInfo, currentResponseXml, dbCt);
+            using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            await _isoService.PersistResponseAsync(isoMessage, parentStatus, reason, additionalInfo, currentResponseXml, updateCts.Token);
         }
 
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] tx is null? {IsNull}", tx == null);
@@ -786,13 +792,14 @@ public sealed class IncomingPaymentStatusReportHandler(
         // Persist with consistent status: both parent and child reflect the same status
         using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
         {
+            using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             await _isoService.PersistStatusResponseAsync(
                 record,
                     childStatus,
                     isoMessage.Reason,
                     isoMessage.AdditionalInfo,
                     rspFinal,
-                    dbCt);
+                    updateCts.Token);
         }
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Final response: {Response}", rspFinal);
             var signedFinal = _signer.SignEnvelope(rspFinal);
@@ -811,8 +818,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         PaymentStatusRequestBuilder.Request statusReq,
         PaymentStatusRequestResponseBuilder.Response response,
         CancellationToken ct,
-        string cid,
-        CancellationToken dbCt)
+        string cid)
     {
         // Default to ACSC (Success/Completed) unless CoreBank explicitly rejects or fails in a way we map to failure
         response.Status = ACSC;

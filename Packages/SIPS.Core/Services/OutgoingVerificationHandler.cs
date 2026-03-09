@@ -118,13 +118,17 @@ public sealed class OutgoingVerificationHandler(
             {
                 responseMessage = await _sips.SendAsync(url, signedRequest, ct, cid);
             }
+            
+            using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            var updateCt = updateCts.Token;
+            
             record.Response = Encoding.UTF8.GetBytes(responseMessage.Data ?? "");
 
             // Step 5: Validate the IPS response
             if (!responseMessage.IsSuccess || string.IsNullOrEmpty(responseMessage.Data))
             {
                 var failedStatus = _statusOrchestrator.MapSingleStatus("RJCT", "IPS");
-                await PersistISOMessageAsync(record, failedStatus, "Failed to receive valid response from IPS", responseMessage.Message, responseMessage.Data ?? string.Empty, dbCt);
+                await PersistISOMessageAsync(record, failedStatus, "Failed to receive valid response from IPS", responseMessage.Message, responseMessage.Data ?? string.Empty, updateCt);
                 return Response<VerificationResponseDto>.Fail(Transformers.TransformSIPSHttpError(responseMessage.StatusCode), responseMessage.StatusCode);
             }
 
@@ -133,7 +137,7 @@ public sealed class OutgoingVerificationHandler(
             if (!ok)
             {
                 var failedStatus = _statusOrchestrator.MapSingleStatus(RJCT, "IPS");
-                await PersistISOMessageAsync(record, failedStatus, "Failed to verify the signature from IPS", "Signature verification failed", responseMessage.Data, dbCt);
+                await PersistISOMessageAsync(record, failedStatus, "Failed to verify the signature from IPS", "Signature verification failed", responseMessage.Data, updateCt);
                 _logger.LogWarning("[{CorrelationId}] Failed to verify the IPS response signature: {Verbose}", cid, verbose);
                 return Response<VerificationResponseDto>.Fail("Failed to verify the signature from IPS.", System.Net.HttpStatusCode.BadRequest);
             }
@@ -146,7 +150,7 @@ public sealed class OutgoingVerificationHandler(
             var statusCode = parsedResponse.Verified ? SUCC : MISS;
             var finalStatus = _statusOrchestrator.MapSingleStatus(statusCode, "IPS");
 
-            await PersistISOMessageAsync(record, finalStatus, parsedResponse.Reason ?? string.Empty, parsedResponse.VerificationId ?? string.Empty, responseMessage.Data, dbCt);
+            await PersistISOMessageAsync(record, finalStatus, parsedResponse.Reason ?? string.Empty, parsedResponse.VerificationId ?? string.Empty, responseMessage.Data, updateCt);
 
             // Step 8: Return success response
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto

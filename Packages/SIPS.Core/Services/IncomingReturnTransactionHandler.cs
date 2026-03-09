@@ -296,7 +296,8 @@ public sealed class IncomingReturnTransactionHandler(
                         // to allow for downstream/manual resolution or waiting for switch confirmation (if applicable).
                         if (record != null)
                         {
-                            await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspReject, dbCt);
+                            using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                            await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspReject, updateCts.Token);
 
                             // [FIX 3]: Audit ledger event for PDNG status divergence
                             var ev = new
@@ -310,7 +311,7 @@ public sealed class IncomingReturnTransactionHandler(
                                 coreBankDecision = new { status = cbResult.Status, reason = cbResult.Reason },
                                 reconciliationState = "Open"
                             };
-                            await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, ct);
+                            await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, updateCts.Token);
                         }
                         return _signer.SignEnvelope(rspReject);
                     }
@@ -326,7 +327,8 @@ public sealed class IncomingReturnTransactionHandler(
                 var rspTimeout = ReturnPaymentResponseBuilder.Build(response);
                 if (record != null)
                 {
-                    await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspTimeout, dbCt);
+                    using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                    await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspTimeout, updateCts.Token);
 
                     var ev = new
                     {
@@ -339,7 +341,7 @@ public sealed class IncomingReturnTransactionHandler(
                         coreBank = new { timeoutSeconds = _core.CoreBankTimeoutSeconds },
                         reconciliationState = "Open"
                     };
-                    await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, ct);
+                    await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, updateCts.Token);
                 }
                 return _signer.SignEnvelope(rspTimeout);
             }
@@ -353,7 +355,8 @@ public sealed class IncomingReturnTransactionHandler(
                 var rspErr = ReturnPaymentResponseBuilder.Build(response);
                 if (record != null)
                 {
-                    await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspErr, dbCt);
+                    using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                    await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspErr, updateCts.Token);
                 }
                 return _signer.SignEnvelope(rspErr);
             }
@@ -366,12 +369,13 @@ public sealed class IncomingReturnTransactionHandler(
             _logger.LogInformation("[{CorrelationId}] Marking original transaction {TxId} as ReadyForReturn with ReturnId {ReturnId}",
                 cid, request.OrgnlTxId, request.ReturnId);
 
+            using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             // Update original message status to ReadyForReturn and store ReturnId
             originalMessage.Status = TransactionStatus.ReadyForReturn;
             originalMessage.ReturnId = request.ReturnId; // Store ReturnId for audit trail
             originalMessage.Reason = "Return received - awaiting confirm";
             originalMessage.AdditionalInfo = $"Return requested with ReturnId: {request.ReturnId}";
-            await _persistence.ISOMessageResponseAsync(originalMessage, dbCt);
+            await _persistence.ISOMessageResponseAsync(originalMessage, updateCts.Token);
 
             // Build ACSC acknowledgment response
             response.Status = ACSC;
@@ -384,7 +388,7 @@ public sealed class IncomingReturnTransactionHandler(
             // Persist return message as ReadyForReturn (not final status yet)
             if (record != null)
             {
-                await _isoService.PersistReturnResponseAsync(record, ACSC, response.Reason ?? ACSC, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+                await _isoService.PersistReturnResponseAsync(record, ACSC, response.Reason ?? ACSC, response.AdditionalInfo ?? string.Empty, rsp, updateCts.Token);
             }
 
             return _signer.SignEnvelope(rsp);
@@ -398,7 +402,8 @@ public sealed class IncomingReturnTransactionHandler(
             var rsp = ReturnPaymentResponseBuilder.Build(response);
             if (record != null)
             {
-                await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, dbCt);
+                using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                await _isoService.PersistReturnResponseAsync(record, response.Status ?? RJCT, response.Reason ?? MISS, response.AdditionalInfo ?? string.Empty, rsp, updateCts.Token);
             }
             return _signer.SignEnvelope(rsp);
         }

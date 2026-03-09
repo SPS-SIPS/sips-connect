@@ -69,10 +69,10 @@ public sealed class OutgoingTransactionStatusHandler(
 
         try
         {
-            using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-            var dbCt = dbCts.Token;
+            using var initialDbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            var initialDbCt = initialDbCts.Token;
             // Step 1: Retrieve ISO message by TxId (with transactions for richer context)
-            var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(message.TxId, dbCt);
+            var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(message.TxId, initialDbCt);
             _logger.LogInformation("[{CorrelationId}] Retrieved ISO message: {ISOMessage}", cid, JsonSerializer.Serialize(isoMessage, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -115,7 +115,7 @@ public sealed class OutgoingTransactionStatusHandler(
             ISOMessageStatus record;
             using (SipsMetrics.TrackStep("Outgoing", "Status", "DbSave"))
             {
-                record = await CreateISOMessageAsync(signed, isoMessage, dbCt);
+                record = await CreateISOMessageAsync(signed, isoMessage, initialDbCt);
             }
 
             // Step 3: Call SIPS and handle response
@@ -124,7 +124,7 @@ public sealed class OutgoingTransactionStatusHandler(
             {
                 responseMessage = await _sips.SendAsync(url, signed, ct, cid);
             }
-            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, isoMessage, responseMessage, dbCt, cid);
+            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, isoMessage, responseMessage, ct, cid);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
 
@@ -132,7 +132,8 @@ public sealed class OutgoingTransactionStatusHandler(
             if (!TryParse(responseMessage?.Data!, out var rs) || rs == null)
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse IPS status response: {message}", cid, responseMessage?.Data ?? "");
-                await _isoService.MarkForCheckStatusAsync(isoMessage, "Failed to parse IPS status response", dbCt);
+                using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                await _isoService.MarkForCheckStatusAsync(isoMessage, "Failed to parse IPS status response", updateCts.Token);
 
                 // Return PDNG for SAF - will retry on next run
                 return Response<PaymentResponseDto>.Success(new PaymentResponseDto
@@ -198,7 +199,7 @@ public sealed class OutgoingTransactionStatusHandler(
                         if (finalStatus == TransactionStatus.Success)
                         {
                             _logger.LogInformation("[{CorrelationId}] SAF resolved status for INCOMING transaction {TxId}. IncludeCoreBankOnListing=false, sending Transfer Request (Late Binding).", cid, isoMessage.TxId);
-                            var transferSuccess = await CallCoreBankTransferAsync(isoMessage, ct, cid, dbCt);
+                            var transferSuccess = await CallCoreBankTransferAsync(isoMessage, ct, cid);
 
                             if (!transferSuccess)
                             {
@@ -263,7 +264,7 @@ public sealed class OutgoingTransactionStatusHandler(
 
                 // Call CoreBank to reverse the credit
                 // This is the SAF fallback path for incoming return completion when pacs.002 was delayed/missing
-                var returnCompleted = await CallCoreBankReturnAsync(isoMessage, ct, cid, dbCt);
+                var returnCompleted = await CallCoreBankReturnAsync(isoMessage, ct, cid);
 
                 if (!returnCompleted)
                 {
@@ -274,7 +275,8 @@ public sealed class OutgoingTransactionStatusHandler(
                     isoMessage.AdditionalInfo = "Manual intervention required to complete return";
 
                     // Update the persisted status
-                    await _persistence.ISOMessageStatusResponseAsync(record, dbCt);
+                    using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                    await _persistence.ISOMessageStatusResponseAsync(record, updateCts.Token);
                 }
                 else
                 {
@@ -347,10 +349,11 @@ public sealed class OutgoingTransactionStatusHandler(
             var statusDescription = responseMessage?.StatusCode.ToString() ?? "Connection Error";
             _logger.LogWarning("[{CorrelationId}] IPS status request timeout/connection error - marking for SAF retry. Status: {Status}",
                 correlationId, statusDescription);
+            using var localDbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             await _isoService.MarkForCheckStatusAsync(
                 isoMessage,
                 $"IPS status request timeout/connection error: {statusDescription}",
-                ct);
+                localDbCts.Token);
             return Response<PaymentResponseDto>.Fail(
                 "Request to IPS timed out or connection error - transaction marked for retry",
                 responseMessage?.StatusCode ?? System.Net.HttpStatusCode.InternalServerError);
@@ -388,10 +391,11 @@ public sealed class OutgoingTransactionStatusHandler(
         if (!ok)
         {
             _logger.LogWarning("[{CorrelationId}] Failed to verify IPS status signature: {Verbose}. Marking for SAF status check retry.", correlationId, verbose);
+            using var localDbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             await _isoService.MarkForCheckStatusAsync(
                 isoMessage,
                 "Failed to verify IPS signature on status response",
-                ct);
+                localDbCts.Token);
             
             // Return PDNG instead of FAIL - request reached IPS, but status response signature is suspect.
             // SAF will retry the status inquiry on the next run.
@@ -461,8 +465,7 @@ public sealed class OutgoingTransactionStatusHandler(
     private async Task<bool> CallCoreBankReturnAsync(
         ISOMessage isoMessage,
         CancellationToken ct,
-        string cid,
-        CancellationToken dbCt)
+        string cid)
     {
         try
         {
@@ -677,8 +680,7 @@ public sealed class OutgoingTransactionStatusHandler(
     private async Task<bool> CallCoreBankTransferAsync(
         ISOMessage isoMessage,
         CancellationToken ct,
-        string cid,
-        CancellationToken dbCt)
+        string cid)
     {
         try
         {
