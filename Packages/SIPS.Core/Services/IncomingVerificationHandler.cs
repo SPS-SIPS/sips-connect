@@ -96,9 +96,6 @@ public sealed class IncomingVerificationHandler(
         globalCts.CancelAfter(TimeSpan.FromSeconds(_core.CallbackInternalBudgetSeconds > 0 ? _core.CallbackInternalBudgetSeconds : 9));
         var gct = globalCts.Token;
 
-        using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-        var dbCt = dbCts.Token;
-
         // Initialize response object early for emergency responses
         PayeeVerificationResponseBuilder.Request? response = null;
         PayeeVerificationBuilder.Request? request = null;
@@ -352,7 +349,8 @@ public sealed class IncomingVerificationHandler(
             var finalStatus = path == "CoreBankTimeout" ? TransactionStatus.CheckStatus : (response.Verified ? TransactionStatus.Success : TransactionStatus.Failed);
             
             // [GOLD PATTERN]: Persist-Before-Return
-            await _isoService.PersistResponseAsync(isoMessage!, finalStatus, response.Reason, response.AdditionalInfo, signedRsp, dbCt);
+            using var localDbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            await _isoService.PersistResponseAsync(isoMessage!, finalStatus, response.Reason, response.AdditionalInfo, signedRsp, localDbCts.Token);
             
             await _isoService.AppendAuditLedgerEventAsync(isoMessage!.Id, new { 
                 @event = "VerificationBusinessResponsePersisted", 

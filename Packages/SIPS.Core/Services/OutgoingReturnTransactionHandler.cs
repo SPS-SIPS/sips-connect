@@ -162,7 +162,11 @@ public sealed class OutgoingReturnTransactionHandler(
             {
                 responseMessage = await CallSIPSAsync(url, entity.Message != null ? Encoding.UTF8.GetString(entity.Message) : string.Empty, ct, cid);
             }
-            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, originalMessage, responseMessage, dbCt, cid);
+            
+            using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            var updateCt = updateCts.Token;
+            
+            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, originalMessage, responseMessage, updateCt, cid);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;
 
@@ -171,7 +175,7 @@ public sealed class OutgoingReturnTransactionHandler(
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse IPS return response: {message}", cid, responseMessage.Data);
-                await _isoService.MarkForCheckStatusAsync(originalMessage, "Failed to parse IPS return response", dbCt);
+                await _isoService.MarkForCheckStatusAsync(originalMessage, "Failed to parse IPS return response", updateCt);
                 return Response<ReturnPaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
             _logger.LogDebug("[{CorrelationId}] Parsed response from IPS: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
@@ -191,7 +195,7 @@ public sealed class OutgoingReturnTransactionHandler(
             record.TxId = rs.TxId ?? string.Empty;
             record.EndToEndId = rs.Original?.OriginalEndToEnd ?? string.Empty;
 
-            await _persistence.ISOMessageResponseAsync(record, dbCt);
+            await _persistence.ISOMessageResponseAsync(record, updateCt);
 
             // Update original transaction to reflect return status
             if (finalStatus == PostgreSQL.Enums.TransactionStatus.Success)
@@ -212,7 +216,7 @@ public sealed class OutgoingReturnTransactionHandler(
                     cid, message.OriginalTxId, message.ReturnId, rs.Reason);
             }
 
-            await _persistence.ISOMessageResponseAsync(originalMessage, dbCt);
+            await _persistence.ISOMessageResponseAsync(originalMessage, updateCt);
 
             // Step 7: Return success response
             return Response<ReturnPaymentResponseDto>.Success(new ReturnPaymentResponseDto

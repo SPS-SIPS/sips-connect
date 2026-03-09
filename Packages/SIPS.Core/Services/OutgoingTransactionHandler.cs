@@ -83,7 +83,11 @@ public sealed class OutgoingTransactionHandler(
             {
                 responseMessage = await _sips.SendAsync(url, signed, ct, cid);
             }
-            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, dbCt, cid);
+            
+            using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+            var updateCt = updateCts.Token;
+
+            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, updateCt, cid);
             // If handler returns a response (error or PDNG), return it immediately
             // Only continue if we got a valid parseable response (indicated by ACSC dummy status)
             if (!responseMessageStatus.IsSuccess || responseMessageStatus.Data?.Status == PDNG)
@@ -95,7 +99,7 @@ public sealed class OutgoingTransactionHandler(
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse IPS response: {message}", cid, responseMessage.Data);
-                await _isoService.MarkForCheckStatusAsync(record, "Failed to parse IPS response", dbCt);
+                await _isoService.MarkForCheckStatusAsync(record, "Failed to parse IPS response", updateCt);
 
                 // Return PDNG instead of FAIL - IPS received the request but response is invalid
                 // SAF will check the actual status later
@@ -124,7 +128,7 @@ public sealed class OutgoingTransactionHandler(
             record.Reason = rs.Reason ?? string.Empty;
             record.AdditionalInfo = rs.AdditionalInfo ?? string.Empty;
 
-            await _persistence.ISOMessageResponseAsync(record, dbCt);
+            await _persistence.ISOMessageResponseAsync(record, updateCt);
 
             // Step 4: Return final status to caller
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
