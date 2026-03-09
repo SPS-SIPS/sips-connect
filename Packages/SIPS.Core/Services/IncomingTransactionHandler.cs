@@ -16,6 +16,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
+using SIPS.Core.Services.Metrics;
 using SIPS.PostgreSQL.Enums;
 using System.Text.Json.Nodes;
 using SIPS.ISO20022.Models.DTOs;
@@ -141,6 +142,7 @@ public sealed class IncomingTransactionHandler(
     }
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
+        using var _totalTrack = SipsMetrics.TrackStep("Incoming", "Transaction", "Total");
         var sw = System.Diagnostics.Stopwatch.StartNew();
         string path = "Normal";
         string cid = _correlation.Create();
@@ -155,16 +157,21 @@ public sealed class IncomingTransactionHandler(
         try
         {
             // Step 1: Verify signature and parse message via helper
-            var (isValid, parsedRequest) = await _inbound.VerifyAndParseAsync(
-                message,
-                (xml) =>
-                {
-                    if (!_parser.TryParse(xml, out var req)) return (false, (PaymentRequestBuilder.Request?)null);
-                    return (true, req);
-                },
-                gct,
-                cid);
-            request = parsedRequest;
+            bool isValid = false;
+            using (SipsMetrics.TrackStep("Incoming", "Transaction", "ParsingAndSignature"))
+            {
+                var (valid, parsedRequest) = await _inbound.VerifyAndParseAsync(
+                    message,
+                    (xml) =>
+                    {
+                        if (!_parser.TryParse(xml, out var req)) return (false, (PaymentRequestBuilder.Request?)null);
+                        return (true, req);
+                    },
+                    gct,
+                    cid);
+                isValid = valid;
+                request = parsedRequest;
+            }
             if (!isValid || request == null)
             {
                 path = "ParseFail";
@@ -190,9 +197,13 @@ public sealed class IncomingTransactionHandler(
             }
 
             // Step 2: [GOLD PATTERN] INSERT-First De-duplication
-            var tryRecordResult = await _isoService.TryRecordIncomingTransactionAsync(request, message, gct);
-            record = tryRecordResult.Message;
-            bool isNew = tryRecordResult.IsNew;
+            bool isNew = false;
+            using (SipsMetrics.TrackStep("Incoming", "Transaction", "DbSave"))
+            {
+                var tryRecordResult = await _isoService.TryRecordIncomingTransactionAsync(request, message, gct);
+                record = tryRecordResult.Message;
+                isNew = tryRecordResult.IsNew;
+            }
 
             if (record == null)
             {
@@ -316,18 +327,22 @@ public sealed class IncomingTransactionHandler(
                         using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(gct);
                         coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
 
-                        var result = await _callbacks.SendJsonAsync(
-                            _callbackLinks.Transfer!,
-                            headers,
-                            dto,
-                            CB_PaymentRequest,
-                            _jsonAdapter,
-                            _correlation,
-                            _jsonSerializerOptions,
-                            _callback,
-                            coreBankCts.Token,
-                            cid
-                        );
+                        SIPS.ISO20022.Models.DTOs.Response<System.Text.Json.Nodes.JsonObject?>? result = null;
+                        using (SipsMetrics.TrackStep("Incoming", "Transaction", "CoreBankCall"))
+                        {
+                            result = await _callbacks.SendJsonAsync(
+                                _callbackLinks.Transfer!,
+                                headers,
+                                dto,
+                                CB_PaymentRequest,
+                                _jsonAdapter,
+                                _correlation,
+                                _jsonSerializerOptions,
+                                _callback,
+                                coreBankCts.Token,
+                                cid
+                            );
+                        }
 
                         if (result?.Data != null)
                         {

@@ -1,4 +1,5 @@
 using Serilog;
+using Prometheus;
 using Microsoft.AspNetCore.RateLimiting;
 using static SIPS.Connect.Config.DI;
 using static SIPS.Connect.Extensions.InitializerExtensions;
@@ -51,9 +52,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseRateLimiter();
 app.UseRouting();
+app.UseHttpMetrics();
 
 app.UseCors("default");
 
+app.MapMetrics();
 app.MapControllers();
 app.UseAuthentication();
 app.UseAuthorization();

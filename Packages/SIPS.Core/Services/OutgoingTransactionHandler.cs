@@ -12,6 +12,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using SIPS.Core.Services.Metrics;
 using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 public sealed class OutgoingTransactionHandler(
@@ -39,6 +40,7 @@ public sealed class OutgoingTransactionHandler(
     private readonly CoreOptions _core = coreOptions.Value;
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
+        using var _totalTrack = SipsMetrics.TrackStep("Outgoing", "Transaction", "Total");
         _logger.LogInformation("Processing Outgoing Transaction Request");
         _logger.LogDebug("[OutgoingTransactionHandler] HandleAsync start");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
@@ -52,10 +54,14 @@ public sealed class OutgoingTransactionHandler(
         try
         {
             // Step 1: Build, sign, and persist outgoing transaction request as Pending
-            var (document, bizMsgIdr, type, msgId) = BuildRequest(message, fromBIC, ourAgentBic, txId);
-            _logger.LogDebug("[OutgoingTransactionHandler] after BuildRequest");
-            var signed = _signer.SignEnvelope(document);
-            _logger.LogDebug("[OutgoingTransactionHandler] after SignEnvelope");
+            string document, bizMsgIdr, type, msgId, signed;
+            using (SipsMetrics.TrackStep("Outgoing", "Transaction", "BuildAndSign"))
+            {
+                (document, bizMsgIdr, type, msgId) = BuildRequest(message, fromBIC, ourAgentBic, txId);
+                _logger.LogDebug("[OutgoingTransactionHandler] after BuildRequest");
+                signed = _signer.SignEnvelope(document);
+                _logger.LogDebug("[OutgoingTransactionHandler] after SignEnvelope");
+            }
             var entity = CreateISOMessage(message, fromBIC, ourAgentBic, txId, signed, bizMsgIdr, type, msgId);
             // Set initial status as Pending - completion will be determined by pacs.002
             entity.Status = PostgreSQL.Enums.TransactionStatus.Pending;
@@ -63,11 +69,20 @@ public sealed class OutgoingTransactionHandler(
             using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
             _logger.LogDebug("[OutgoingTransactionHandler] before persist - dbCt.CanBeCanceled={CanBeCanceled} IsCancellationRequested={IsCanceled}", dbCt.CanBeCanceled, dbCt.IsCancellationRequested);
-            var record = await _persistence.RecordISOMessageAsync(entity, dbCt);
+            
+            SIPS.PostgreSQL.Models.ISOMessage record;
+            using (SipsMetrics.TrackStep("Outgoing", "Transaction", "DbSave"))
+            {
+                record = await _persistence.RecordISOMessageAsync(entity, dbCt);
+            }
             _logger.LogDebug("[OutgoingTransactionHandler] after persist");
 
             // Step 2: Call SIPS and handle response
-            var responseMessage = await _sips.SendAsync(url, signed, ct, cid);
+            SIPS.ISO20022.Models.DTOs.Response<string> responseMessage;
+            using (SipsMetrics.TrackStep("Outgoing", "Transaction", "SipsCall"))
+            {
+                responseMessage = await _sips.SendAsync(url, signed, ct, cid);
+            }
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, responseMessage, dbCt, cid);
             // If handler returns a response (error or PDNG), return it immediately
             // Only continue if we got a valid parseable response (indicated by ACSC dummy status)
