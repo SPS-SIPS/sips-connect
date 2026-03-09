@@ -11,4 +11,5 @@ public class EmvOptions
         public int AcquirerTag { get; set; }
         public int MerchantIdTag { get; set; }
     }
+    public System.Collections.Generic.List<SIPS.Core.Models.AcquirerConfig>? Acquirers { get; set; }
 }
