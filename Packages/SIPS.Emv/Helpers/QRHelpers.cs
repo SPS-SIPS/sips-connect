@@ -62,8 +62,18 @@ public static class QRHelpers
             throw new ArgumentNullException(nameof(data));
         }
 
-        // Check if the QR code is a P2P QR code or a Merchant QR code by checking the presence of the "so.somqr.sSIPS" in tag 26
-        if (data.Contains("so.somqr.sSIPS"))
+        // Check if the QR code is a P2P QR code or a Merchant QR code by using the Payload Format Indicator
+        if (data.StartsWith("000201"))
+        {
+            return "Merchant";
+        }
+        if (data.StartsWith("000202"))
+        {
+            return "P2P";
+        }
+        
+        // Fallback for non-standard beginnings
+        if (data.Contains("so.somqr.sips"))
         {
             return "Merchant";
         }

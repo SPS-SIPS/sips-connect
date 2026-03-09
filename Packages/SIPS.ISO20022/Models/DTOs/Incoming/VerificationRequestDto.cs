@@ -5,4 +5,5 @@ public sealed class VerificationRequestDto
     public string Type { get; set; } = default!;
     public string ToBIC { get; set; } = default!;
     public string? MsgId { get; set; }
+    public string? Code { get; set; }
 }

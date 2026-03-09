@@ -35,6 +35,7 @@ namespace SIPS.Core.Tests.Verification
             var mockCorrelation = new Mock<ICorrelationService>();
             var mockSips = new Mock<ISipsRequestSender>();
             var mockStatus = new Mock<IStatusOrchestrator>();
+            var mockQrCodeParser = new Mock<IQrCodeParserService>();
 
             // Mock correlation
             mockCorrelation.Setup(c => c.Create(It.IsAny<string?[]>())).Returns("corr-id");
@@ -95,7 +96,8 @@ namespace SIPS.Core.Tests.Verification
                 mockCorrelation.Object,
                 mockSips.Object,
                 mockStatus.Object,
-                coreOptions
+                coreOptions,
+                mockQrCodeParser.Object
             );
 
             // Act

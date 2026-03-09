@@ -57,6 +57,7 @@ public static class DI
         });
         services.AddSingleton<ISipsRequestSender, SipsRequestSender>();
         services.AddScoped<IPersistenceGateway, PersistenceGateway>();
+        services.AddScoped<IQrCodeParserService, QrCodeParserService>();
 
         services.AddSingleton(_ =>
         {

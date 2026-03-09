@@ -26,7 +26,8 @@ public sealed class OutgoingVerificationHandler(
     ICorrelationService correlation,
     SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
     SIPS.Core.Services.Abstractions.IStatusOrchestrator statusOrchestrator,
-    IOptions<CoreOptions> coreOptions
+    IOptions<CoreOptions> coreOptions,
+    IQrCodeParserService qrCodeParserService
     ) : IOutgoingVerificationHandler
 {
     private readonly ISO20022Options _configuration = options;
@@ -38,9 +39,27 @@ public sealed class OutgoingVerificationHandler(
     private readonly SIPS.Core.Services.Abstractions.ISipsRequestSender _sips = sips;
     private readonly SIPS.Core.Services.Abstractions.IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
+    private readonly IQrCodeParserService _qrCodeParserService = qrCodeParserService;
 
     public async Task<Response<VerificationResponseDto>> HandleAsync(VerificationRequestDto message, CancellationToken ct)
     {
+        // Parse QR Code if present
+        if (!string.IsNullOrWhiteSpace(message.Code))
+        {
+            try
+            {
+                var qrData = _qrCodeParserService.Parse(message.Code);
+                message.Alias = qrData.AccountId;
+                message.Type = qrData.AccountType;
+                message.ToBIC = qrData.BankBICCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Failed to parse QR Code for verification request: {Error}", ex.Message);
+                return Response<VerificationResponseDto>.Fail($"Invalid QR Code: {ex.Message}", System.Net.HttpStatusCode.BadRequest);
+            }
+        }
+
         // Step 1: Validate configuration and request values
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
