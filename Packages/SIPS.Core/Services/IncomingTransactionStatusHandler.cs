@@ -25,6 +25,7 @@ using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Implementations;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using SIPS.Core.Services.Metrics;
 using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 
@@ -101,17 +102,27 @@ public sealed class IncomingTransactionStatusHandler(
 
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
+        using var _totalTrack = SipsMetrics.TrackStep("Incoming", "Status", "Total");
         var cid = _correlation.Create();
         // Step 1: Verify signature and parse message
-        var (isValid, request) = await _inbound.VerifyAndParseAsync(
-            message,
-            (xml) =>
-            {
-                if (!_parser.TryParse(xml, out var req)) return (false, (PaymentStatusRequestBuilder.Request?)null);
-                return (true, req);
-            },
-            ct,
-            cid);
+        bool isValid = false;
+        PaymentStatusRequestBuilder.Request? request = null;
+
+        using (SipsMetrics.TrackStep("Incoming", "Status", "ParsingAndSignature"))
+        {
+            var (valid, parsedRequest) = await _inbound.VerifyAndParseAsync(
+                message,
+                (xml) =>
+                {
+                    if (!_parser.TryParse(xml, out var req)) return (false, (PaymentStatusRequestBuilder.Request?)null);
+                    return (true, req);
+                },
+                ct,
+                cid);
+            isValid = valid;
+            request = parsedRequest;
+        }
+
         if (!isValid || request == null)
             return AdminMessage.Generate("Failed to verify the signature or parse the message.");
 
@@ -126,7 +137,11 @@ public sealed class IncomingTransactionStatusHandler(
         }
 
         // Step 3: Record the incoming status message
-        var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, SIPS.ISO20022.Enums.Pacs002Role.StatusUpdate, request.MsgId, ct);
+        ISOMessageStatus record;
+        using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+        {
+            record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, SIPS.ISO20022.Enums.Pacs002Role.StatusUpdate, request.MsgId, ct);
+        }
 
         // Step 4: Prepare response object
         var response = _responses.BuildPaymentStatusInitial(request);

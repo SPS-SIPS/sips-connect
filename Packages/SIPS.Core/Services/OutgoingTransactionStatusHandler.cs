@@ -17,6 +17,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using SIPS.Core.Services.Metrics;
 using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 
@@ -61,6 +62,7 @@ public sealed class OutgoingTransactionStatusHandler(
     };
     public async Task<Response<PaymentResponseDto>> HandleAsync(StatusRequestDto message, CancellationToken ct)
     {
+        using var _totalTrack = SipsMetrics.TrackStep("Outgoing", "Status", "Total");
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var cid = _correlation.Create(message.TxId);
@@ -101,14 +103,27 @@ public sealed class OutgoingTransactionStatusHandler(
             }
 
             // Step 2: Build and sign request
-            if (!BuildRequest(fromBIC, isoMessage, message, out var request))
-                return Response<PaymentResponseDto>.Fail("Failed to build the request.", System.Net.HttpStatusCode.BadRequest);
+            string request;
+            using (SipsMetrics.TrackStep("Outgoing", "Status", "BuildAndSign"))
+            {
+                if (!BuildRequest(fromBIC, isoMessage, message, out request))
+                    return Response<PaymentResponseDto>.Fail("Failed to build the request.", System.Net.HttpStatusCode.BadRequest);
+            }
             var signed = _signer.SignEnvelope(request);
             isoMessage.Round++;
-            var record = await CreateISOMessageAsync(signed, isoMessage, dbCt);
+            
+            ISOMessageStatus record;
+            using (SipsMetrics.TrackStep("Outgoing", "Status", "DbSave"))
+            {
+                record = await CreateISOMessageAsync(signed, isoMessage, dbCt);
+            }
 
             // Step 3: Call SIPS and handle response
-            var responseMessage = await _sips.SendAsync(url, signed, ct, cid);
+            Response<string> responseMessage;
+            using (SipsMetrics.TrackStep("Outgoing", "Status", "SipsCall"))
+            {
+                responseMessage = await _sips.SendAsync(url, signed, ct, cid);
+            }
             var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, isoMessage, responseMessage, dbCt, cid);
             if (!responseMessageStatus.IsSuccess)
                 return responseMessageStatus;

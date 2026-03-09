@@ -22,6 +22,8 @@ using SIPS.PostgreSQL.Enums;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 using SIPS.ISO20022.Models.DTOs;
+using SIPS.Core.Services.Metrics;
+using SIPS.PostgreSQL.Models;
 using static SIPS.Core.Constants;
 
 namespace SIPS.Core.Services;
@@ -104,19 +106,29 @@ public sealed class IncomingPaymentStatusReportHandler(
     };
     public async Task<string> HandleAsync(string message, CancellationToken ct)
     {
+        using var _totalTrack = SipsMetrics.TrackStep("Incoming", "Status", "Total");
         var cid = _correlation.Create();
         using var dbCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
         var dbCt = dbCts.Token;
         // Step 1: Verify signature and parse via parser
-        var (isValid, request) = await _inbound.VerifyAndParseAsync<PaymentRequestResponseBuilder.Response>(
-            message,
-            (xml) =>
-            {
-                if (!_reportParser.TryParse(xml, out var req)) return (false, (PaymentRequestResponseBuilder.Response?)null);
-                return (true, req);
-            },
-            ct,
-            cid);
+        bool isValid = false;
+        PaymentRequestResponseBuilder.Response? request = null;
+
+        using (SipsMetrics.TrackStep("Incoming", "Status", "ParsingAndSignature"))
+        {
+            var (valid, parsedRequest) = await _inbound.VerifyAndParseAsync<PaymentRequestResponseBuilder.Response>(
+                message,
+                (xml) =>
+                {
+                    if (!_reportParser.TryParse(xml, out var req)) return (false, (PaymentRequestResponseBuilder.Response?)null);
+                    return (true, req);
+                },
+                ct,
+                cid);
+            isValid = valid;
+            request = parsedRequest;
+        }
+
         if (!isValid || request == null)
             {
                 // Fallback: try to extract simple <TxId>...</TxId> from the message for lightweight tests
@@ -170,7 +182,11 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         // Step 3: Record the incoming status report under parent ISOMessage
         // Gold Pattern: Persist before side-effects with composite de-dup (Role + Status + MsgId)
-        var record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, request.Role, request.MsgId, ct);
+        ISOMessageStatus record;
+        using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+        {
+            record = await _isoService.RecordIncomingStatusAsync(isoMessage, message, request.Role, request.MsgId, ct);
+        }
 
         // Gold Pattern/Delta 5 Check: If we already have a status record for this ROLE, STATUS and MSGID, return the previous response
         var previousRecord = isoMessage.Statuses?
@@ -282,7 +298,10 @@ public sealed class IncomingPaymentStatusReportHandler(
                 var rspReturn = PaymentStatusRequestResponseBuilder.Build(response);
 
                 // Status already set by CallCoreBankReturnAsync
-                await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return completed", isoMessage.AdditionalInfo, rspReturn, dbCt);
+                using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+                {
+                    await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return completed", isoMessage.AdditionalInfo, rspReturn, dbCt);
+                }
                 return _signer.SignEnvelope(rspReturn);
             }
             else
@@ -295,7 +314,10 @@ public sealed class IncomingPaymentStatusReportHandler(
                 // Return generic response mirroring current status (similar to NonPending handling)
                 response.Status = isoMessage.Status == TransactionStatus.Failed ? RJCT : ACSC;
                 var rspGeneric = PaymentStatusRequestResponseBuilder.Build(response);
-                await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return Status Mismatch", isoMessage.AdditionalInfo, rspGeneric, dbCt);
+                using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+                {
+                    await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, isoMessage.Reason ?? "Return Status Mismatch", isoMessage.AdditionalInfo, rspGeneric, dbCt);
+                }
                 return _signer.SignEnvelope(rspGeneric);
             }
         }
@@ -323,7 +345,10 @@ public sealed class IncomingPaymentStatusReportHandler(
 
             var rspMirror = PaymentStatusRequestResponseBuilder.Build(response);
             // Persist status record to maintain audit trail (idempotent)
-            await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, response.Reason, response.AdditionalInfo, rspMirror, dbCt);
+            using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+            {
+                await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, response.Reason, response.AdditionalInfo, rspMirror, dbCt);
+            }
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] NonPending response: {Response}", rspMirror);
             var signedMirror = _signer.SignEnvelope(rspMirror);
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning NonPending signed response: {Signed}", signedMirror);
@@ -358,26 +383,33 @@ public sealed class IncomingPaymentStatusReportHandler(
                     AdditionalInfo = request.AdditionalInfo ?? rjctAdditionalInfo
                 };
 
-               var rejectResult = await _callbacks.SendJsonAsync(
-                    _callbackLinks.CompletionNotification!, // Ensure this URL is configured
-                    rejectHeaders,
-                    rejectDto,
-                    Constants.CB_CompletionNotification, 
-                    _jsonAdapter,
-                    _correlation,
-                    _jsonSerializerOptions,
-                    _callback,
-                    ct,
-                    cid
-                );
+                SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? rejectResult = null;
+                using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+                {
+                    rejectResult = await _callbacks.SendJsonAsync(
+                        _callbackLinks.CompletionNotification!, // Ensure this URL is configured
+                        rejectHeaders,
+                        rejectDto,
+                        Constants.CB_CompletionNotification, 
+                        _jsonAdapter,
+                        _correlation,
+                        _jsonSerializerOptions,
+                        _callback,
+                        ct,
+                        cid
+                    );
+                }
 
                 if (rejectResult != null)
                 {
                      // [DATA SAFETY]: Use explicit PersistResponseAsync to merge CoreBankResponse safely.
                      // Direct assignment isoMessage.CoreBankResponse = ... is unsafe as it bypasses the audit ledger merge logic.
                      isoMessage.CoreBankResponse = JsonSerializer.Serialize(rejectResult, _jsonSerializerOptions);
-                     await _isoService.PersistResponseAsync(isoMessage, isoMessage.Status, isoMessage.Reason ?? "", isoMessage.AdditionalInfo, 
-                        isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "", ct);
+                     using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+                     {
+                         await _isoService.PersistResponseAsync(isoMessage, isoMessage.Status, isoMessage.Reason ?? "", isoMessage.AdditionalInfo, 
+                            isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "", ct);
+                     }
                 }
                 
             }
@@ -395,7 +427,10 @@ public sealed class IncomingPaymentStatusReportHandler(
             isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : rjctReason;
             isoMessage.AdditionalInfo = rjctAdditionalInfo;
 
-            await _isoService.PersistStatusResponseAsync(record, rjctChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, dbCt);
+            using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+            {
+                await _isoService.PersistStatusResponseAsync(record, rjctChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, dbCt);
+            }
             var signedRej = _signer.SignEnvelope(rspRej);
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning RJCT signed response: {Signed}", signedRej);
             return signedRej;
@@ -443,18 +478,23 @@ public sealed class IncomingPaymentStatusReportHandler(
                     AdditionalInfo = request.AdditionalInfo ?? "Final success confirmation from Switch"
                 };
 
-                 result = await _callbacks.SendJsonAsync(
-                    _callbackLinks.CompletionNotification!, 
-                    notificationHeaders,
-                    notificationDto,
-                    CB_CompletionNotification, 
-                    _jsonAdapter,
-                    _correlation,
-                    _jsonSerializerOptions,
-                    _callback,
-                    ct,
-                    cid
-                );
+                 SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? completionResult = null;
+                 using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+                 {
+                     completionResult = await _callbacks.SendJsonAsync(
+                        _callbackLinks.CompletionNotification!, 
+                        notificationHeaders,
+                        notificationDto,
+                        CB_CompletionNotification, 
+                        _jsonAdapter,
+                        _correlation,
+                        _jsonSerializerOptions,
+                        _callback,
+                        ct,
+                        cid
+                    );
+                 }
+                 result = completionResult;
 
                 if (result == null)
                 {
@@ -531,18 +571,23 @@ public sealed class IncomingPaymentStatusReportHandler(
                     MsgId = isoMessage.MsgId ?? string.Empty
                 };
 
-                result = await _callbacks.SendJsonAsync(
-                        _callbackLinks.Transfer!,
-                            headers,
-                            dto,
-                            CB_PaymentRequest,
-                            _jsonAdapter,
-                            _correlation,
-                            _jsonSerializerOptions,
-                            _callback,
-                            ct,
-                            cid
-                        );
+                SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? transferResult = null;
+                using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+                {
+                    transferResult = await _callbacks.SendJsonAsync(
+                            _callbackLinks.Transfer!,
+                                headers,
+                                dto,
+                                CB_PaymentRequest,
+                                _jsonAdapter,
+                                _correlation,
+                                _jsonSerializerOptions,
+                                _callback,
+                                ct,
+                                cid
+                            );
+                }
+                result = transferResult;
 
 
                 // Guard against null callback result
@@ -595,18 +640,23 @@ public sealed class IncomingPaymentStatusReportHandler(
                 AdditionalInfo = request.AdditionalInfo ?? "Final confirmation from Switch"
             };
 
-             result = await _callbacks.SendJsonAsync(
-                _callbackLinks.CompletionNotification!, 
-                notificationHeaders,
-                notificationDto,
-                Constants.CB_CompletionNotification, 
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                ct,
-                cid
-            );
+             SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? cbResult = null;
+             using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+             {
+                 cbResult = await _callbacks.SendJsonAsync(
+                    _callbackLinks.CompletionNotification!, 
+                    notificationHeaders,
+                    notificationDto,
+                    Constants.CB_CompletionNotification, 
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+             }
+             result = cbResult;
 
             if (result == null)
             {
@@ -682,7 +732,10 @@ public sealed class IncomingPaymentStatusReportHandler(
         // Wait, PersistResponseAsync updates the parent's Response property too. 
         // We should preserve existing Response if we don't have a new one.
         string currentResponseXml = isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "";
-        await _isoService.PersistResponseAsync(isoMessage, parentStatus, reason, additionalInfo, currentResponseXml, dbCt);
+        using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+        {
+            await _isoService.PersistResponseAsync(isoMessage, parentStatus, reason, additionalInfo, currentResponseXml, dbCt);
+        }
 
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] tx is null? {IsNull}", tx == null);
     tx ??= new SIPS.PostgreSQL.Models.Transaction();
@@ -731,13 +784,16 @@ public sealed class IncomingPaymentStatusReportHandler(
             var rspFinal = PaymentStatusRequestResponseBuilder.Build(response);
 
         // Persist with consistent status: both parent and child reflect the same status
-        await _isoService.PersistStatusResponseAsync(
-            record,
-                childStatus,
-                isoMessage.Reason,
-                isoMessage.AdditionalInfo,
-                rspFinal,
-                dbCt);
+        using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
+        {
+            await _isoService.PersistStatusResponseAsync(
+                record,
+                    childStatus,
+                    isoMessage.Reason,
+                    isoMessage.AdditionalInfo,
+                    rspFinal,
+                    dbCt);
+        }
             _logger.LogDebug("[IncomingPaymentStatusReportHandler] Final response: {Response}", rspFinal);
             var signedFinal = _signer.SignEnvelope(rspFinal);
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning Final signed response: {Signed}", signedFinal);
@@ -789,18 +845,21 @@ public sealed class IncomingPaymentStatusReportHandler(
                  AdditionalInfo = isoMessage.AdditionalInfo ?? "Final return success"
              };
 
-             result = await _callbacks.SendJsonAsync(
-                _callbackLinks.CompletionNotification!,
-                headers,
-                notificationDto,
-                CB_CompletionNotification,
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                ct,
-                cid
-            );
+             using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+             {
+                 result = await _callbacks.SendJsonAsync(
+                    _callbackLinks.CompletionNotification!,
+                    headers,
+                    notificationDto,
+                    CB_CompletionNotification,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+             }
         }
         else
         {
@@ -818,18 +877,21 @@ public sealed class IncomingPaymentStatusReportHandler(
                 AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty
             };
 
-            result = await _callbacks.SendJsonAsync(
-                _callbackLinks.Return!,
-                headers,
-                returnDto,
-                CB_ReturnRequest,
-                _jsonAdapter,
-                _correlation,
-                _jsonSerializerOptions,
-                _callback,
-                ct,
-                cid
-            );
+            using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+            {
+                result = await _callbacks.SendJsonAsync(
+                    _callbackLinks.Return!,
+                    headers,
+                    returnDto,
+                    CB_ReturnRequest,
+                    _jsonAdapter,
+                    _correlation,
+                    _jsonSerializerOptions,
+                    _callback,
+                    ct,
+                    cid
+                );
+            }
         }
 
         // Guard against null callback result

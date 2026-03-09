@@ -13,6 +13,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using SIPS.Core.Services.Metrics;
 using static SIPS.Core.Constants;
 
 namespace SIPS.Core.Services;
@@ -43,6 +44,7 @@ public sealed class OutgoingVerificationHandler(
 
     public async Task<Response<VerificationResponseDto>> HandleAsync(VerificationRequestDto message, CancellationToken ct)
     {
+        using var _totalTrack = SipsMetrics.TrackStep("Outgoing", "Verification", "Total");
         // Parse QR Code if present
         if (!string.IsNullOrWhiteSpace(message.Code))
         {
@@ -78,9 +80,13 @@ public sealed class OutgoingVerificationHandler(
         try
         {
             // Step 2: Build and sign the verification request
-            if (!BuildRequest(message, fromBIC, msgIdAnchor, out var signedRequest, out var bizMsgIdr, out var type, out var msgId))
+            string signedRequest, bizMsgIdr, type, msgId;
+            using (SipsMetrics.TrackStep("Outgoing", "Verification", "BuildAndSign"))
             {
-                return Response<VerificationResponseDto>.Fail("Failed to build acmt.023 message from your request", System.Net.HttpStatusCode.BadRequest);
+                if (!BuildRequest(message, fromBIC, msgIdAnchor, out signedRequest, out bizMsgIdr, out type, out msgId))
+                {
+                    return Response<VerificationResponseDto>.Fail("Failed to build acmt.023 message from your request", System.Net.HttpStatusCode.BadRequest);
+                }
             }
 
             // Step 3: Create and persist the initial ISO message record
@@ -100,10 +106,18 @@ public sealed class OutgoingVerificationHandler(
             };
             using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
             var dbCt = dbCts.Token;
-            var record = await _persistence.RecordISOMessageAsync(isoMessage, dbCt);
+            ISOMessage record;
+            using (SipsMetrics.TrackStep("Outgoing", "Verification", "DbSave"))
+            {
+                record = await _persistence.RecordISOMessageAsync(isoMessage, dbCt);
+            }
 
             // Step 4: Send the verification request to SIPS
-            var responseMessage = await _sips.SendAsync(url, signedRequest, ct, cid);
+            Response<string> responseMessage;
+            using (SipsMetrics.TrackStep("Outgoing", "Verification", "SipsCall"))
+            {
+                responseMessage = await _sips.SendAsync(url, signedRequest, ct, cid);
+            }
             record.Response = Encoding.UTF8.GetBytes(responseMessage.Data ?? "");
 
             // Step 5: Validate the IPS response
