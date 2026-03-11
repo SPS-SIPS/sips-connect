@@ -51,7 +51,10 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
         {
             var skip = i * options.SAFPage;
 
-            var transactions = await query.Include(x => x.Transactions).OrderByDescending(x => x.Date)
+            var transactions = await query
+                .Include(x => x.Transactions)
+                .Include(x => x.Statuses)
+                .OrderByDescending(x => x.Date)
                 .Skip(skip)
                 .Take(options.SAFPage)
                 .ToListAsync(cancellationToken);
@@ -77,6 +80,20 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
                         transaction,
                         "No response from IPS after max SAF retries",
                         cancellationToken);
+                    continue;
+                }
+
+                // Exponential backoff check
+                // Calculate delay: 2^round minutes, max 60 minutes
+                var delayMinutes = Math.Min(60, Math.Pow(2, transaction.Round));
+                
+                // Get the last attempt time from the latest Status entry, or fallback to the transaction's creation Date
+                var lastAttemptTime = transaction.Statuses?.OrderByDescending(s => s.Date).FirstOrDefault()?.Date ?? transaction.Date;
+
+                if (DateTimeOffset.UtcNow < lastAttemptTime.AddMinutes(delayMinutes))
+                {
+                    _logger.LogInformation("SAF Job: Skipping transaction {txId} (Round {round}) due to exponential backoff. Last attempt: {lastAttemptTime:u}, Next attempt after: {nextAttemptTime:u}.",
+                        transaction.TxId, transaction.Round, lastAttemptTime, lastAttemptTime.AddMinutes(delayMinutes));
                     continue;
                 }
 
