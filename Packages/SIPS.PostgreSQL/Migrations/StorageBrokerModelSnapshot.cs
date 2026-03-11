@@ -155,6 +155,9 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasDatabaseName("ux_iso_msg_type_txid")
                         .HasFilter("\"txid\" IS NOT NULL AND \"txid\" <> ''");
 
+                    b.HasIndex("TxId", "MessageType")
+                        .HasDatabaseName("ix_iso_msg_txid_msgtype");
+
                     b.ToTable("isomessages", (string)null);
                 });
 
