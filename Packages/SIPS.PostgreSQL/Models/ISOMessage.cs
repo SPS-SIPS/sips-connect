@@ -97,6 +97,10 @@ public sealed class ISOMessageConfiguration : IEntityTypeConfiguration<ISOMessag
         builder.HasIndex(e => new { e.TxId })
             .HasDatabaseName("ix_iso_msg_txid_anchor");
 
+        // [PERFORMANCE]: Composite index for TxId + MessageType used heavily by IncomingRecorder Status lookups
+        builder.HasIndex(e => new { e.TxId, e.MessageType })
+            .HasDatabaseName("ix_iso_msg_txid_msgtype");
+
         // Secondary index for UETR correlation and audit
         builder.HasIndex(e => e.UETR)
             .HasDatabaseName("ix_iso_msg_uetr");
