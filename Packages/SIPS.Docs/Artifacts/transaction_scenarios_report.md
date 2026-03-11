@@ -1,6 +1,6 @@
 # SIPS Connect: Transaction & Return Scenarios (Management Report)
 
-**Date**: February 8, 2026  
+**Date**: March 10, 2026  
 **Status**: ✅ Phase 5 Switch-Grade Complete  
 **Objective**: This report provides an honest assessment of how SIPS Connect handles various financial scenarios to ensure absolute integrity and regulatory compliance.
 
@@ -85,7 +85,7 @@ The system dynamically adapts its safety profile based on the bank's integration
 To ensure full alignment with the **SmartVista IPS Payment Specification**, the following functional enhancements are integrated into the SIPS Connect lifecycle:
 
 ### 1. Payment Returns (`pacs.004`)
-*   **Inbound Returns**: Protected by the **Gold Pattern**. If the optional `RtrId` is missing, SIPS derives a **Deterministic De-duplication Key** (SHA256) from original transaction attributes to ensure exactly one credit reversal in the CoreBank.
+*   **Inbound Returns**: Protected by the **Gold Pattern**. If the optional `RtrId` is missing, SIPS derives a **Deterministic De-duplication Key** (SHA256) from original transaction attributes to ensure exactly one credit reversal in the CoreBank. Enforces CoreBank callback timeouts, unifies failure handling to reject on CoreBank issues, and logs specific audit events.
 *   **Outbound Returns**: Enforced strict eligibility (Original transaction must be `Success` or `ReadyForReturn`). **`OrgnlTxId`** is mandated as the authoritative anchor (Anchored per SmartVista spec).
 
 ### 2. Status Investigations (`pacs.028`)
@@ -97,12 +97,13 @@ To ensure full alignment with the **SmartVista IPS Payment Specification**, the 
 *   **Notify + Ack Loop**: Distinguishes between standard status reports and final completion notifications using a dedicated **Role Discriminator** (`Pacs002Role`).
 *   **Idempotency**: Creditor-side signature and ACK handshake ensure that IPS/Participant ledger synchronization is atomic and non-redundant.
 
-### 4. Verification Hardening (`acmt.024`)
+### 4. Verification Hardening (`acmt.023` / `acmt.024`)
 *   **MsgId Sovereignty**: Adheres to the "Message Check" model, using `MsgId` as the strict idempotency key with no fallback to `TxId`, preserving protocol integrity.
+*   **Outgoing Verification**: Implements native QR code parsing for both P2P and P2M formats, with dynamic Acquirer configuration for automated BIC conversion.
 
 ---
 
 ## 🏁 Final Integrity Attestation
-This system is now architected to be **"Switch-Grade Complete."** Every message transition is governed by **TxId atomicity for financial flows** and **MsgId sovereignty for verification flows**, with **Deterministic Replay** enforced throughout.
+This system is now architected to be **"Switch-Grade Complete."** Every message transition is governed by **TxId atomicity for financial flows** and **MsgId sovereignty for verification flows**, with **Deterministic Replay** enforced throughout. Additionally, database timeout cancellations and granular performance tracking (`SipsMetrics`) guarantee high resilience and continuous observability.
 
 **Technical Confidence**: 🟢 HIGH (Production-Ready)
