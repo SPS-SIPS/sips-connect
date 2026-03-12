@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,13 +10,27 @@ namespace SIPS.PostgreSQL.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // migrationBuilder.DropIndex(
-            //     name: "ux_iso_msg_type_msgid",
-            //     table: "isomessages");
-            //
-            // migrationBuilder.DropIndex(
-            //     name: "ux_iso_msg_type_txid",
-            //     table: "isomessages");
+            migrationBuilder.Sql(@"
+                DELETE FROM isomessages
+                WHERE id NOT IN (
+                    SELECT MAX(id)
+                    FROM isomessages
+                    WHERE msgid IS NOT NULL AND msgid <> ''
+                    GROUP BY messagetype, msgid
+                )
+                AND msgid IS NOT NULL AND msgid <> '';
+            ");
+
+            migrationBuilder.Sql(@"
+                DELETE FROM isomessages
+                WHERE id NOT IN (
+                    SELECT MAX(id)
+                    FROM isomessages
+                    WHERE txid IS NOT NULL AND txid <> ''
+                    GROUP BY messagetype, txid
+                )
+                AND txid IS NOT NULL AND txid <> '';
+            ");
 
             migrationBuilder.CreateIndex(
                 name: "ux_iso_msg_type_msgid",
