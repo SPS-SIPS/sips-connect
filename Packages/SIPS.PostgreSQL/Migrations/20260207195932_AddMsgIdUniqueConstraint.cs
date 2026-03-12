@@ -11,25 +11,85 @@ namespace SIPS.PostgreSQL.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql(@"
-                DELETE FROM isomessages
-                WHERE id NOT IN (
-                    SELECT MAX(id)
-                    FROM isomessages
-                    WHERE msgid IS NOT NULL AND msgid <> ''
-                    GROUP BY messagetype, msgid
+                -- 1. Identify rows to delete due to MsgId duplicates
+                WITH duplicates_msgid AS (
+                    SELECT id 
+                    FROM isomessages 
+                    WHERE id NOT IN (
+                        SELECT MAX(id)
+                        FROM isomessages
+                        WHERE msgid IS NOT NULL AND msgid <> ''
+                        GROUP BY messagetype, msgid
+                    )
+                    AND msgid IS NOT NULL AND msgid <> ''
                 )
-                AND msgid IS NOT NULL AND msgid <> '';
-            ");
+                DELETE FROM transactions WHERE isomessageid IN (SELECT id FROM duplicates_msgid);
+                
+                WITH duplicates_msgid AS (
+                    SELECT id 
+                    FROM isomessages 
+                    WHERE id NOT IN (
+                        SELECT MAX(id)
+                        FROM isomessages
+                        WHERE msgid IS NOT NULL AND msgid <> ''
+                        GROUP BY messagetype, msgid
+                    )
+                    AND msgid IS NOT NULL AND msgid <> ''
+                )
+                DELETE FROM isomessagestatuses WHERE isomessageid IN (SELECT id FROM duplicates_msgid);
 
-            migrationBuilder.Sql(@"
-                DELETE FROM isomessages
-                WHERE id NOT IN (
-                    SELECT MAX(id)
-                    FROM isomessages
-                    WHERE txid IS NOT NULL AND txid <> ''
-                    GROUP BY messagetype, txid
+                WITH duplicates_msgid AS (
+                    SELECT id 
+                    FROM isomessages 
+                    WHERE id NOT IN (
+                        SELECT MAX(id)
+                        FROM isomessages
+                        WHERE msgid IS NOT NULL AND msgid <> ''
+                        GROUP BY messagetype, msgid
+                    )
+                    AND msgid IS NOT NULL AND msgid <> ''
                 )
-                AND txid IS NOT NULL AND txid <> '';
+                DELETE FROM isomessages WHERE id IN (SELECT id FROM duplicates_msgid);
+
+                -- 2. Identify rows to delete due to TxId duplicates
+                WITH duplicates_txid AS (
+                    SELECT id 
+                    FROM isomessages 
+                    WHERE id NOT IN (
+                        SELECT MAX(id)
+                        FROM isomessages
+                        WHERE txid IS NOT NULL AND txid <> ''
+                        GROUP BY messagetype, txid
+                    )
+                    AND txid IS NOT NULL AND txid <> ''
+                )
+                DELETE FROM transactions WHERE isomessageid IN (SELECT id FROM duplicates_txid);
+
+                WITH duplicates_txid AS (
+                    SELECT id 
+                    FROM isomessages 
+                    WHERE id NOT IN (
+                        SELECT MAX(id)
+                        FROM isomessages
+                        WHERE txid IS NOT NULL AND txid <> ''
+                        GROUP BY messagetype, txid
+                    )
+                    AND txid IS NOT NULL AND txid <> ''
+                )
+                DELETE FROM isomessagestatuses WHERE isomessageid IN (SELECT id FROM duplicates_txid);
+
+                WITH duplicates_txid AS (
+                    SELECT id 
+                    FROM isomessages 
+                    WHERE id NOT IN (
+                        SELECT MAX(id)
+                        FROM isomessages
+                        WHERE txid IS NOT NULL AND txid <> ''
+                        GROUP BY messagetype, txid
+                    )
+                    AND txid IS NOT NULL AND txid <> ''
+                )
+                DELETE FROM isomessages WHERE id IN (SELECT id FROM duplicates_txid);
             ");
 
             migrationBuilder.CreateIndex(
