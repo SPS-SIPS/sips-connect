@@ -268,7 +268,7 @@ public static class PaymentRequestResponseBuilder
             Person debtor = new()
             {
                 Name = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Dbtr?.Pty?.Nm ?? "",
-                Address = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Dbtr?.Pty?.PstlAdr?.AdrLine[0] ?? "",
+                Address = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Dbtr?.Pty?.PstlAdr?.AdrLine.FirstOrDefault() ?? "",
                 Account = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.DbtrAcct?.Id?.Othr?.Id ?? "",
                 AccountType = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.DbtrAcct?.Id?.Othr?.SchmeNm?.Prtry ?? "",
                 Issuer = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.DbtrAcct?.Id?.Othr?.Issr ?? ""
@@ -281,7 +281,7 @@ public static class PaymentRequestResponseBuilder
             Person creditor = new()
             {
                 Name = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Cdtr?.Pty?.Nm ?? "",
-                Address = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Cdtr?.Pty?.PstlAdr?.AdrLine[0] ?? "",
+                Address = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Cdtr?.Pty?.PstlAdr?.AdrLine.FirstOrDefault() ?? "",
                 Account = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.CdtrAcct?.Id?.Othr?.Id ?? "",
                 AccountType = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.CdtrAcct?.Id?.Othr?.SchmeNm?.Prtry ?? "",
                 Issuer = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.CdtrAcct?.Id?.Othr?.Issr ?? ""
