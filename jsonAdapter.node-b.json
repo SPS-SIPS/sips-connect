@@ -224,12 +224,12 @@
       "FieldMappings": [
         {
           "InternalField": "DebtorAddress",
-          "UserField": "debtorPostalAddress",
+          "UserField": "debtorAddress",
           "Type": "string"
         },
         {
           "InternalField": "CreditorAddress",
-          "UserField": "creditorPostalAddress",
+          "UserField": "creditorAddress",
           "Type": "string"
         },
         {
@@ -350,6 +350,11 @@
         {
           "InternalField": "MsgId",
           "UserField": "msgId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "DebtorAgentBIC",
+          "UserField": "debtorAgentBIC",
           "Type": "string"
         }
       ]

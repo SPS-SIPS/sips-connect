@@ -245,11 +245,11 @@ public static class PaymentRequestBuilder
             MsgDefIdr = envelope.AppHdr.MsgDefIdr,
             CreDt = envelope.AppHdr.CreDt,
             MsgId = document.FIToFICstmrCdtTrf.GrpHdr.MsgId,
-            SettlementMethod = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf.SttlmMtd,
-            ClearingSystem = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf.ClrSys.Prtry,
-            LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.LclInstrm.Prtry,
-            CategoryPurpose = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.CtgyPurp.Prtry,
-            TxId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.TxId,
+            SettlementMethod = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf?.SttlmMtd ?? SettlementMethod1Code.CLRG,
+            ClearingSystem = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf?.ClrSys?.Prtry ?? string.Empty,
+            LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.LclInstrm?.Prtry ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.LclInstrm?.Prtry ?? string.Empty,
+            CategoryPurpose = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.CtgyPurp?.Prtry ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.CtgyPurp?.Prtry ?? string.Empty,
+            TxId = document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtId?.TxId ?? string.Empty,
             UETR = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.UETR,
             EndToEndId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.EndToEndId,
             Amount = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.TypedValue,
@@ -258,20 +258,20 @@ public static class PaymentRequestBuilder
             Debtor = new Person
             {
                 Name = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Dbtr.Nm,
-                Address = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Dbtr?.PstlAdr?.AdrLine[0] ?? "",
+                Address = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Dbtr?.PstlAdr?.AdrLine.FirstOrDefault() ?? "",
                 Account = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.Id,
-                AccountType = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.SchmeNm.Prtry,
-                Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct.Id.Othr.Issr,
-                AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAgt.FinInstnId.Othr.Id
+                AccountType = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct?.Id?.Othr?.SchmeNm?.Prtry ?? string.Empty,
+                Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAcct?.Id?.Othr?.Issr ?? string.Empty,
+                AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAgt?.FinInstnId?.Othr?.Id ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].DbtrAgt?.FinInstnId?.BICFI ?? string.Empty
             },
             Creditor = new Person
             {
                 Name = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Cdtr.Nm,
-                Address = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Cdtr?.PstlAdr?.AdrLine[0] ?? "",
+                Address = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Cdtr?.PstlAdr?.AdrLine.FirstOrDefault() ?? "",
                 Account = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.Id,
-                AccountType = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.SchmeNm.Prtry,
-                Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct.Id.Othr.Issr,
-                AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAgt.FinInstnId.Othr.Id
+                AccountType = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct?.Id?.Othr?.SchmeNm?.Prtry ?? string.Empty,
+                Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct?.Id?.Othr?.Issr ?? string.Empty,
+                AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAgt?.FinInstnId?.Othr?.Id ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAgt?.FinInstnId?.BICFI ?? string.Empty
             },
             Ustrd = string.Join(" ", document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].RmtInf.Ustrd)
         };
