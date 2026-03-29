@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SIPS.Connect.Config;
@@ -73,26 +74,45 @@ public class ConfigurationsController(
     public IActionResult ChangeCore([FromBody] CoreOptions request)
     {
         var fileContent = System.IO.File.ReadAllText(_jsonFilePath);
-        if (System.Text.Json.Nodes.JsonNode.Parse(fileContent) is not System.Text.Json.Nodes.JsonObject jsonNode || jsonNode["Core"] == null)
-        {
+
+        if (JsonNode.Parse(fileContent) is not JsonObject jsonNode
+            || jsonNode["Core"] == null)
             return NotFound("No Core section exist in appsettings.json");
-        }
 
-        // Encrypt sensitive fields
-        if (!string.IsNullOrEmpty(request.Username))
-        {
-            request.Username = _secretService.Encrypt(request.Username);
-        }
-        if (!string.IsNullOrEmpty(request.Password))
-        {
-            request.Password = _secretService.Encrypt(request.Password);
-        }
+        var existingCore = jsonNode["Core"].Deserialize<CoreOptions>() ?? new CoreOptions();
 
-        jsonNode["Core"] = JsonSerializer.SerializeToNode(request, options);
+        if (!string.IsNullOrEmpty(request.Username)) existingCore.Username = _secretService.Encrypt(request.Username);
+
+        if (!string.IsNullOrEmpty(request.Password)) existingCore.Password = _secretService.Encrypt(request.Password);
+
+        existingCore.BaseUrl = request.BaseUrl;
+        existingCore.PublicKeysRepUrl = request.PublicKeysRepUrl;
+        existingCore.LoginEndpoint = request.LoginEndpoint;
+        
+        existingCore.BIC = request.BIC;
+        existingCore.SAFExpression = request.SAFExpression;
+        existingCore.SAFPage = request.SAFPage;
+        existingCore.SAFTimeZoneInfo = request.SAFTimeZoneInfo;
+        existingCore.SAFMaxRetries = request.SAFMaxRetries;
+        
+        existingCore.IncludeIdempotencyHeaders = request.IncludeIdempotencyHeaders;
+        existingCore.HttpTimeoutSeconds = request.HttpTimeoutSeconds;
+        existingCore.CoreBankTimeoutSeconds = request.CoreBankTimeoutSeconds;
+        existingCore.DbPersistTimeoutSeconds = request.DbPersistTimeoutSeconds;
+        
+        existingCore.TransactionTimeoutMinutes = request.TransactionTimeoutMinutes;
+        existingCore.TimeoutWorkerSchedule = request.TimeoutWorkerSchedule;
+
+
+        existingCore.CallbackSlaSeconds = existingCore.CallbackSlaSeconds;
+        existingCore.CallbackInternalBudgetSeconds = existingCore.CallbackInternalBudgetSeconds;
+
+        existingCore.VerificationOnlyMode = request.VerificationOnlyMode;
+
+        jsonNode["Core"] = JsonSerializer.SerializeToNode(existingCore, options);
         var updatedJson = jsonNode.ToJsonString(options);
         System.IO.File.WriteAllText(_jsonFilePath, updatedJson);
 
-        // Reload configuration to apply changes
         ReloadConfiguration();
 
         return Ok("Core options updated successfully.");
