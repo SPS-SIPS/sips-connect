@@ -9,4 +9,5 @@ public static class KnownRoles
     public const string QR = "som_qr";
     public const string Recon = "recon";
     public const string Dashboard = "dashboard";
+    public const string Logs = "logs";
 }
