@@ -126,7 +126,7 @@ public static class PayeeVerificationResponseBuilder
                             {
                                 Othr = new Schemas.VRDocument.GenericFinancialIdentification1
                                 {
-                                    Id = request.To
+                                    Id = request.From
                                 }
                             }
                         }
@@ -139,7 +139,7 @@ public static class PayeeVerificationResponseBuilder
                             {
                                 Othr = new Schemas.VRDocument.GenericFinancialIdentification1
                                 {
-                                    Id = request.From
+                                    Id = request.To
                                 }
                             }
                         }
