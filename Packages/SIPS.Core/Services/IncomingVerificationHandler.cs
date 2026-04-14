@@ -268,8 +268,8 @@ public sealed class IncomingVerificationHandler(
             {
                 Original = request,
                 VerificationId = request.SIPSRequestId ?? string.Empty,
-                From = request.From,
-                To = request.To,
+                From = request.To,
+                To = request.From,
                 Type = request.Type
             };
 
@@ -369,8 +369,8 @@ public sealed class IncomingVerificationHandler(
             {
                 Original = request,
                 VerificationId = request?.SIPSRequestId ?? string.Empty,
-                From = request?.From ?? string.Empty,
-                To = request?.To ?? string.Empty,
+                From = request?.To ?? string.Empty,
+                To = request?.From ?? string.Empty,
                 Type = request?.Type ?? string.Empty
             };
             response.Verified = false;

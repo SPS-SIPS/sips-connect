@@ -249,15 +249,17 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
 
         // Step 4: Prepare response object (reuse PaymentStatus request response builder)
+        // Pass the original message direction so the Factory can swap it correctly
         var statusReq = new PaymentStatusRequestBuilder.Request
         {
-            From = isoMessage.ToBIC ?? string.Empty,
-            To = isoMessage.FromBIC ?? string.Empty,
+            From = isoMessage.FromBIC ?? string.Empty,
+            To = isoMessage.ToBIC ?? string.Empty,
             OrgnlTxId = request.TxId,
             OriginalEndToEnd = request.Original?.EndToEndId ?? "",
-            BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
-            MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
-            MsgId = isoMessage.MsgId ?? string.Empty,
+            BizMsgIdr = request.BizMsgIdr ?? string.Empty,
+            MsgDefIdr = request.MsgDefIdr ?? string.Empty,
+            MsgId = request.MsgId ?? string.Empty,
+            CreDt = request.CreDt == default ? DateTime.UtcNow : request.CreDt
         };
 
         var response = _responses.BuildPaymentStatusInitial(statusReq);
@@ -767,8 +769,8 @@ public sealed class IncomingPaymentStatusReportHandler(
         // Ensure postal address lines exist (builder expects at least one AdrLine)
         if (string.IsNullOrWhiteSpace(response.Original.Debtor.Address)) response.Original.Debtor.Address = "NA";
         if (string.IsNullOrWhiteSpace(response.Original.Creditor.Address)) response.Original.Creditor.Address = "NA";
-        response.Original.From = isoMessage.ToBIC ?? _callbackLinks.BIC ?? "NA";
-        response.Original.To = isoMessage.FromBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA";
+        response.Original.From = isoMessage.FromBIC ?? _callbackLinks.BIC ?? "NA";
+        response.Original.To = isoMessage.ToBIC ?? _callbackLinks.Agent ?? _callbackLinks.BIC ?? "NA";
         // Prefer the original EndToEndId from the request if non-empty; otherwise fall back to the ISO message or a safe default
         response.Original.EndToEndId = string.IsNullOrWhiteSpace(statusReq.OriginalEndToEnd)
             ? (isoMessage.EndToEndId ?? "E2E")
