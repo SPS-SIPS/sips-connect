@@ -83,9 +83,11 @@ public sealed class OutgoingTransactionStatusHandler(
                 return Response<PaymentResponseDto>.Fail("Transaction not found", System.Net.HttpStatusCode.NotFound);
 
             // Guard: Don't reprocess transactions with terminal statuses
+            // Scenario 1 (Operator): ReadyForReturn with NO ReturnId is terminal for SAF (awaiting manual intervention).
+            // Scenario 2 (Returns): ReadyForReturn WITH ReturnId is NOT terminal (SAF must query IPS for pacs.028).
             if (isoMessage.Status == TransactionStatus.Success ||
                 isoMessage.Status == TransactionStatus.Failed ||
-                isoMessage.Status == TransactionStatus.ReadyForReturn)
+                (isoMessage.Status == TransactionStatus.ReadyForReturn && string.IsNullOrWhiteSpace(isoMessage.ReturnId)))
             {
                 _logger.LogInformation("[{CorrelationId}] Transaction {TxId} already has terminal status {Status}. Returning cached status without reprocessing.",
                     cid, isoMessage.TxId, isoMessage.Status);
@@ -155,9 +157,10 @@ public sealed class OutgoingTransactionStatusHandler(
             var wasReadyForReturn = isoMessage.Status == TransactionStatus.ReadyForReturn;
             var isTransferRequest = isoMessage.MessageType == PostgreSQL.Enums.ISOMessageType.TransactionRequest;
             var isIncoming = isoMessage.ToBIC == fromBIC; 
+            var isReturnScenario = wasReadyForReturn && !string.IsNullOrWhiteSpace(isoMessage.ReturnId);
 
-            // Handle completion for Transaction Requests (Payments) resolved via SAF
-            if (isTransferRequest && (finalStatus == TransactionStatus.Success || finalStatus == TransactionStatus.Failed))
+            // Handle completion for Transaction Requests (Payments) resolved via SAF (skip if it's an inbound return scenario)
+            if (isTransferRequest && !isReturnScenario && (finalStatus == TransactionStatus.Success || finalStatus == TransactionStatus.Failed))
             {
                 if (isIncoming)
                 {
@@ -258,7 +261,7 @@ public sealed class OutgoingTransactionStatusHandler(
 
             // If this was a ReadyForReturn payment (incoming return scenario) and status is now confirmed,
             // trigger CoreBank callback to complete the return (reverse the credit)
-            if (wasReadyForReturn && isTransferRequest && finalStatus == TransactionStatus.Success)
+            if (isReturnScenario && isTransferRequest && finalStatus == TransactionStatus.Success)
             {
                 _logger.LogInformation("[{CorrelationId}] Incoming return for payment {TxId} confirmed via SAF. Calling CoreBank to process return.", cid, isoMessage.TxId);
 
