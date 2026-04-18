@@ -274,6 +274,8 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         if (targetTxId != null) entity.TxId = targetTxId;
         if (targetUETR != null) entity.UETR = targetUETR;
         if (targetEndToEndId != null) entity.EndToEndId = targetEndToEndId;
+        if (targetReturnId != null) entity.ReturnId = targetReturnId;
+        if (targetReturnDedupKey != null) entity.ReturnDedupKey = targetReturnDedupKey;
         if (targetCoreBankResponse != null) 
         {
             // [AUDIT PRESERVATION]: Check if the DB has an 'auditLedger' that we are about to overwrite.
