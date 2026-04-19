@@ -14,6 +14,7 @@ using SIPS.Core.Services.Correlation;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 using SIPS.Core.Services.Metrics;
+using SIPS.ISO20022.Models;
 using static SIPS.Core.Constants;
 
 namespace SIPS.Core.Services;
@@ -46,11 +47,12 @@ public sealed class OutgoingVerificationHandler(
     {
         using var _totalTrack = SipsMetrics.TrackStep("Outgoing", "Verification", "Total");
         // Parse QR Code if present
+        QrCodeData? qrData = null;
         if (!string.IsNullOrWhiteSpace(message.Code))
         {
             try
             {
-                var qrData = _qrCodeParserService.Parse(message.Code);
+                qrData = _qrCodeParserService.Parse(message.Code);
                 message.Alias = qrData.AccountId;
                 message.Type = qrData.AccountType;
                 message.ToBIC = qrData.BankBICCode;
@@ -58,7 +60,7 @@ public sealed class OutgoingVerificationHandler(
             catch (Exception ex)
             {
                 _logger.LogWarning("Failed to parse QR Code for verification request: {Error}", ex.Message);
-                return Response<VerificationResponseDto>.Fail($"Invalid QR Code: {ex.Message}", System.Net.HttpStatusCode.BadRequest);
+                return Response<VerificationResponseDto>.Fail("failed to verify the qr code", System.Net.HttpStatusCode.BadRequest);
             }
         }
 
@@ -162,7 +164,8 @@ public sealed class OutgoingVerificationHandler(
                 AccountType = parsedResponse.Verified ? parsedResponse.Type : null,
                 Name = parsedResponse.Verified ? parsedResponse.Name : null,
                 Address = parsedResponse.Verified ? parsedResponse.Address : null,
-                Currency = parsedResponse.Verified ? parsedResponse.Currency : null
+                Currency = parsedResponse.Verified ? parsedResponse.Currency : null,
+                Parsed = qrData
             });
         }
         catch (Exception ex)
