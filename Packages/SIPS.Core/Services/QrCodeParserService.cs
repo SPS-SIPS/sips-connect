@@ -3,6 +3,7 @@ using System.Linq;
 using Microsoft.Extensions.Configuration;
 using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Models;
+using SIPS.Core.Models;
 using SIPS.Emv.Helpers;
 using SIPS.Emv.Models;
 

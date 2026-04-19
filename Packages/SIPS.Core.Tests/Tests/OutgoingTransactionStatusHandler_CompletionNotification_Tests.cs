@@ -75,6 +75,9 @@ public sealed class OutgoingTransactionStatusHandler_CompletionNotification_Test
         public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct)
             => Task.FromResult(_messageToReturn);
 
+        public Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct)
+            => Task.FromResult<ISOMessage?>(null);
+
         public Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct)
             => Task.FromResult(_messageToReturn);
 

@@ -90,6 +90,9 @@ public sealed class OutgoingTransactionHandler_Timeout_Tests
         public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct)
             => Task.FromResult<ISOMessage?>(null);
 
+        public Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct)
+            => Task.FromResult<ISOMessage?>(null);
+
         public Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct)
             => Task.FromResult<ISOMessage?>(null);
 
