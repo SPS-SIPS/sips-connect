@@ -173,6 +173,8 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.TxId, ct);
         isoMessage ??= await _persistence.GetISOMessageByTxIdAsync(request.TxId, ct);
+        // Fallback: If IPS responded to a Return, the OrgnlTxId in the pacs.002 is the ReturnId!
+        isoMessage ??= await _persistence.GetISOMessageByReturnIdAsync(request.TxId, ct);
 
         if (isoMessage == null)
         {
