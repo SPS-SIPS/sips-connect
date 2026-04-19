@@ -169,3 +169,87 @@ func performQrTransaction(qr: String) async throws {
     let payResult = try await api.postPayment(body: body)
 }
 ```
+
+### C# (.NET)
+
+```csharp
+public async Task ProcessTransaction(string qrCode)
+{
+    using var client = new HttpClient();
+    
+    // Step 1: Verify
+    var verifyRes = await client.PostAsJsonAsync("api/v1/Gateway/Verify", new { QRCode = qrCode });
+    var data = await verifyRes.Content.ReadFromJsonAsync<dynamic>();
+
+    if ((bool)data.isVerified)
+    {
+        var parsed = data.parsed;
+        bool isStatic = parsed.pointOfInitializationMethod == "11";
+
+        string ctgPurp = "C2CCRT";
+        if (parsed.payloadFormatIndicator == "01")
+        {
+            ctgPurp = isStatic ? "C2BSQR" : "C2BDQR";
+        }
+
+        var paymentRequest = new
+        {
+            agent = (string)parsed.bankBICCode,
+            lclInstrument = "CRTRM",
+            ctgPurp = ctgPurp,
+            amount = (double)(parsed.amount ?? 0.0),
+            crAccount = (string)parsed.accountId,
+            narration = (string)(parsed.particulars ?? "")
+        };
+
+        // Step 2: Confirm
+        var payRes = await client.PostAsJsonAsync("api/v1/Gateway/Payment", paymentRequest);
+    }
+}
+```
+
+### Java (Spring / standard HTTP)
+
+```java
+public void handleQrFlow(String qrCode) throws Exception {
+    HttpClient client = HttpClient.newHttpClient();
+    ObjectMapper mapper = new ObjectMapper();
+
+    // Step 1: Verify
+    String verifyJson = "{\"QRCode\":\"" + qrCode + "\"}";
+    HttpRequest verifyRequest = HttpRequest.newBuilder()
+            .uri(URI.create("api/v1/Gateway/Verify"))
+            .POST(HttpRequest.BodyPublishers.ofString(verifyJson))
+            .header("Content-Type", "application/json")
+            .build();
+
+    HttpResponse<String> verifyResponse = client.send(verifyRequest, HttpResponse.BodyHandlers.ofString());
+    JsonNode root = mapper.readTree(verifyResponse.body());
+
+    if (root.get("isVerified").asBoolean()) {
+        JsonNode parsed = root.get("parsed");
+        boolean isStatic = parsed.get("pointOfInitializationMethod").asText().equals("11");
+
+        String ctgPurp = "C2CCRT";
+        if (parsed.get("payloadFormatIndicator").asText().equals("01")) {
+            ctgPurp = isStatic ? "C2BSQR" : "C2BDQR";
+        }
+
+        Map<String, Object> paymentPayload = new HashMap<>();
+        paymentPayload.put("agent", parsed.get("bankBICCode").asText());
+        paymentPayload.put("lclInstrument", "CRTRM");
+        paymentPayload.put("ctgPurp", ctgPurp);
+        paymentPayload.put("amount", parsed.has("amount") ? parsed.get("amount").asDouble() : 0.0);
+        paymentPayload.put("crAccount", parsed.get("accountId").asText());
+        paymentPayload.put("narration", parsed.has("particulars") ? parsed.get("particulars").asText() : "");
+
+        // Step 2: Confirm
+        HttpRequest payRequest = HttpRequest.newBuilder()
+                .uri(URI.create("api/v1/Gateway/Payment"))
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(paymentPayload)))
+                .header("Content-Type", "application/json")
+                .build();
+        client.send(payRequest, HttpResponse.BodyHandlers.ofString());
+    }
+}
+```
