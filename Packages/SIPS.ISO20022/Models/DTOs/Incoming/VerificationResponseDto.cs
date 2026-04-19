@@ -1,3 +1,4 @@
+using SIPS.ISO20022.Models;
 namespace SIPS.ISO20022.Models.DTOs;
 
 public sealed class VerificationResponseDto
@@ -16,4 +17,6 @@ public sealed class VerificationResponseDto
     public string? Address { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("currency")]
     public string? Currency { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("parsed")]
+    public QrCodeData? Parsed { get; set; }
 }

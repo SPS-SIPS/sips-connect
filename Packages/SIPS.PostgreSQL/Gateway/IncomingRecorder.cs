@@ -52,6 +52,7 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
     public async Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct)
     {
         return await _storage.ISOMessages
+            .Include(x => x.Transactions)
             .Where(x => x.ReturnId == returnId)
             .OrderByDescending(x => x.Date)
             .FirstOrDefaultAsync(ct);

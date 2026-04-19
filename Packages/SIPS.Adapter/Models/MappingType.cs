@@ -6,5 +6,6 @@ public enum MappingType
     Int,
     Double,
     Bool,
-    DateTime
+    DateTime,
+    Object
 }
