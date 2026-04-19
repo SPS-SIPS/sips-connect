@@ -49,6 +49,14 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
             .FirstOrDefaultAsync(ct);
     }
 
+    public async Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct)
+    {
+        return await _storage.ISOMessages
+            .Where(x => x.ReturnId == returnId)
+            .OrderByDescending(x => x.Date)
+            .FirstOrDefaultAsync(ct);
+    }
+
     public async Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct)
     {
         return await _storage.ISOMessages

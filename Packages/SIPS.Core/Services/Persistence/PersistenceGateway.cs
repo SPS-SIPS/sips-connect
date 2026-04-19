@@ -15,6 +15,7 @@ public interface IPersistenceGateway
     Task<ISOMessage> ISOMessageResponseAsync(ISOMessage message, CancellationToken ct);
     Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus status, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct);
+    Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByTxIdAndTypeAsync(string txId, ISOMessageType type, CancellationToken ct);
     Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingTransactionAsync(ISOMessage entity, CancellationToken ct);
@@ -48,6 +49,9 @@ public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceG
 
     public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct)
         => _record.GetISOMessageByTxIdAsync(txId, ct);
+
+    public Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct)
+        => _record.GetISOMessageByReturnIdAsync(returnId, ct);
 
     public Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct)
         => _record.GetISOMessageWithTransactionsByTxIdAsync(txId, ct);
