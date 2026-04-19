@@ -65,7 +65,8 @@ public class QrCodeParserService : IQrCodeParserService
                 Amount = payload.Amount,
                 AccountName = payload.AccountName,
                 Particulars = payload.Particulars,
-                PayloadFormatIndicator = formatIndicator
+                PayloadFormatIndicator = formatIndicator,
+                PointOfInitializationMethod = payload.PointOfInitializationMethod
             };
         }
         else if (formatIndicator == "01")

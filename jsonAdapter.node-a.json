@@ -89,6 +89,16 @@
           "InternalField": "SIPSRequestId",
           "UserField": "requestId",
           "Type": "string"
+        },
+        {
+          "InternalField": "Parsed",
+          "UserField": "parsed",
+          "Type": "object"
+        },
+        {
+          "InternalField": "BankName",
+          "UserField": "bankName",
+          "Type": "string"
         }
       ]
     },
