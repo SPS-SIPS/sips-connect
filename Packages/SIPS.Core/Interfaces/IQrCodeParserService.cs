@@ -1,4 +1,4 @@
-using SIPS.Core.Models;
+using SIPS.ISO20022.Models;
 
 namespace SIPS.Core.Interfaces;
 

@@ -80,8 +80,20 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
                 }
                 object? value = property.GetValue(localObject);
 
-                // Validate and convert the value to the expected type
-                object? convertedValue = value != null ? ConvertToType(value.ToString() ?? string.Empty, expectedType) : null;
+                object? convertedValue = null;
+                JsonNode? convertedNode = null;
+
+                if (value != null)
+                {
+                    if (expectedType == MappingType.Object)
+                    {
+                        convertedNode = JsonSerializer.SerializeToNode(value, _serializerOptions);
+                    }
+                    else
+                    {
+                        convertedValue = ConvertToType(value.ToString() ?? string.Empty, expectedType);
+                    }
+                }
 
                 // Use the userField for the output JSON property name
                 var segments = userField.Split('.');
@@ -96,11 +108,19 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
                     currentObject = currentObject[segments[i]]!.AsObject();
                 }
 
-                currentObject[segments.Last()] = JsonValue.Create(convertedValue);
+                string lastSegment = segments.Last();
+                if (convertedNode != null)
+                {
+                    currentObject[lastSegment] = convertedNode;
+                }
+                else
+                {
+                    currentObject[lastSegment] = JsonValue.Create(convertedValue);
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning($"Type mismatch for field '{internalField}' expected as '{expectedType}': {ex.Message}");
+                _logger.LogWarning($"Type mismatch or transformation failure for field '{internalField}' expected as '{expectedType}': {ex.Message}");
                 outputJson[userField] = null;
             }
         }
@@ -158,6 +178,7 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
             "double" => MappingType.Double,
             "bool" => MappingType.Bool,
             "datetime" => MappingType.DateTime,
+            "object" => MappingType.Object,
             _ => throw new NotSupportedException($"Type '{type}' is not supported."),
         };
     }

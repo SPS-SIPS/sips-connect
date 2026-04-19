@@ -2,7 +2,7 @@ using System;
 using System.Linq;
 using Microsoft.Extensions.Configuration;
 using SIPS.Core.Interfaces;
-using SIPS.Core.Models;
+using SIPS.ISO20022.Models;
 using SIPS.Emv.Helpers;
 using SIPS.Emv.Models;
 
@@ -51,6 +51,21 @@ public class QrCodeParserService : IQrCodeParserService
             // Assume format SOXX<ACQUIRER_ID>... (usually characters 4 to 7 are acquirer ID)
             acquirerId = accountId.Substring(4, 4);
             accountType = "IBAN";
+
+            var config = FindAcquirerConfig(acquirerId, payload.FiName);
+
+            return new QrCodeData
+            {
+                AccountId = accountId,
+                BankBICCode = config?.Bic ?? string.Empty,
+                BankName = payload.FiName,
+                AccountType = accountType,
+                AcquirerId = acquirerId,
+                Amount = payload.Amount,
+                AccountName = payload.AccountName,
+                Particulars = payload.Particulars,
+                PayloadFormatIndicator = formatIndicator
+            };
         }
         else if (formatIndicator == "01")
         {
@@ -82,39 +97,49 @@ public class QrCodeParserService : IQrCodeParserService
 
             // Per instructions: ACCT for P2M when it's a bank. Using "ACCT" as standard.
             accountType = "ACCT";
-        }
-        else
-        {
-            throw new Exception($"Unsupported Payload Format Indicator: {formatIndicator}");
-        }
 
-        var bic = ConvertAcquirerIdToBic(acquirerId);
+            var config = FindAcquirerConfig(acquirerId, null);
 
-        return new QrCodeData
-        {
-            AccountId = accountId,
-            BankBICCode = bic,
-            AccountType = accountType,
-            AcquirerId = acquirerId
-        };
+            return new QrCodeData
+            {
+                AccountId = accountId,
+                BankBICCode = config?.Bic ?? string.Empty,
+                BankName = config?.Name, // P2M typically doesn't have a BankName in QR, fallback to config name if matched
+                AccountType = accountType,
+                AcquirerId = acquirerId,
+                Amount = payload.TransactionAmount,
+                Currency = payload.TransactionCurrency.ToString(),
+                MerchantName = payload.MerchantName,
+                MerchantCity = payload.MerchantCity,
+                PayloadFormatIndicator = formatIndicator,
+                PointOfInitializationMethod = payload.PointOfInitializationMethod
+            };
+        }
+        throw new Exception($"Unsupported Payload Format Indicator: {formatIndicator}");
     }
 
-    private string ConvertAcquirerIdToBic(string acquirerId)
+    private AcquirerConfig? FindAcquirerConfig(string? acquirerId, string? institutionName)
     {
         var acquirers = _configuration.GetSection("Emv:Acquirers").Get<System.Collections.Generic.List<AcquirerConfig>>();
         if (acquirers == null || !acquirers.Any())
         {
-             throw new Exception("No Acquirers configured in appsettings (Emv:Acquirers list is empty).");
+             return null;
         }
 
-        var match = acquirers.FirstOrDefault(a => a.Id == acquirerId);
-        if (match == null)
-             throw new Exception($"No Acquirer mapped for AcquirerId '{acquirerId}'. Please check configuration.");
+        // 1. Try search by Name (Case-Insensitive)
+        if (!string.IsNullOrWhiteSpace(institutionName))
+        {
+            var nameMatch = acquirers.FirstOrDefault(a => string.Equals(a.Name, institutionName, StringComparison.OrdinalIgnoreCase));
+            if (nameMatch != null) return nameMatch;
+        }
 
-        var bic = match.Bic;
-        if (string.IsNullOrWhiteSpace(bic))
-             throw new Exception($"Configuration for AcquirerId '{acquirerId}' missing Bic.");
+        // 2. Try search by AcquirerId
+        if (!string.IsNullOrWhiteSpace(acquirerId))
+        {
+            var idMatch = acquirers.FirstOrDefault(a => string.Equals(a.Id, acquirerId, StringComparison.OrdinalIgnoreCase));
+            if (idMatch != null) return idMatch;
+        }
 
-        return bic;
+        return null;
     }
 }
