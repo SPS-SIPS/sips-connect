@@ -79,6 +79,7 @@ public sealed class IncomingTransactionStatusHandler_Token_Tests
         public Task<ISOMessage> ISOMessageResponseAsync(ISOMessage message, CancellationToken ct) => Task.FromResult(message);
         public Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus status, CancellationToken ct) => Task.FromResult(status);
         public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
+        public Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
         public Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
         public Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
         public Task<System.Collections.Generic.List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct) => Task.FromResult(new System.Collections.Generic.List<ISOMessage>());
