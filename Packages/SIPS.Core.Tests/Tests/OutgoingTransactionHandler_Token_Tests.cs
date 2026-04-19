@@ -45,6 +45,7 @@ namespace SIPS.Core.Tests.Tests
             public Task<ISOMessage> ISOMessageResponseAsync(ISOMessage message, CancellationToken ct) { LastToken = ct; return Task.FromResult(message); }
             public Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus status, CancellationToken ct) { LastToken = ct; return Task.FromResult(status); }
             public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
+            public Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
             public Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
             public Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
             public Task<System.Collections.Generic.List<ISOMessage>> GetISOMessagesByStatusAsync(SIPS.PostgreSQL.Enums.TransactionStatus status, CancellationToken ct) => Task.FromResult(new System.Collections.Generic.List<ISOMessage>());
