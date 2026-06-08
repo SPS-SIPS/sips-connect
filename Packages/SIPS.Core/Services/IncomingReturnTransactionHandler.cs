@@ -286,8 +286,11 @@ public sealed class IncomingReturnTransactionHandler(
                         // Active Decision: CoreBank rejected the return
                         _logger.LogWarning("[{CorrelationId}] Return rejected by CoreBank for TxId {TxId}. Reason: {Reason}", cid, request.OrgnlTxId, cbResult.Reason);
                         response.Status = RJCT;
-                        response.Reason = cbResult.Reason ?? MISS;
-                        response.AdditionalInfo = cbResult.AdditionalInfo ?? "Rejected by CoreBank";
+                        response.Reason = "MS03";
+                        response.AdditionalInfo = IsoText.StatusAdditionalInfo(
+                            cbResult.AdditionalInfo,
+                            cbResult.Reason,
+                            "Rejected by CoreBank");
 
                         // We still persist the return request, but mark it as rejected.
                         
@@ -322,7 +325,7 @@ public sealed class IncomingReturnTransactionHandler(
                 // [FIX 2]: CoreBank timeout — matching pacs.008 handler pattern
                 _logger.LogWarning(ex, "[{CorrelationId}] CoreBank callback timed out for Return TxId {TxId} (>{Timeout}s). Rejecting for safety.", cid, request.OrgnlTxId, _core.CoreBankTimeoutSeconds);
                 response.Status = RJCT;
-                response.Reason = "System Unavailable";
+                response.Reason = "MS03";
                 response.AdditionalInfo = "CoreBank response exceeded internal SLA.";
                 var rspTimeout = ReturnPaymentResponseBuilder.Build(response);
                 if (record != null)
@@ -350,7 +353,7 @@ public sealed class IncomingReturnTransactionHandler(
                 // [FIX 1]: Unified failure policy — RJCT on CoreBank connectivity failure (matching pacs.008 handler)
                 _logger.LogError(ex, "[{CorrelationId}] Failed to call CoreBank for Return {TxId} (Connectivity issue). Rejecting for safety.", cid, request.OrgnlTxId);
                 response.Status = RJCT;
-                response.Reason = "System Unavailable";
+                response.Reason = "MS03";
                 response.AdditionalInfo = "Failed to reach CoreBank for authorization.";
                 var rspErr = ReturnPaymentResponseBuilder.Build(response);
                 if (record != null)
