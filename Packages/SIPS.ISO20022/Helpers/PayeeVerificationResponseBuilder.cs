@@ -182,7 +182,7 @@ public static class PayeeVerificationResponseBuilder
             {
                 document.IdVrfctnRpt.Rpt[0].Rsn = new VerificationReason1Choice
                 {
-                    Prtry = request.Reason
+                    Prtry = IsoText.Max35Text(request.Reason, "MISS")
                 };
             }
 
@@ -221,7 +221,7 @@ public static class PayeeVerificationResponseBuilder
         {
             document.IdVrfctnRpt.Rpt[0].Rsn = new VerificationReason1Choice
             {
-                Prtry = request.Reason,
+                Prtry = IsoText.Max35Text(request.Reason, "MISS"),
             };
         }
 

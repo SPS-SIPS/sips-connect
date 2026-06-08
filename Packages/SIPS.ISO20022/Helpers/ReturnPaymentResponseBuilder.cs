@@ -51,7 +51,7 @@ public static class ReturnPaymentResponseBuilder
                     }
                 }
             },
-            BizMsgIdr = model.BizMsgIdr,
+            BizMsgIdr = IsoText.Max35Identifier(model.BizMsgIdr, model.From),
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
             Rltd = [
@@ -83,7 +83,7 @@ public static class ReturnPaymentResponseBuilder
                         }
                     }
                 },
-                BizMsgIdr = model.Original.BizMsgIdr,
+                BizMsgIdr = IsoText.Max35Identifier(model.Original.BizMsgIdr, model.Original.From),
                 MsgDefIdr = model.Original.MsgDefIdr,
                 CreDt = model.Original.CreDt
             }
@@ -137,7 +137,7 @@ public static class ReturnPaymentResponseBuilder
                 TxInfAndSts = [
                     new PaymentTransaction130 {
                         OrgnlGrpInf = new OriginalGroupInformation29 {
-                            OrgnlMsgId = request.Original.BizMsgIdr,
+                            OrgnlMsgId = IsoText.Max35Identifier(request.Original.BizMsgIdr, request.Original.From),
                             OrgnlMsgNmId = request.Original.MsgDefIdr,
                             OrgnlCreDtTm = request.Original.CreDt
                         },
@@ -163,14 +163,21 @@ public static class ReturnPaymentResponseBuilder
 
         if (request.Status == "RJCT")
         {
+            var rawReason = request.Reason?.Trim();
+            var reasonCode = IsoText.StatusReasonCode(rawReason);
+            var additionalInfo = IsoText.StatusAdditionalInfo(
+                request.AdditionalInfo,
+                IsoText.IsSafeMax35Text(rawReason) ? null : rawReason,
+                request.Status);
+
             document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf = [
                 new StatusReasonInformation12
                 {
                     Rsn = new StatusReason6Choice
                     {
-                        Prtry = request.Reason ?? request.Status ?? string.Empty
+                        Prtry = reasonCode
                     },
-                    AddtlInf = [request.AdditionalInfo ?? request.Status ?? string.Empty]
+                    AddtlInf = [additionalInfo ?? request.Status ?? string.Empty]
                 }
             ];
         }

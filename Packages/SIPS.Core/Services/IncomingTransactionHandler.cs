@@ -353,8 +353,10 @@ public sealed class IncomingTransactionHandler(
                             {
                                 _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}. Reason: {Reason}", cid, request.TxId, cbResponse.Reason);
                                 response.Status = RJCT;
-                                response.Reason = cbResponse.Reason;
-                                response.AdditionalInfo = cbResponse.AdditionalInfo;
+                                response.Reason = "MS03";
+                                response.AdditionalInfo = IsoText.StatusAdditionalInfo(
+                                    cbResponse.AdditionalInfo,
+                                    cbResponse.Reason);
                             }
                             else
                             {
@@ -365,7 +367,7 @@ public sealed class IncomingTransactionHandler(
                         {
                             _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null or empty data for TxId {TxId}. Fast-failing with RJCT (Safe mode).", cid, request.TxId);
                             response.Status = RJCT;
-                            response.Reason = "System Unavailable";
+                            response.Reason = "MS03";
                             response.AdditionalInfo = "CoreBank returned empty response.";
                         }
                     }
@@ -375,7 +377,7 @@ public sealed class IncomingTransactionHandler(
                         _logger.LogWarning(ex, "[{CorrelationId}] [MANUAL_RECONCILIATION_REQUIRED:POTENTIAL_PHANTOM_CREDIT] CoreBank callback timed out for TxId {TxId} (>{Timeout}s). Raising CheckStatus for audit trail.", cid, request.TxId, _core.CoreBankTimeoutSeconds);
                         
                         response.Status = RJCT;
-                        response.Reason = "System Unavailable";
+                        response.Reason = "MS03";
                         response.AdditionalInfo = "CoreBank response exceeded internal SLA.";
 
                         // [AUDIT-GRADE INTEGRITY]: Record "in-doubt" state in immutable ledger
@@ -400,7 +402,7 @@ public sealed class IncomingTransactionHandler(
                         path = "CoreBankError";
                         _logger.LogWarning(ex, "[{CorrelationId}] Failed to call CoreBank for TxId {TxId} (Connectivity issue). Rejecting for safety.", cid, request.TxId);
                         response.Status = RJCT;
-                        response.Reason = "System Unavailable";
+                        response.Reason = "MS03";
                         response.AdditionalInfo = "Failed to reach CoreBank for authorization.";
                     }
                 }
@@ -432,14 +434,11 @@ public sealed class IncomingTransactionHandler(
                 path = path == "Normal" ? "DbFail" : path;
                 _logger.LogError(ex, "[{CorrelationId}] Internal catch for TxId {TxId}. Path={Path}. Always returning signed ISO response for SLA compliance.", cid, request?.TxId, path);
                 
-                if (response.Status != RJCT) 
-                {
-                    response.Status = RJCT;
-                    response.Reason = "Internal System Error";
-                    response.AdditionalInfo = "Service failed to process callback within SLA.";
-                }
-                
-                var rspBody = PaymentRequestResponseBuilder.Build(response);
+                var rspFallback = BuildSafeRejectedPaymentResponse(
+                    response,
+                    request,
+                    "Service failed to process callback within SLA.");
+                var rspBody = PaymentRequestResponseBuilder.Build(rspFallback);
                 
                 // Final attempt to record the failure in DB (brief timeout)
                 try {
@@ -447,7 +446,7 @@ public sealed class IncomingTransactionHandler(
                     await _isoService.PersistTransactionResponseAsync(record,
                         TransactionStatus.Failed,
                         "Internal System Error during processing",
-                        response.AdditionalInfo,
+                        rspFallback.AdditionalInfo,
                         rspBody,
                         request?.TxId ?? string.Empty,
                         request?.EndToEndId ?? string.Empty,
@@ -486,6 +485,32 @@ public sealed class IncomingTransactionHandler(
             _logger.LogError(ex, "[{CorrelationId}] [METRIC:ISO_SIGNING_FAILED] Failed to sign ISO response. Returning unsigned body for SLA compliance.", cid);
             return isoBody; // Signing-safe fallback: return unsigned body instead of crashing
         }
+    }
+
+    private static PaymentRequestResponseBuilder.Response BuildSafeRejectedPaymentResponse(
+        PaymentRequestResponseBuilder.Response current,
+        PaymentRequestBuilder.Request? request,
+        string fallbackDetail)
+    {
+        var original = request ?? current.Original ?? new PaymentRequestBuilder.Request();
+        var previousReason = current.Reason;
+
+        return new PaymentRequestResponseBuilder.Response
+        {
+            From = !string.IsNullOrWhiteSpace(current.From) ? current.From : original.To,
+            To = !string.IsNullOrWhiteSpace(current.To) ? current.To : original.From,
+            MsgDefIdr = !string.IsNullOrWhiteSpace(current.MsgDefIdr) ? current.MsgDefIdr : original.MsgDefIdr,
+            BizMsgIdr = !string.IsNullOrWhiteSpace(current.BizMsgIdr) ? current.BizMsgIdr : original.BizMsgIdr,
+            MsgId = !string.IsNullOrWhiteSpace(current.MsgId) ? current.MsgId : original.MsgId,
+            CreDt = current.CreDt == default ? original.CreDt : current.CreDt,
+            Original = original,
+            Status = RJCT,
+            Reason = "MS03",
+            AdditionalInfo = IsoText.StatusAdditionalInfo(
+                current.AdditionalInfo,
+                IsoText.IsSafeMax35Text(previousReason) ? null : previousReason,
+                fallbackDetail)
+        };
     }
 
     private PaymentResponseDto ParseCallbackResult(JsonObject data)
