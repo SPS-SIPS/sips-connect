@@ -61,7 +61,7 @@ public static class PaymentStatusRequestResponseBuilder
                     }
                 }
             },
-            BizMsgIdr = model.BizMsgIdr,
+            BizMsgIdr = IsoText.Max35Identifier(model.BizMsgIdr, model.From),
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
             // Rltd references the IMMEDIATE PARENT message we received (switch-generated pacs.002 CN)
@@ -98,7 +98,7 @@ public static class PaymentStatusRequestResponseBuilder
                     }
                 },
                 // These fields come from the RECEIVED message's AppHdr (switch-generated)
-                BizMsgIdr = model.Original?.BizMsgIdr ?? string.Empty,
+                BizMsgIdr = IsoText.Max35Identifier(model.Original?.BizMsgIdr, model.Original?.From ?? model.From),
                 MsgDefIdr = model.Original?.MsgDefIdr ?? string.Empty,
                 CreDt = model.Original?.CreDt ?? DateTime.UtcNow
             }
@@ -130,11 +130,15 @@ public static class PaymentStatusRequestResponseBuilder
             statusReasonInfo = new StatusReasonInformation12();
             if (hasReason)
             {
-                statusReasonInfo.Rsn = new StatusReason6Choice { Prtry = request.Reason!.Trim() };
+                var rawReason = request.Reason!.Trim();
+                statusReasonInfo.Rsn = new StatusReason6Choice { Prtry = IsoText.StatusReasonCode(rawReason) };
             }
-            if (hasAddtlInf)
+            var additionalInfo = IsoText.StatusAdditionalInfo(
+                request.AdditionalInfo,
+                hasReason && !IsoText.IsSafeMax35Text(request.Reason) ? request.Reason : null);
+            if (!string.IsNullOrEmpty(additionalInfo))
             {
-                statusReasonInfo.AddtlInf = [request.AdditionalInfo!.Trim()];
+                statusReasonInfo.AddtlInf = [additionalInfo];
             }
         }
 
@@ -170,7 +174,7 @@ public static class PaymentStatusRequestResponseBuilder
                 TxInfAndSts = [
                     new PaymentTransaction130 {
                         OrgnlGrpInf = new OriginalGroupInformation29 {
-                            OrgnlMsgId = request.Original?.MsgId ?? string.Empty,
+                            OrgnlMsgId = IsoText.Max35Identifier(request.Original?.MsgId, request.Original?.From ?? request.From),
                             OrgnlMsgNmId = request.Original?.MsgDefIdr ?? string.Empty,
                             OrgnlCreDtTm = request.Original?.CreDt ?? DateTime.UtcNow
                         },

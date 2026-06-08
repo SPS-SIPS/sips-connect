@@ -61,7 +61,7 @@ public static class PaymentRequestResponseBuilder
                     }
                 }
             },
-            BizMsgIdr = model.BizMsgIdr,
+            BizMsgIdr = IsoText.Max35Identifier(model.BizMsgIdr, model.From),
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
             // Rltd references the IMMEDIATE PARENT message we received (switch-forwarded pacs.008)
@@ -98,7 +98,7 @@ public static class PaymentRequestResponseBuilder
                     }
                 },
                 // These fields come from the RECEIVED message's AppHdr (switch-generated)
-                BizMsgIdr = model.Original.BizMsgIdr,
+                BizMsgIdr = IsoText.Max35Identifier(model.Original.BizMsgIdr, model.Original.From),
                 MsgDefIdr = model.Original.MsgDefIdr,
                 CreDt = model.Original.CreDt
             }
@@ -153,7 +153,7 @@ public static class PaymentRequestResponseBuilder
                 TxInfAndSts = [
                     new PaymentTransaction130 {
                         OrgnlGrpInf = new OriginalGroupInformation29 {
-                            OrgnlMsgId = orig.MsgId,
+                            OrgnlMsgId = IsoText.Max35Identifier(orig.MsgId, orig.From),
                             OrgnlMsgNmId = orig.MsgDefIdr,
                             OrgnlCreDtTm = orig.CreDt
                         },
@@ -295,17 +295,23 @@ public static class PaymentRequestResponseBuilder
     {
         if (request.Status == "ACSC") return null;
 
+        var rawReason = request.Reason?.Trim();
+        var reasonCode = IsoText.StatusReasonCode(rawReason);
+        var additionalInfo = IsoText.StatusAdditionalInfo(
+            request.AdditionalInfo,
+            IsoText.IsSafeMax35Text(rawReason) ? null : rawReason);
+
         var statusReason = new StatusReasonInformation12
         {
             Rsn = new StatusReason6Choice
             {
-                Prtry = request.Reason ?? string.Empty
+                Prtry = reasonCode
             }
         };
 
-        if (!string.IsNullOrEmpty(request.AdditionalInfo))
+        if (!string.IsNullOrEmpty(additionalInfo))
         {
-            statusReason.AddtlInf.Add(request.AdditionalInfo);
+            statusReason.AddtlInf.Add(additionalInfo);
         }
 
         return [statusReason];
