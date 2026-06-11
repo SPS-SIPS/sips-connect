@@ -30,9 +30,16 @@ public static class Transformers
             document.Name = documentNamespace + "Document"; // Update the element name with the prefixed namespace
         }
 
-        // Keep acceptance timestamps in explicit UTC form, e.g. 2026-06-11T12:30:19.750Z.
-        // Leave CreDt/CreDtTm serialization untouched; some IPS endpoints are strict about those fields.
-        UpdateDateTimeElements(envelopeElement, "AccptncDtTm");
+        if (docNS.Contains("pacs.002", StringComparison.OrdinalIgnoreCase))
+        {
+            // Keep response acceptance timestamps in explicit UTC form, e.g. 2026-06-11T12:30:19.750Z.
+            UpdateDateTimeElements(envelopeElement, "AccptncDtTm", "yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
+        }
+        else
+        {
+            // Preserve the legacy request format accepted by IPS for pacs.008 AccptncDtTm.
+            UpdateDateTimeElements(envelopeElement, "AccptncDtTm", "yyyy-MM-dd'T'HH:mm:ss.fffzzz");
+        }
 
 
         // Serialize the XElement with prefixes
@@ -90,7 +97,7 @@ public static class Transformers
         };
     }
 
-    private static void UpdateDateTimeElements(XElement element, string elementName)
+    private static void UpdateDateTimeElements(XElement element, string elementName, string dateFormat)
     {
         foreach (var dateElement in element.DescendantsAndSelf().Where(e =>
                     e.Name.LocalName == elementName && DateTimeOffset.TryParse(e.Value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _)))
@@ -99,7 +106,7 @@ public static class Transformers
             {
                 dateElement.Value = dateValue
                     .ToUniversalTime()
-                    .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+                    .ToString(dateFormat, CultureInfo.InvariantCulture);
             }
         }
     }
