@@ -397,6 +397,11 @@
           "Type": "datetime"
         },
         {
+          "InternalField": "AcceptanceDate",
+          "UserField": "acceptedAtUtc",
+          "Type": "datetime"
+        },
+        {
           "InternalField": "TxId",
           "UserField": "transactionId",
           "Type": "string"
@@ -428,6 +433,11 @@
         {
           "InternalField": "AcceptanceDate",
           "UserField": "acceptanceDate",
+          "Type": "datetime"
+        },
+        {
+          "InternalField": "AcceptanceDate",
+          "UserField": "acceptedAtUtc",
           "Type": "datetime"
         },
         {
@@ -596,6 +606,11 @@
         {
           "InternalField": "AcceptanceDate",
           "UserField": "acceptanceDate",
+          "Type": "datetime"
+        },
+        {
+          "InternalField": "AcceptanceDate",
+          "UserField": "acceptedAtUtc",
           "Type": "datetime"
         },
         {

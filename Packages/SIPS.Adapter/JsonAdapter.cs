@@ -153,12 +153,14 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
         // Prefer DateTimeOffset parsing to preserve offsets, then normalize to UTC (Z)
         if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto))
         {
-            return dto.UtcDateTime.ToString("o");
+            return dto
+                .ToUniversalTime()
+                .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
         }
         // Fallback to DateTime with AssumeUniversal
         if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var dt))
         {
-            return dt.ToString("o");
+            return dt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
         }
         return value;
     }

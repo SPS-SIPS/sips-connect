@@ -19,7 +19,7 @@ public static class PaymentStatusRequestResponseBuilder
         public string? Status { get; set; }
         public string? Reason { get; set; }
         public string? AdditionalInfo { get; set; }
-        public DateTime AcceptanceDate { get; set; }
+        public DateTime? AcceptanceDate { get; set; }
         public string TxId { get; set; } = string.Empty;
     }
     /// <summary>
@@ -257,7 +257,7 @@ public static class PaymentStatusRequestResponseBuilder
         rsp.To = document.FIToFIPmtStsRpt.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "";
         rsp.BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "";
         rsp.MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "";
-        rsp.AcceptanceDate = document.FIToFIPmtStsRpt.TxInfAndSts[0].AccptncDtTm ?? DateTime.UtcNow;
+        rsp.AcceptanceDate = document.FIToFIPmtStsRpt.TxInfAndSts[0].AccptncDtTm;
         rsp.TxId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxId;
         rsp.Status = document.FIToFIPmtStsRpt.TxInfAndSts[0].TxSts ?? "RJCT";
         rsp.Reason = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?.Select(x => x.Rsn?.Prtry)?.FirstOrDefault();
