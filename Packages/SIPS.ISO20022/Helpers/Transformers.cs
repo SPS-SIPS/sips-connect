@@ -30,11 +30,9 @@ public static class Transformers
             document.Name = documentNamespace + "Document"; // Update the element name with the prefixed namespace
         }
 
-        // Keep ISO lifecycle timestamps in explicit UTC form, e.g. 2026-06-11T12:30:19.750Z.
-        foreach (var elementName in new[] { "CreDt", "CreDtTm", "OrgnlCreDtTm", "AccptncDtTm", "BizPrcgDt" })
-        {
-            UpdateDateTimeElements(envelopeElement, elementName);
-        }
+        // Keep acceptance timestamps in explicit UTC form, e.g. 2026-06-11T12:30:19.750Z.
+        // Leave CreDt/CreDtTm serialization untouched; some IPS endpoints are strict about those fields.
+        UpdateDateTimeElements(envelopeElement, "AccptncDtTm");
 
 
         // Serialize the XElement with prefixes
