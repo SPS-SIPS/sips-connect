@@ -9,6 +9,18 @@ namespace SIPS.Core.Tests.Tests;
 public class AcceptanceTimestampTests
 {
     [Fact]
+    public void PaymentRequest_FormatsAcceptanceDateWithOffsetForIpsCompatibility()
+    {
+        var request = CreateOriginalRequest();
+        request.CreDt = new DateTime(2026, 06, 11, 08, 53, 06, 369, DateTimeKind.Utc);
+
+        var (xml, _, _, _) = PaymentRequestBuilder.Build(request);
+
+        xml.Should().Contain("<document:AccptncDtTm>");
+        xml.Should().Contain("+00:00</document:AccptncDtTm>");
+    }
+
+    [Fact]
     public void PaymentResponse_FormatsAcceptanceDateAsUtcZ()
     {
         var response = new PaymentRequestResponseBuilder.Response
@@ -88,15 +100,19 @@ public class AcceptanceTimestampTests
             CreDt = DateTime.UtcNow,
             TxId = "TX",
             EndToEndId = "E2E",
+            LocalInstrument = "CRTRM",
+            CategoryPurpose = "C2CCRT",
             Currency = "USD",
             Amount = 10,
+            Ustrd = "test",
             Debtor = new Person
             {
                 Name = "Debtor",
                 Account = "D-001",
                 Address = "Debtor address",
                 AccountType = "CACC",
-                Issuer = "C"
+                Issuer = "C",
+                AgentBIC = "ZKBASOS0"
             },
             Creditor = new Person
             {
@@ -104,7 +120,8 @@ public class AcceptanceTimestampTests
                 Account = "C-001",
                 Address = "Creditor address",
                 AccountType = "CACC",
-                Issuer = "C"
+                Issuer = "C",
+                AgentBIC = "AGROSOS0"
             }
         };
     }
