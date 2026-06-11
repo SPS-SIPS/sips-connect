@@ -142,7 +142,7 @@ public static class PaymentRequestBuilder
                             Ccy = request.Currency,
                             TypedValue = request.Amount
                         },
-                        AccptncDtTm = null,
+                        AccptncDtTm = DateTime.UtcNow,
                         InstdAmt = new ActiveOrHistoricCurrencyAndAmount
                         {
                             Ccy = request.Currency,

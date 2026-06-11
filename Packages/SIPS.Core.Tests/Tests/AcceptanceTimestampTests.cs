@@ -9,14 +9,15 @@ namespace SIPS.Core.Tests.Tests;
 public class AcceptanceTimestampTests
 {
     [Fact]
-    public void PaymentRequest_DoesNotSendAcceptanceDate()
+    public void PaymentRequest_FormatsAcceptanceDateWithOffsetForIpsCompatibility()
     {
         var request = CreateOriginalRequest();
         request.CreDt = new DateTime(2026, 06, 11, 08, 53, 06, 369, DateTimeKind.Utc);
 
         var (xml, _, _, _) = PaymentRequestBuilder.Build(request);
 
-        xml.Should().NotContain("AccptncDtTm");
+        xml.Should().Contain("<document:AccptncDtTm>");
+        xml.Should().Contain("+00:00</document:AccptncDtTm>");
     }
 
     [Fact]
