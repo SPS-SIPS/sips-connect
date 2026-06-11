@@ -1,4 +1,5 @@
 using System.Net;
+using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
 using SIPS.ISO20022.Options;
@@ -29,8 +30,11 @@ public static class Transformers
             document.Name = documentNamespace + "Document"; // Update the element name with the prefixed namespace
         }
 
-        // Update all DateTime elements to have the desired format
-        UpdateDateTimeElements(envelopeElement, "yyyy-MM-ddTHH:mm:ss.fffzzz", "AccptncDtTm"); // Specify your desired date format
+        // Keep ISO lifecycle timestamps in explicit UTC form, e.g. 2026-06-11T12:30:19.750Z.
+        foreach (var elementName in new[] { "CreDt", "CreDtTm", "OrgnlCreDtTm", "AccptncDtTm", "BizPrcgDt" })
+        {
+            UpdateDateTimeElements(envelopeElement, elementName);
+        }
 
 
         // Serialize the XElement with prefixes
@@ -88,14 +92,16 @@ public static class Transformers
         };
     }
 
-    private static void UpdateDateTimeElements(XElement element, string dateFormat, string elementName)
+    private static void UpdateDateTimeElements(XElement element, string elementName)
     {
         foreach (var dateElement in element.DescendantsAndSelf().Where(e =>
-                    e.Name.LocalName == elementName && DateTime.TryParse(e.Value, out _)))
+                    e.Name.LocalName == elementName && DateTimeOffset.TryParse(e.Value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _)))
         {
-            if (DateTime.TryParse(dateElement.Value, out var dateValue))
+            if (DateTimeOffset.TryParse(dateElement.Value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dateValue))
             {
-                dateElement.Value = dateValue.ToString(dateFormat); // Format the DateTime value
+                dateElement.Value = dateValue
+                    .ToUniversalTime()
+                    .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
             }
         }
     }
