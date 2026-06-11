@@ -214,6 +214,7 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
                 EndToEndId = t.EndToEndId,
                 Reason = t.Reason,
                 AdditionalInfo = t.AdditionalInfo,
+                RecordedAtUtc = t.Date,
                 Date = t.Date,
                 FromBIC = t.FromBIC,
                 ToBIC = t.ToBIC,
@@ -337,6 +338,10 @@ public sealed class ISOMessageDto
     public string? Reason { get; set; }
 
     public string? AdditionalInfo { get; set; }
+
+    public DateTimeOffset RecordedAtUtc { get; set; }
+
+    public DateTimeOffset? MessageCreatedAtUtc { get; set; }
 
     public DateTimeOffset Date { get; set; }
 

@@ -361,6 +361,7 @@ public sealed class IncomingTransactionHandler(
                             else
                             {
                                 _logger.LogInformation("[{CorrelationId}] CoreBank returned status {Status} for transaction {TxId}. Proceeding with ACSC.", cid, cbResponse.Status, request.TxId);
+                                response.AcceptanceDate = cbResponse.AcceptanceDate;
                             }
                         }
                         else
@@ -408,6 +409,11 @@ public sealed class IncomingTransactionHandler(
                 }
 
                 // [PERSIST-BEFORE-RETURN INVARIANT]: Build response XML and persist BEFORE returning
+                if (!string.Equals(response.Status, RJCT, StringComparison.OrdinalIgnoreCase) && response.AcceptanceDate == null)
+                {
+                    response.AcceptanceDate = DateTime.UtcNow;
+                }
+
                 var rsp = PaymentRequestResponseBuilder.Build(response);
                 var finalStatus = path == "CoreBankTimeout" ? TransactionStatus.CheckStatus : TransactionStatus.Pending;
                 

@@ -19,7 +19,7 @@ public static class PaymentRequestResponseBuilder
         public string? Status { get; set; }
         public string? Reason { get; set; }
         public string? AdditionalInfo { get; set; }
-        public DateTime AcceptanceDate { get; set; }
+        public DateTime? AcceptanceDate { get; set; }
         public string TxId { get; set; } = string.Empty;
         public SIPS.ISO20022.Enums.Pacs002Role Role { get; set; } = SIPS.ISO20022.Enums.Pacs002Role.StatusUpdate;
     }
@@ -161,7 +161,7 @@ public static class PaymentRequestResponseBuilder
                         OrgnlTxId = orig.TxId,
                         TxSts = request.Status,
                         StsRsnInf = GetStatusReasonInformation(request),
-                        AccptncDtTm = DateTime.UtcNow,
+                        AccptncDtTm = request.Status == "RJCT" ? null : request.AcceptanceDate,
                         OrgnlTxRef = new OriginalTransactionReference35 {
                             IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {
                                 Ccy = orig.Currency,
@@ -228,7 +228,7 @@ public static class PaymentRequestResponseBuilder
         rsp.To = document.FIToFIPmtStsRpt.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "";
         rsp.BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "";
         rsp.MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "";
-        rsp.AcceptanceDate = document.FIToFIPmtStsRpt.TxInfAndSts[0].AccptncDtTm ?? DateTime.UtcNow;
+        rsp.AcceptanceDate = document.FIToFIPmtStsRpt.TxInfAndSts[0].AccptncDtTm;
         rsp.TxId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxId;
         rsp.Status = document.FIToFIPmtStsRpt.TxInfAndSts[0].TxSts ?? "RJCT";
         rsp.Reason = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?.Select(x => x.Rsn?.Prtry)?.FirstOrDefault();

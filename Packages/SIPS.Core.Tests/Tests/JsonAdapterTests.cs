@@ -122,7 +122,7 @@ public class JsonAdapterTests
         // Act
         var mapped = adapter.Transform(user, "datetime");
 
-        // Assert: normalized ISO string retained
-        mapped["created"]!.GetValue<string>().Should().Be(dt.ToString("o"));
+        // Assert: normalized to explicit UTC millisecond format
+        mapped["created"]!.GetValue<string>().Should().Be("2025-01-02T03:04:05.000Z");
     }
 }

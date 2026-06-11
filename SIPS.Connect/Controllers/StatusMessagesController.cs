@@ -49,6 +49,7 @@ public sealed class StatusMessagesController(IStorageBroker broker) : Controller
                 EndToEndId = s.ISOMessage.EndToEndId,
                 Reason = s.Reason,
                 AdditionalInfo = s.AdditionalInfo,
+                RecordedAtUtc = s.Date,
                 Date = s.Date,
                 FromBIC = s.ISOMessage.FromBIC,
                 ToBIC = s.ISOMessage.ToBIC,
