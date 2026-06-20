@@ -20,6 +20,7 @@ public static class ReturnPaymentResponseBuilder
         public string? Reason { get; set; }
         public string? AdditionalInfo { get; set; }
         public string TxId { get; set; } = string.Empty;
+        public DateTime? AcceptanceDate { get; set; }
     }
     private static AppHdr AppHeader(Response model, SupportedMessageTypes type)
     {
@@ -144,6 +145,7 @@ public static class ReturnPaymentResponseBuilder
                         OrgnlEndToEndId =request.Original.OriginalEndToEnd,
                         OrgnlTxId = request.Original.OrgnlTxId,
                         TxSts = request.Status,
+                        AccptncDtTm = request.Status == "RJCT" ? null : request.AcceptanceDate,
                         OrgnlTxRef =new OriginalTransactionReference35 {
                             IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {
                                 Ccy = request.Original.OriginalCurrency,
@@ -208,6 +210,7 @@ public static class ReturnPaymentResponseBuilder
                 .SelectMany(x => x.AddtlInf)
                 .FirstOrDefault(),
             TxId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxId,
+            AcceptanceDate = document.FIToFIPmtStsRpt.TxInfAndSts[0].AccptncDtTm,
 
             // Original Message Information
             Original = new()

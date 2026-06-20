@@ -29,7 +29,7 @@ public sealed class PaymentStatusReportParser : IPaymentStatusReportParser
                         MsgDefIdr = rpt.MsgDefIdr,
                         CreDt = rpt.CreDt,
                         MsgId = rpt.MsgId,
-                        AcceptanceDate = rpt.CreDt, // fallback
+                        AcceptanceDate = rpt.AcceptanceDate,
                         TxId = rpt.TxId,
                         Status = rpt.Status,
                         Reason = rpt.Reason,

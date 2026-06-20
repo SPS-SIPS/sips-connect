@@ -1,5 +1,6 @@
 using System;
 using FluentAssertions;
+using SIPS.Core.Services.ISOParsers;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Models;
 using Xunit;
@@ -88,6 +89,33 @@ public class AcceptanceTimestampTests
         parsed!.AcceptanceDate.Should().BeNull();
     }
 
+    [Fact]
+    public void ReturnPaymentStatusParser_DoesNotUseMessageCreationTimeAsAcceptanceDate()
+    {
+        var messageCreatedAt = new DateTime(2026, 06, 11, 12, 30, 18, 100, DateTimeKind.Utc);
+        var response = new ReturnPaymentResponseBuilder.Response
+        {
+            From = "BICA",
+            To = "BICB",
+            BizMsgIdr = "BIZ",
+            MsgDefIdr = "pacs.002.001.12",
+            CreDt = messageCreatedAt,
+            MsgId = "MSG",
+            Status = "ACSC",
+            TxId = "TX",
+            Original = CreateOriginalReturnRequest()
+        };
+
+        var xml = ReturnPaymentResponseBuilder.Build(response);
+        var parser = new PaymentStatusReportParser();
+
+        parser.TryParse(xml, out var parsed).Should().BeTrue();
+        xml.Should().NotContain("AccptncDtTm");
+        parsed.Should().NotBeNull();
+        parsed!.CreDt.Should().Be(messageCreatedAt);
+        parsed.AcceptanceDate.Should().BeNull();
+    }
+
     private static PaymentRequestBuilder.Request CreateOriginalRequest()
     {
         return new PaymentRequestBuilder.Request
@@ -123,6 +151,31 @@ public class AcceptanceTimestampTests
                 Issuer = "C",
                 AgentBIC = "AGROSOS0"
             }
+        };
+    }
+
+    private static ReturnPaymentRequestBuilder.Request CreateOriginalReturnRequest()
+    {
+        return new ReturnPaymentRequestBuilder.Request
+        {
+            From = "BICB",
+            To = "BICA",
+            MsgDefIdr = "pacs.004.001.11",
+            BizMsgIdr = "ORIGBIZ",
+            MsgId = "ORIGMSG",
+            CreDt = DateTime.UtcNow,
+            NumberOfTransactions = 1,
+            LocalInstrument = "CRTRM",
+            CategoryPurpose = "C2CCRT",
+            ReturnId = "RTRN",
+            OriginalEndToEnd = "E2E",
+            OrgnlTxId = "TX",
+            OriginalCurrency = "USD",
+            OriginalAmount = 10,
+            ReturnReason = "AC01",
+            AdditionalInfo = "test",
+            DebtorAgent = "ZKBASOS0",
+            CreditorAgent = "AGROSOS0"
         };
     }
 }
