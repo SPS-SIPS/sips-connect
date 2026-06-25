@@ -24,6 +24,7 @@ using SIPS.Core.Services.Responses;
 using SIPS.Core.Services.Verification;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Models.DTOs;
+using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Options;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
@@ -36,7 +37,7 @@ namespace SIPS.Core.Tests.Tests;
 public class IncomingTransactionHandler_Callback_Tests
 {
     private static (IncomingTransactionHandler sut, Mock<IIncomingRecorder> rec, Mock<IInterfaceHttpClient> http, Mock<IJsonAdapter> adapter)
-        CreateSut(Func<Response<JsonObject?>> httpResultFactory)
+        CreateSut(Func<Response<JsonObject?>> httpResultFactory, CBPaymentStatusResponseDto? coreBankResponse = null)
     {
         var options = new ISO20022Options
         {
@@ -60,8 +61,8 @@ public class IncomingTransactionHandler_Callback_Tests
         var adapter = new Mock<IJsonAdapter>();
         adapter.Setup(a => a.Transform(It.IsAny<JsonObject>(), It.IsAny<string>()))
                .Returns(new JsonObject { ["mapped"] = true });
-        adapter.Setup(a => a.ToObject<PaymentResponseDto>(It.IsAny<JsonObject>()))
-               .Returns(new PaymentResponseDto { Status = "RJCT", Reason = "X", AdditionalInfo = "", AcceptanceDate = DateTime.UtcNow, TxId = "TX" });
+        adapter.Setup(a => a.ToObject<CBPaymentStatusResponseDto>(It.IsAny<JsonObject>()))
+               .Returns(coreBankResponse ?? new CBPaymentStatusResponseDto { Status = "RJCT", Reason = "X", AdditionalInfo = "", AcceptanceDate = DateTime.UtcNow, TxId = "TX" });
 
         var recorder = new Mock<IIncomingRecorder>();
         recorder.Setup(r => r.ISOMessageAsync(It.IsAny<SIPS.PostgreSQL.Models.ISOMessage>(), It.IsAny<CancellationToken>()))
@@ -79,7 +80,7 @@ public class IncomingTransactionHandler_Callback_Tests
     var callback = new CallbackClient(http.Object, cbLogger, correlation);
     var callbacks = new CallbackOrchestrator();
     var isoMessageService = new ISOMessageService(persistence);
-    var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
+    var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions { IncludeCoreBankOnListing = true });
         var signature = new Mock<ISignatureService>();
         signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((true, "ok"));
@@ -156,5 +157,39 @@ public class IncomingTransactionHandler_Callback_Tests
         persistedMessage.Should().NotBeNull();
         // Handler persists message - actual status depends on handler's business logic
         persistedMessage!.Status.Should().BeOneOf(TransactionStatus.Failed, TransactionStatus.Pending);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RejectsAndPersistsFailed_WhenHttpOkButCoreBankStatusIsEmpty()
+    {
+        var xml = MakeValidPaymentRequestXml();
+        var coreBankResponse = new CBPaymentStatusResponseDto
+        {
+            Status = "",
+            Reason = "",
+            AdditionalInfo = "",
+            AcceptanceDate = DateTime.UtcNow,
+            TxId = "TX"
+        };
+        var (sut, recorder, _, _) = CreateSut(
+            () => new Response<JsonObject?>(new JsonObject { ["status"] = "" }) { StatusCode = HttpStatusCode.OK },
+            coreBankResponse);
+
+        var rsp = await sut.HandleAsync(xml, CancellationToken.None);
+
+        rsp.Should().NotBeNullOrWhiteSpace();
+
+        recorder.Verify(r => r.ISOMessageResponseAsync(It.IsAny<SIPS.PostgreSQL.Models.ISOMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        var responseInvocation = recorder.Invocations.First(i => i.Method.Name == "ISOMessageResponseAsync");
+        var persistedMessage = responseInvocation.Arguments[0] as SIPS.PostgreSQL.Models.ISOMessage;
+
+        persistedMessage.Should().NotBeNull();
+        persistedMessage!.Status.Should().Be(TransactionStatus.Failed);
+        persistedMessage.Reason.Should().Be("MS03");
+        persistedMessage.AdditionalInfo.Should().Contain("CoreBank returned non-success status: <empty>.");
+
+        var responseXml = Encoding.UTF8.GetString(persistedMessage.Response!);
+        var parsed = PaymentRequestResponseBuilder.Parse(responseXml);
+        parsed.Status.Should().Be("RJCT");
     }
 }

@@ -13,6 +13,7 @@ using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Responses;
 using SIPS.Core.Services.Verification;
 using SIPS.ISO20022.Helpers;
+using SIPS.ISO20022.Enums;
 using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Options;
 using SIPS.XMLDsig.Xades.Interfaces;
@@ -178,8 +179,9 @@ public sealed class IncomingPaymentStatusReportHandler(
 
         if (isoMessage == null)
         {
-            _logger.LogWarning("[{CorrelationId}] Status report received for non-existent TxId {TxId}", cid, request.TxId);
-            return AdminMessage.Generate("Failed to get the Message.");
+            await RecordOrphanStatusReportAsync(request, message, ct);
+            _logger.LogInformation("[{CorrelationId}] Status report received before parent transaction was found. TxId={TxId}", cid, request.TxId);
+            return AdminMessage.Generate("Referenced transaction was not found.");
         }
 
         // Step 3: Record the incoming status report under parent ISOMessage
@@ -362,69 +364,69 @@ public sealed class IncomingPaymentStatusReportHandler(
             return signedMirror;
         }
 
-        // If RJCT -> Notify CoreBank of rejection (Active Decision), then persist and return
+        // If RJCT -> fail locally. Notify CoreBank only when CoreBank previously saw this transaction.
         if (_statusOrchestrator.IsRejectionStatus(request.Status))
         {
             var (rjctParentStatus, rjctChildStatus, rjctReason, rjctAdditionalInfo) = _statusOrchestrator.MapCompletionStatus(request.Status ?? string.Empty, null, false);
+            var notifyCoreBankOfRejection = isOutgoing || _core.IncludeCoreBankOnListing;
+            SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? rejectResult = null;
 
-            _logger.LogInformation("[{CorrelationId}] Switch rejected transaction {TxId}. Forwarding rejection to CoreBank via CompletionNotification.", cid, request.TxId);
-
-            try 
+            if (notifyCoreBankOfRejection && !string.IsNullOrWhiteSpace(_callbackLinks.CompletionNotification))
             {
-                var rejectHeaders = new Dictionary<string, string>() {
-                        { API_Key, _callbackLinks.Key! },
-                        { API_Secret, _callbackLinks.Secret! }
+                _logger.LogInformation("[{CorrelationId}] Switch rejected transaction {TxId}. Forwarding rejection to CoreBank via CompletionNotification.", cid, request.TxId);
+
+                try
+                {
+                    var rejectHeaders = new Dictionary<string, string>() {
+                            { API_Key, _callbackLinks.Key! },
+                            { API_Secret, _callbackLinks.Secret! }
+                        };
+                    // Idempotency key
+                    if (!string.IsNullOrWhiteSpace(request.TxId))
+                        rejectHeaders["X-Idempotency-Key"] = request.TxId;
+                    if (!string.IsNullOrWhiteSpace(request.TxId))
+                        rejectHeaders["X-Transaction-Id"] = request.TxId;
+
+                    var rejectDto = new CBCompletionNotification
+                    {
+                        OriginalTxId = request.TxId ?? string.Empty,
+                        OriginalEndToEndId = request.Original?.EndToEndId,
+                        Status = RJCT,
+                        Reason = request.Reason ?? rjctReason,
+                        AdditionalInfo = request.AdditionalInfo ?? rjctAdditionalInfo
                     };
-                // Idempotency key
-                if (!string.IsNullOrWhiteSpace(request.TxId))
-                    rejectHeaders["X-Idempotency-Key"] = request.TxId;
-                if (!string.IsNullOrWhiteSpace(request.TxId))
-                    rejectHeaders["X-Transaction-Id"] = request.TxId;
 
-                var rejectDto = new CBCompletionNotification
-                {
-                    OriginalTxId = request.TxId ?? string.Empty,
-                    OriginalEndToEndId = request.Original?.EndToEndId,
-                    Status = RJCT,
-                    Reason = request.Reason ?? rjctReason,
-                    AdditionalInfo = request.AdditionalInfo ?? rjctAdditionalInfo
-                };
-
-                SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? rejectResult = null;
-                using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
-                {
-                    rejectResult = await _callbacks.SendJsonAsync(
-                        _callbackLinks.CompletionNotification!, // Ensure this URL is configured
-                        rejectHeaders,
-                        rejectDto,
-                        Constants.CB_CompletionNotification, 
-                        _jsonAdapter,
-                        _correlation,
-                        _jsonSerializerOptions,
-                        _callback,
-                        ct,
-                        cid
-                    );
+                    using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
+                    using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+                    {
+                        rejectResult = await _callbacks.SendJsonAsync(
+                            _callbackLinks.CompletionNotification!,
+                            rejectHeaders,
+                            rejectDto,
+                            Constants.CB_CompletionNotification,
+                            _jsonAdapter,
+                            _correlation,
+                            _jsonSerializerOptions,
+                            _callback,
+                            coreBankCts.Token,
+                            cid
+                        );
+                    }
                 }
-
-                if (rejectResult != null)
+                catch (Exception ex)
                 {
-                     // [DATA SAFETY]: Use explicit PersistResponseAsync to merge CoreBankResponse safely.
-                     // Direct assignment isoMessage.CoreBankResponse = ... is unsafe as it bypasses the audit ledger merge logic.
-                     isoMessage.CoreBankResponse = JsonSerializer.Serialize(rejectResult, _jsonSerializerOptions);
-                     using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
-                     {
-                         using var localCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-                         await _isoService.PersistResponseAsync(isoMessage, isoMessage.Status, isoMessage.Reason ?? "", isoMessage.AdditionalInfo, 
-                            isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : "", localCts.Token);
-                     }
+                    _logger.LogError(ex, "[{CorrelationId}] Failed to notify CoreBank of rejection for TxId {TxId}.", cid, request.TxId);
+                    // We proceed to persist failure locally even if CB notification fails, as the Switch has already rejected it.
                 }
-                
             }
-            catch (Exception ex) 
+            else if (!notifyCoreBankOfRejection)
             {
-                _logger.LogError(ex, "[{CorrelationId}] Failed to notify CoreBank of rejection for TxId {TxId}.", cid, request.TxId);
-                // We proceed to persist failure locally even if CB notification fails, as the Switch has already rejected it.
+                _logger.LogInformation("[{CorrelationId}] Switch rejected incoming transaction {TxId}; IncludeCoreBankOnListing=false so CoreBank was never listed and rejection notification is skipped.", cid, request.TxId);
+            }
+            else
+            {
+                _logger.LogWarning("[{CorrelationId}] CompletionNotification URL not configured. Skipping CoreBank rejection notification for TxId {TxId}.", cid, request.TxId);
             }
 
             response.TxId = statusReq.OrgnlTxId ?? response.TxId;
@@ -434,10 +436,14 @@ public sealed class IncomingPaymentStatusReportHandler(
             isoMessage.Status = rjctParentStatus;
             isoMessage.Reason = !string.IsNullOrWhiteSpace(response.Reason) ? response.Reason : rjctReason;
             isoMessage.AdditionalInfo = rjctAdditionalInfo;
+            if (rejectResult != null)
+                isoMessage.CoreBankResponse = JsonSerializer.Serialize(rejectResult, _jsonSerializerOptions);
 
             using (SipsMetrics.TrackStep("Incoming", "Status", "DbSave"))
             {
                 using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                var rjctCurrentResponseXml = isoMessage.Response != null ? Encoding.UTF8.GetString(isoMessage.Response) : string.Empty;
+                await _isoService.PersistResponseAsync(isoMessage, rjctParentStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rjctCurrentResponseXml, updateCts.Token);
                 await _isoService.PersistStatusResponseAsync(record, rjctChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, updateCts.Token);
             }
             var signedRej = _signer.SignEnvelope(rspRej);
@@ -452,6 +458,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         // CoreBank already debited the sender.
         
         Response<System.Text.Json.Nodes.JsonObject?>? result = null;
+        var coreBankResponseKind = "CB_PaymentResponse";
         var tx = transaction;
 
         if (!isOutgoing)
@@ -488,6 +495,8 @@ public sealed class IncomingPaymentStatusReportHandler(
                 };
 
                  SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? completionResult = null;
+                 using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                 coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
                  using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
                  {
                      completionResult = await _callbacks.SendJsonAsync(
@@ -499,15 +508,16 @@ public sealed class IncomingPaymentStatusReportHandler(
                         _correlation,
                         _jsonSerializerOptions,
                         _callback,
-                        ct,
+                        coreBankCts.Token,
                         cid
                     );
                  }
                  result = completionResult;
+                 coreBankResponseKind = CB_CompletionNotificationResponse;
 
                 if (result == null)
                 {
-                    _logger.LogError("[{CorrelationId}] CoreBank CompletionNotification callback returned null for TxId {TxId}. Proceeding with Success persistence.", cid, request.TxId);
+                    _logger.LogError("[{CorrelationId}] CoreBank CompletionNotification callback returned null for TxId {TxId}. Deferring local Success until CoreBank confirms.", cid, request.TxId);
                 }
                 else 
                 {
@@ -531,59 +541,48 @@ public sealed class IncomingPaymentStatusReportHandler(
                 if (!string.IsNullOrWhiteSpace(transaction?.TxId ?? request.TxId))
                     headers["X-Transaction-Id"] = (transaction?.TxId ?? request.TxId)!;
 
-                // Here incomingStatus must be ACSC; build CB payment request payload for CB
-                // tx is already defined in outer scope
-
-                 // Safely handle null tx if transaction was missing (though unlikely for a valid update)
-                 if (tx == null)
-                 {
-                     _logger.LogWarning("[{CorrelationId}] Transaction object is null for TxId {TxId}. Using request data fallback.", cid, request.TxId);
-                     // Create a dummy tx or handle gracefully? 
-                     // Logic below relies on tx properties. Let's create a temporary object wrapper for dto construction
-                     // or just rely on the '?? string.Empty' checks which will throw if tx is null.
-                     // Ideally we should have guaranteed tx is not null or handle it.  
-                     // For now, let's assume tx might be null and use null-conditional or fallback.
-                 }
-
-                // Note: The original code assumed tx was not null 'var tx = transaction!;'. 
-                // We'll preserve that assumption but use the outer 'tx' variable.
-                // If tx is null, we might crash constructing the DTO. 
-                // Let's protect the DTO construction.
-                
-                var dto = new CBPaymentRequestDto
+                if (tx == null || string.IsNullOrWhiteSpace(tx.TxId))
                 {
-                    FromBIC = tx?.FromBIC ?? string.Empty,
-                    LocalInstrument = tx?.LocalInstrument ?? string.Empty,
-                    CategoryPurpose = tx?.CategoryPurpose ?? string.Empty,
-                    EndToEndId = tx?.EndToEndId ?? string.Empty,
-                    TxId = tx?.TxId ?? string.Empty,
-                    Amount = tx?.Amount ?? 0,
-                    Currency = tx?.Currency ?? string.Empty,
-                    DebtorName = tx?.DebtorName ?? string.Empty,
-                    DebtorAccount = tx?.DebtorAccount ?? string.Empty,
-                    DebtorAccountType = tx?.DebtorAccountType ?? string.Empty,
-                    DebtorAgentBIC = tx?.DebtorAgentBIC ?? string.Empty,
-                    DebtorIssuer = tx?.DebtorIssuer ?? string.Empty,
-                    CreditorName = tx?.CreditorName ?? string.Empty,
-                    CreditorAccount = tx?.CreditorAccount ?? string.Empty,
-                    CreditorAccountType = tx?.CreditorAccountType ?? string.Empty,
-                    CreditorAgentBIC = tx?.CreditorAgentBIC ?? string.Empty,
-                    CreditorIssuer = tx?.CreditorIssuer ?? string.Empty,
-                    RemittanceInformation = tx?.RemittanceInformation ?? string.Empty,
-                    Date = DateTime.UtcNow,
-                    ToBIC = isoMessage.FromBIC ?? string.Empty,
-                    SettlementMethod = "CLRG",
-                    ChargeBearer = "SLEV",
-                    BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
-                    MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
-                    ClearingSystem = string.Empty,
-                    MsgId = isoMessage.MsgId ?? string.Empty
-                };
-
-                SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? transferResult = null;
-                using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+                    _logger.LogError("[{CorrelationId}] Cannot late-bind incoming transaction {TxId} to CoreBank because transaction details are missing. Deferring local Success.", cid, request.TxId);
+                }
+                else
                 {
-                    transferResult = await _callbacks.SendJsonAsync(
+                    var dto = new CBPaymentRequestDto
+                    {
+                        FromBIC = tx.FromBIC ?? string.Empty,
+                        LocalInstrument = tx.LocalInstrument ?? string.Empty,
+                        CategoryPurpose = tx.CategoryPurpose ?? string.Empty,
+                        EndToEndId = tx.EndToEndId ?? string.Empty,
+                        TxId = tx.TxId ?? string.Empty,
+                        Amount = tx.Amount,
+                        Currency = tx.Currency ?? string.Empty,
+                        DebtorName = tx.DebtorName ?? string.Empty,
+                        DebtorAccount = tx.DebtorAccount ?? string.Empty,
+                        DebtorAccountType = tx.DebtorAccountType ?? string.Empty,
+                        DebtorAgentBIC = tx.DebtorAgentBIC ?? string.Empty,
+                        DebtorIssuer = tx.DebtorIssuer ?? string.Empty,
+                        CreditorName = tx.CreditorName ?? string.Empty,
+                        CreditorAccount = tx.CreditorAccount ?? string.Empty,
+                        CreditorAccountType = tx.CreditorAccountType ?? string.Empty,
+                        CreditorAgentBIC = tx.CreditorAgentBIC ?? string.Empty,
+                        CreditorIssuer = tx.CreditorIssuer ?? string.Empty,
+                        RemittanceInformation = tx.RemittanceInformation ?? string.Empty,
+                        Date = DateTime.UtcNow,
+                        ToBIC = isoMessage.FromBIC ?? string.Empty,
+                        SettlementMethod = "CLRG",
+                        ChargeBearer = "SLEV",
+                        BizMsgIdr = isoMessage.BizMsgIdr ?? string.Empty,
+                        MsgDefIdr = isoMessage.MsgDefIdr ?? string.Empty,
+                        ClearingSystem = string.Empty,
+                        MsgId = isoMessage.MsgId ?? string.Empty
+                    };
+
+                    SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? transferResult = null;
+                    using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
+                    using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
+                    {
+                        transferResult = await _callbacks.SendJsonAsync(
                             _callbackLinks.Transfer!,
                                 headers,
                                 dto,
@@ -592,18 +591,17 @@ public sealed class IncomingPaymentStatusReportHandler(
                                 _correlation,
                                 _jsonSerializerOptions,
                                 _callback,
-                                ct,
+                                coreBankCts.Token,
                                 cid
                             );
+                    }
+                    result = transferResult;
                 }
-                result = transferResult;
 
 
-                // Guard against null callback result
-                // CRITICAL CHANGE: Even if CoreBank fails/returns null, if Switch says ACSC, we must persist SUCCESS.
                 if (result == null)
                 {
-                    _logger.LogError("[{CorrelationId}] CoreBank callback returned null for TxId {TxId}. Proceeding with Success persistence as Switch confirmed ACSC.", cid, request.TxId);
+                    _logger.LogError("[{CorrelationId}] CoreBank callback returned null for TxId {TxId}. Deferring local Success until CoreBank confirms.", cid, request.TxId);
                 }
                 else 
                 {
@@ -650,6 +648,8 @@ public sealed class IncomingPaymentStatusReportHandler(
             };
 
              SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? cbResult = null;
+             using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+             coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
              using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
              {
                  cbResult = await _callbacks.SendJsonAsync(
@@ -661,11 +661,12 @@ public sealed class IncomingPaymentStatusReportHandler(
                     _correlation,
                     _jsonSerializerOptions,
                     _callback,
-                    ct,
+                    coreBankCts.Token,
                     cid
                 );
              }
              result = cbResult;
+             coreBankResponseKind = CB_CompletionNotificationResponse;
 
             if (result == null)
             {
@@ -687,28 +688,15 @@ public sealed class IncomingPaymentStatusReportHandler(
              }
         }
 
-        var crResponse = (result != null && result.Data != null) ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+        var crResponse = (result != null && result.Data != null) ? ParseCallbackResult(result.Data, coreBankResponseKind) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
         _logger.LogDebug("[IncomingPaymentStatusReportHandler] crResponse.Status={Status} TxId={TxId}", crResponse?.Status, crResponse?.TxId);
 
-        // Use StatusOrchestrator to map IPS + CoreBank statuses to final status
-        // Use StatusOrchestrator to map IPS + CoreBank statuses, BUT enforce Switch priority for final status
+        // Use StatusOrchestrator to map IPS + CoreBank statuses to final status.
+        // Local Success requires both IPS acceptance and CoreBank confirmation.
         var (parentStatus, childStatus, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
             request.Status ?? string.Empty,
             crResponse?.Status, 
             false);
-
-        // Enforce Switch Priority: If IPS says ACSC, local status is Success regardless of CoreBank result
-        if (string.Equals(request.Status, ACSC, StringComparison.OrdinalIgnoreCase))
-        {
-            parentStatus = TransactionStatus.Success;
-            childStatus = TransactionStatus.Success; // Ensure child status is also Success for consistency
-            
-            // potential refinement: might want to append CoreBank error to reason if it failed, but keep Status=Success
-            if (crResponse?.Status == RJCT || result == null)
-            {
-               reason = $"Attributes updated from CoreBank: {crResponse?.Reason ?? "CoreBank Failed"}";
-            }
-        }
 
         // Ensure response mirrors the CoreBank status so the built XML contains the expected status
         // Prefer the CoreBank status only when it is non-empty; otherwise keep the IPS status
@@ -841,6 +829,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             headers["X-Return-Id"] = isoMessage.ReturnId;
 
         Response<System.Text.Json.Nodes.JsonObject?>? result = null;
+        var coreBankResponseKind = "CB_PaymentResponse";
 
         if (_core.IncludeCoreBankOnListing)
         {
@@ -855,6 +844,8 @@ public sealed class IncomingPaymentStatusReportHandler(
                  AdditionalInfo = isoMessage.AdditionalInfo ?? "Final return success"
              };
 
+             using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+             coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
              using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
              {
                  result = await _callbacks.SendJsonAsync(
@@ -866,15 +857,29 @@ public sealed class IncomingPaymentStatusReportHandler(
                     _correlation,
                     _jsonSerializerOptions,
                     _callback,
-                    ct,
+                    coreBankCts.Token,
                     cid
                 );
              }
+             coreBankResponseKind = CB_CompletionNotificationResponse;
         }
         else
         {
             // Path B: Bank has NOT seen this return yet. Use "Late Binding" logic.
             // Send Return Request to execute the reversal.
+            if (transaction == null || string.IsNullOrWhiteSpace(transaction.TxId) || string.IsNullOrWhiteSpace(isoMessage.ReturnId))
+            {
+                _logger.LogError("[{CorrelationId}] Cannot late-bind return to CoreBank because transaction or return identifiers are missing. TxId={TxId}, ReturnId={ReturnId}", cid, transaction?.TxId, isoMessage.ReturnId);
+
+                isoMessage.Status = TransactionStatus.ReadyForReturn;
+                isoMessage.Reason = "Missing return identifiers";
+                isoMessage.AdditionalInfo = "Manual intervention required to complete return";
+                response.Status = ACSC;
+                response.Reason = isoMessage.Reason;
+                response.AdditionalInfo = isoMessage.AdditionalInfo;
+
+                return response;
+            }
             
             // Build return request payload for CoreBank
             var returnDto = new CBReturnRequestDto
@@ -887,6 +892,8 @@ public sealed class IncomingPaymentStatusReportHandler(
                 AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty
             };
 
+            using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
             using (SipsMetrics.TrackStep("Incoming", "Status", "CoreBankCall"))
             {
                 result = await _callbacks.SendJsonAsync(
@@ -898,7 +905,7 @@ public sealed class IncomingPaymentStatusReportHandler(
                     _correlation,
                     _jsonSerializerOptions,
                     _callback,
-                    ct,
+                    coreBankCts.Token,
                     cid
                 );
             }
@@ -923,7 +930,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         _logger.LogInformation("[{CorrelationId}] Forwarded return to CoreBank for TxId {TxId}, StatusCode={StatusCode}", cid, transaction?.TxId, result.StatusCode);
 
         // Parse CoreBank response
-        var cbResponse = result.Data != null ? ParseCallbackResult(result.Data) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+        var cbResponse = result.Data != null ? ParseCallbackResult(result.Data, coreBankResponseKind) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
 
         // Map CoreBank return response to final status
         // If CBS successfully reversed the credit, mark as Success (return completed)
@@ -966,11 +973,26 @@ public sealed class IncomingPaymentStatusReportHandler(
     }
 
     // verification and parsing now delegated to shared services, record/persist via IISOMessageService
-    private PaymentResponseDto ParseCallbackResult(JsonObject data)
+    private PaymentResponseDto ParseCallbackResult(JsonObject data, string transformKey = "CB_PaymentResponse")
     {
         // data is already a JsonObject coming from the callback orchestrator
         var js = data;
-        var md = _jsonAdapter.Transform(js!, "CB_PaymentResponse");
+        if (string.Equals(transformKey, CB_CompletionNotificationResponse, StringComparison.Ordinal))
+        {
+            var completionMapped = _jsonAdapter.Transform(js!, CB_CompletionNotificationResponse);
+            var completion = _jsonAdapter.ToObject<CBCompletionNotificationResponse>(completionMapped);
+            if (completion == null)
+                return new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+
+            return new PaymentResponseDto
+            {
+                Status = completion.Status ?? string.Empty,
+                Reason = completion.Reason,
+                AdditionalInfo = completion.AdditionalInfo
+            };
+        }
+
+        var md = _jsonAdapter.Transform(js!, transformKey);
         var cb = _jsonAdapter.ToObject<SIPS.ISO20022.Models.DTOs.CB.CBPaymentStatusResponseDto>(md);
         if (cb == null)
             return new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
@@ -984,5 +1006,48 @@ public sealed class IncomingPaymentStatusReportHandler(
             Reason = cb.Reason,
             EndToEndId = cb.EndToEndId ?? string.Empty
         };
+    }
+
+    private async Task RecordOrphanStatusReportAsync(
+        PaymentRequestResponseBuilder.Response request,
+        string rawXml,
+        CancellationToken ct)
+    {
+        try
+        {
+            var orphan = new ISOMessage
+            {
+                MessageType = ISOMessageType.StatusResponse,
+                Date = DateTimeOffset.UtcNow,
+                FromBIC = request.From ?? string.Empty,
+                ToBIC = request.To ?? string.Empty,
+                Message = Encoding.UTF8.GetBytes(rawXml),
+                Status = TransactionStatus.CheckStatus,
+                Reason = "Parent transaction not found",
+                AdditionalInfo = $"Orphan pacs.002 stored for reconciliation. Original TxId: {request.TxId}",
+                BizMsgIdr = request.BizMsgIdr ?? string.Empty,
+                MsgDefIdr = request.MsgDefIdr ?? SupportedMessageTypes.CreditTransferResponse.Id,
+                MsgId = OrphanStatusMsgId(request),
+                TxId = null,
+                UETR = request.TxId,
+                EndToEndId = request.Original?.EndToEndId,
+                Pacs002Role = request.Role
+            };
+
+            await _persistence.RecordISOMessageAsync(orphan, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist orphan pacs.002 for TxId {TxId}", request.TxId);
+        }
+    }
+
+    private static string OrphanStatusMsgId(PaymentRequestResponseBuilder.Response request)
+    {
+        var sourceId = string.IsNullOrWhiteSpace(request.MsgId)
+            ? $"{request.TxId}-{request.Role}"
+            : request.MsgId;
+
+        return $"orphan-{sourceId}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
     }
 }

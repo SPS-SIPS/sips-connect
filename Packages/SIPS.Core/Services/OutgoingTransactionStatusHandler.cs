@@ -63,6 +63,12 @@ public sealed class OutgoingTransactionStatusHandler(
     public async Task<Response<PaymentResponseDto>> HandleAsync(StatusRequestDto message, CancellationToken ct)
     {
         using var _totalTrack = SipsMetrics.TrackStep("Outgoing", "Status", "Total");
+        if (string.IsNullOrWhiteSpace(message.TxId))
+        {
+            _logger.LogWarning("Outgoing status request rejected because TxId is missing.");
+            return Response<PaymentResponseDto>.Fail("TxId is required", System.Net.HttpStatusCode.BadRequest);
+        }
+
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var cid = _correlation.Create(message.TxId);
@@ -284,6 +290,9 @@ public sealed class OutgoingTransactionStatusHandler(
                 else
                 {
                     _logger.LogInformation("[{CorrelationId}] CoreBank return reversal completed successfully for TxId {TxId}", cid, isoMessage.TxId);
+                    isoMessage.Status = TransactionStatus.Success;
+                    using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                    await _persistence.ISOMessageResponseAsync(isoMessage, updateCts.Token);
                 }
             }
 
@@ -490,6 +499,12 @@ public sealed class OutgoingTransactionStatusHandler(
 
             if (_core.IncludeCoreBankOnListing)
             {
+                 if (string.IsNullOrWhiteSpace(_configuration.CompletionNotification))
+                 {
+                     _logger.LogWarning("[{CorrelationId}] CompletionNotification URL not configured. Cannot complete SAF return for TxId {TxId}", cid, isoMessage.TxId);
+                     return false;
+                 }
+
                  // Path A: Bank previously approved the return (Permission Step). 
                  // Send Completion Notification to confirm finality.
                  var notificationDto = new CBCompletionNotification
@@ -501,6 +516,8 @@ public sealed class OutgoingTransactionStatusHandler(
                      AdditionalInfo = isoMessage.AdditionalInfo ?? "Final return success via SAF"
                  };
 
+                 using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                 coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
                  result = await _callbacks.SendJsonAsync(
                     _configuration.CompletionNotification!,
                     headers,
@@ -510,7 +527,7 @@ public sealed class OutgoingTransactionStatusHandler(
                     _correlation,
                     _jsonSerializerOptions,
                     _callback,
-                    ct,
+                    coreBankCts.Token,
                     cid
                 );
             }
@@ -518,16 +535,24 @@ public sealed class OutgoingTransactionStatusHandler(
             {
                 // Path B: Bank has NOT seen this return yet. Use "Late Binding" logic.
                 // Send Return Request to execute the reversal.
+                if (transaction == null || string.IsNullOrWhiteSpace(isoMessage.TxId) || string.IsNullOrWhiteSpace(isoMessage.ReturnId))
+                {
+                    _logger.LogError("[{CorrelationId}] Cannot late-bind SAF return to CoreBank because transaction or return identifiers are missing. TxId={TxId}, ReturnId={ReturnId}", cid, isoMessage.TxId, isoMessage.ReturnId);
+                    return false;
+                }
+
                 var returnDto = new CBReturnRequestDto
                 {
                     FromBIC = isoMessage.FromBIC ?? string.Empty,
-                    OriginalEndToEnd = transaction?.EndToEndId ?? string.Empty,
-                    OrgnlTxId = isoMessage.TxId ?? string.Empty,
-                    ReturnId = isoMessage.ReturnId ?? string.Empty,
+                    OriginalEndToEnd = transaction.EndToEndId ?? string.Empty,
+                    OrgnlTxId = isoMessage.TxId,
+                    ReturnId = isoMessage.ReturnId,
                     Reason = "Return confirmed by IPS via SAF",
                     AdditionalInfo = isoMessage.AdditionalInfo ?? "Return processed via Store-and-Forward mechanism"
                 };
 
+                using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
                 result = await _callbacks.SendJsonAsync(
                     _configuration.Return!,
                     headers,
@@ -537,7 +562,7 @@ public sealed class OutgoingTransactionStatusHandler(
                     _correlation,
                     _jsonSerializerOptions,
                     _callback,
-                    ct,
+                    coreBankCts.Token,
                     cid
                 );
             }
@@ -550,6 +575,7 @@ public sealed class OutgoingTransactionStatusHandler(
             }
 
             _logger.LogInformation("[{CorrelationId}] CoreBank return callback completed for TxId {TxId}, StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
+            isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
 
             if (result.Data == null)
             {
@@ -557,12 +583,10 @@ public sealed class OutgoingTransactionStatusHandler(
                 return false;
             }
 
-            // Transform and parse the response (Structure is same for both Notification and Return Request responses: CB_PaymentResponse)
-            var js = result.Data;
-            var md = _jsonAdapter.Transform(js, "CB_PaymentResponse");
-            var cbResponse = _jsonAdapter.ToObject<CBPaymentStatusResponseDto>(md);
-
-            if (cbResponse == null || string.IsNullOrWhiteSpace(cbResponse.Status))
+            var cbStatus = _core.IncludeCoreBankOnListing
+                ? ParseCompletionNotificationStatus(result.Data)
+                : ParsePaymentStatus(result.Data);
+            if (string.IsNullOrWhiteSpace(cbStatus))
             {
                 _logger.LogWarning("[{CorrelationId}] CoreBank return response has no status for TxId {TxId}", cid, isoMessage.TxId);
                 return false;
@@ -571,18 +595,19 @@ public sealed class OutgoingTransactionStatusHandler(
             // Check if CBS successfully reversed the credit (or processed notification)
             var (parentStatus, _, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
                 ACSC,  // IPS confirmed the return
-                cbResponse.Status,  // CBS result
+                cbStatus,  // CBS result
                 false);
 
             if (parentStatus == TransactionStatus.Success)
             {
+                isoMessage.Status = parentStatus;
                 isoMessage.Reason = reason;
                 isoMessage.AdditionalInfo = additionalInfo ?? "Return completed via SAF";
                 return true;
             }
             else
             {
-                _logger.LogWarning("[{CorrelationId}] CoreBank return reversal failed for TxId {TxId}. CBS Status={Status}", cid, isoMessage.TxId, cbResponse.Status);
+                _logger.LogWarning("[{CorrelationId}] CoreBank return reversal failed for TxId {TxId}. CBS Status={Status}", cid, isoMessage.TxId, cbStatus);
                 return false;
             }
         }
@@ -636,6 +661,9 @@ public sealed class OutgoingTransactionStatusHandler(
                 AdditionalInfo = additionalInfo ?? "Transaction status resolved via SAF"
             };
 
+            using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
+
             var result = await _callbacks.SendJsonAsync(
                 _configuration.CompletionNotification!,
                 headers,
@@ -645,7 +673,7 @@ public sealed class OutgoingTransactionStatusHandler(
                 _correlation,
                 _jsonSerializerOptions,
                 _callback,
-                ct,
+                coreBankCts.Token,
                 cid
             );
 
@@ -655,17 +683,26 @@ public sealed class OutgoingTransactionStatusHandler(
                 return false; // Null response = failure, should retry
             }
 
-            // Check for successful HTTP status codes (2xx)
-            if (result.StatusCode >= System.Net.HttpStatusCode.OK && result.StatusCode < System.Net.HttpStatusCode.MultipleChoices)
+            isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
+            if (result.Data == null)
             {
-                _logger.LogInformation("[{CorrelationId}] CoreBank completion notification sent successfully for TxId {TxId}, StatusCode={StatusCode}",
-                    cid, isoMessage.TxId, result.StatusCode);
+                _logger.LogWarning("[{CorrelationId}] CoreBank completion notification returned null data for TxId {TxId}", cid, isoMessage.TxId);
+                return false;
+            }
+
+            var responseStatus = ParseCompletionNotificationStatus(result.Data);
+            if (result.StatusCode >= System.Net.HttpStatusCode.OK &&
+                result.StatusCode < System.Net.HttpStatusCode.MultipleChoices &&
+                _statusOrchestrator.IsSuccessStatus(responseStatus))
+            {
+                _logger.LogInformation("[{CorrelationId}] CoreBank completion notification accepted for TxId {TxId}, StatusCode={StatusCode}, ResponseStatus={ResponseStatus}",
+                    cid, isoMessage.TxId, result.StatusCode, responseStatus);
                 return true;
             }
 
-            _logger.LogWarning("[{CorrelationId}] CoreBank completion notification failed for TxId {TxId}, StatusCode={StatusCode}",
-                cid, isoMessage.TxId, result.StatusCode);
-            return false; // Non-2xx status = failure, should retry
+            _logger.LogWarning("[{CorrelationId}] CoreBank completion notification failed for TxId {TxId}, StatusCode={StatusCode}, ResponseStatus={ResponseStatus}",
+                cid, isoMessage.TxId, result.StatusCode, string.IsNullOrWhiteSpace(responseStatus) ? "<empty>" : responseStatus);
+            return false;
         }
         catch (Exception ex)
         {
@@ -693,6 +730,11 @@ public sealed class OutgoingTransactionStatusHandler(
             };
 
             var transaction = isoMessage.Transactions.FirstOrDefault();
+            if (transaction == null || string.IsNullOrWhiteSpace(transaction.TxId))
+            {
+                _logger.LogError("[{CorrelationId}] Cannot late-bind SAF transfer to CoreBank because transaction details are missing. TxId={TxId}", cid, isoMessage.TxId);
+                return false;
+            }
             
             var idem = isoMessage.TxId;
             if (!string.IsNullOrWhiteSpace(idem))
@@ -704,27 +746,27 @@ public sealed class OutgoingTransactionStatusHandler(
             // Use properties from the stored Transaction, falling back to empty strings if missing
             var dto = new CBPaymentRequestDto
             {
-                FromBIC = transaction?.FromBIC ?? string.Empty,
-                LocalInstrument = transaction?.LocalInstrument ?? string.Empty,
-                CategoryPurpose = transaction?.CategoryPurpose ?? string.Empty,
-                EndToEndId = transaction?.EndToEndId ?? string.Empty,
-                TxId = transaction?.TxId ?? isoMessage.TxId ?? string.Empty,
-                Amount = transaction?.Amount ?? 0,
-                Currency = transaction?.Currency ?? string.Empty,
-                DebtorName = transaction?.DebtorName ?? string.Empty,
-                DebtorAccount = transaction?.DebtorAccount ?? string.Empty,
-                DebtorAddress = transaction?.DebtorAddress ?? string.Empty,
-                DebtorAccountType = transaction?.DebtorAccountType ?? string.Empty,
-                DebtorAgentBIC = transaction?.DebtorAgentBIC ?? string.Empty,
-                DebtorIssuer = transaction?.DebtorIssuer ?? string.Empty,
-                CreditorName = transaction?.CreditorName ?? string.Empty,
-                CreditorAccount = transaction?.CreditorAccount ?? string.Empty,
-                CreditorAddress = transaction?.CreditorAddress ?? string.Empty,
-                CreditorAccountType = transaction?.CreditorAccountType ?? string.Empty,
+                FromBIC = transaction.FromBIC ?? string.Empty,
+                LocalInstrument = transaction.LocalInstrument ?? string.Empty,
+                CategoryPurpose = transaction.CategoryPurpose ?? string.Empty,
+                EndToEndId = transaction.EndToEndId ?? string.Empty,
+                TxId = transaction.TxId,
+                Amount = transaction.Amount,
+                Currency = transaction.Currency ?? string.Empty,
+                DebtorName = transaction.DebtorName ?? string.Empty,
+                DebtorAccount = transaction.DebtorAccount ?? string.Empty,
+                DebtorAddress = transaction.DebtorAddress ?? string.Empty,
+                DebtorAccountType = transaction.DebtorAccountType ?? string.Empty,
+                DebtorAgentBIC = transaction.DebtorAgentBIC ?? string.Empty,
+                DebtorIssuer = transaction.DebtorIssuer ?? string.Empty,
+                CreditorName = transaction.CreditorName ?? string.Empty,
+                CreditorAccount = transaction.CreditorAccount ?? string.Empty,
+                CreditorAddress = transaction.CreditorAddress ?? string.Empty,
+                CreditorAccountType = transaction.CreditorAccountType ?? string.Empty,
 
-                CreditorAgentBIC = transaction?.CreditorAgentBIC ?? string.Empty,
-                CreditorIssuer = transaction?.CreditorIssuer ?? string.Empty,
-                RemittanceInformation = transaction?.RemittanceInformation ?? string.Empty,
+                CreditorAgentBIC = transaction.CreditorAgentBIC ?? string.Empty,
+                CreditorIssuer = transaction.CreditorIssuer ?? string.Empty,
+                RemittanceInformation = transaction.RemittanceInformation ?? string.Empty,
                 Date = DateTime.UtcNow,
                 ToBIC = isoMessage.ToBIC ?? string.Empty, // Target is Us (Receiver)
                 SettlementMethod = "CLRG",
@@ -735,6 +777,9 @@ public sealed class OutgoingTransactionStatusHandler(
                 MsgId = isoMessage.MsgId ?? string.Empty
             };
 
+            using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
+
             var result = await _callbacks.SendJsonAsync(
                 _configuration.Transfer!,
                 headers,
@@ -744,7 +789,7 @@ public sealed class OutgoingTransactionStatusHandler(
                 _correlation,
                 _jsonSerializerOptions,
                 _callback,
-                ct,
+                coreBankCts.Token,
                 cid
             );
 
@@ -756,6 +801,7 @@ public sealed class OutgoingTransactionStatusHandler(
             }
 
             _logger.LogInformation("[{CorrelationId}] CoreBank transfer callback completed for TxId {TxId}, StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
+            isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
 
             if (result.Data == null)
             {
@@ -763,12 +809,8 @@ public sealed class OutgoingTransactionStatusHandler(
                 return false;
             }
 
-            // Transform and parse the response
-            var js = result.Data;
-            var md = _jsonAdapter.Transform(js, "CB_PaymentResponse");
-            var cbResponse = _jsonAdapter.ToObject<CBPaymentStatusResponseDto>(md);
-
-            if (cbResponse == null || string.IsNullOrWhiteSpace(cbResponse.Status))
+            var cbStatus = ParsePaymentStatus(result.Data);
+            if (string.IsNullOrWhiteSpace(cbStatus))
             {
                 _logger.LogWarning("[{CorrelationId}] CoreBank transfer response has no status for TxId {TxId}", cid, isoMessage.TxId);
                 return false;
@@ -778,18 +820,19 @@ public sealed class OutgoingTransactionStatusHandler(
             // We use MapCompletionStatus to check if the CBS status maps to Success
             var (parentStatus, _, reason, additionalInfo) = _statusOrchestrator.MapCompletionStatus(
                 ACSC,  // IPS confirmed Success
-                cbResponse.Status,  // CBS result
+                cbStatus,  // CBS result
                 false);
 
             if (parentStatus == TransactionStatus.Success)
             {
+                isoMessage.Status = parentStatus;
                 isoMessage.Reason = reason;
                 isoMessage.AdditionalInfo = additionalInfo ?? "Transfer completed via SAF";
                 return true;
             }
             else
             {
-                _logger.LogWarning("[{CorrelationId}] CoreBank transfer failed for TxId {TxId}. CBS Status={Status}", cid, isoMessage.TxId, cbResponse.Status);
+                _logger.LogWarning("[{CorrelationId}] CoreBank transfer failed for TxId {TxId}. CBS Status={Status}", cid, isoMessage.TxId, cbStatus);
                 return false;
             }
         }
@@ -798,5 +841,19 @@ public sealed class OutgoingTransactionStatusHandler(
             _logger.LogError(ex, "[{CorrelationId}] Exception calling CoreBank transfer callback for TxId {TxId}", cid, isoMessage.TxId);
             return false;
         }
+    }
+
+    private string? ParseCompletionNotificationStatus(System.Text.Json.Nodes.JsonObject data)
+    {
+        var md = _jsonAdapter.Transform(data, CB_CompletionNotificationResponse);
+        var response = _jsonAdapter.ToObject<CBCompletionNotificationResponse>(md);
+        return response?.Status;
+    }
+
+    private string? ParsePaymentStatus(System.Text.Json.Nodes.JsonObject data)
+    {
+        var md = _jsonAdapter.Transform(data, "CB_PaymentResponse");
+        var response = _jsonAdapter.ToObject<CBPaymentStatusResponseDto>(md);
+        return response?.Status;
     }
 }

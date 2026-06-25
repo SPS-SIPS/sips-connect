@@ -131,7 +131,17 @@ public static class PaymentStatusRequestResponseBuilder
             if (hasReason)
             {
                 var rawReason = request.Reason!.Trim();
-                statusReasonInfo.Rsn = new StatusReason6Choice { Prtry = IsoText.StatusReasonCode(rawReason) };
+                var reasonCode = IsoText.StatusReasonCode(rawReason);
+                var reasonChoice = new StatusReason6Choice();
+                try
+                {
+                    reasonChoice.Prtry = reasonCode;
+                }
+                catch (Xml.Schema.Linq.LinqToXsdException) when (reasonCode != "NARR")
+                {
+                    reasonChoice.Prtry = "NARR";
+                }
+                statusReasonInfo.Rsn = reasonChoice;
             }
             var additionalInfo = IsoText.StatusAdditionalInfo(
                 request.AdditionalInfo,

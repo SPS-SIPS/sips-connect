@@ -171,14 +171,21 @@ public static class ReturnPaymentResponseBuilder
                 request.AdditionalInfo,
                 IsoText.IsSafeMax35Text(rawReason) ? null : rawReason,
                 request.Status);
+            var reasonChoice = new StatusReason6Choice();
+            try
+            {
+                reasonChoice.Prtry = reasonCode;
+            }
+            catch (Xml.Schema.Linq.LinqToXsdException) when (reasonCode != "NARR")
+            {
+                reasonChoice.Prtry = "NARR";
+                additionalInfo = IsoText.StatusAdditionalInfo(additionalInfo, rawReason);
+            }
 
             document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf = [
                 new StatusReasonInformation12
                 {
-                    Rsn = new StatusReason6Choice
-                    {
-                        Prtry = reasonCode
-                    },
+                    Rsn = reasonChoice,
                     AddtlInf = [additionalInfo ?? request.Status ?? string.Empty]
                 }
             ];

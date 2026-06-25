@@ -30,6 +30,25 @@ public class ISOReasonSanitizationTests
     }
 
     [Fact]
+    public void PaymentRequestResponseBuilder_Builds_WhenReasonMatchesCoreBankFailureFromLog()
+    {
+        const string productionReason = "The Given Value Service is not enabled for this customer.";
+        var response = new PaymentRequestResponseBuilder.Response
+        {
+            From = "SSBMSOSM",
+            To = "MYBASOSM",
+            Status = "RJCT",
+            Reason = productionReason,
+            Original = PaymentRequest()
+        };
+
+        var xml = PaymentRequestResponseBuilder.Build(response);
+
+        xml.Should().Contain("<document:Prtry>NARR</document:Prtry>");
+        xml.Should().Contain(productionReason);
+    }
+
+    [Fact]
     public void PaymentStatusRequestResponseBuilder_Builds_WhenReasonExceedsIsoMax35()
     {
         var response = new PaymentStatusRequestResponseBuilder.Response

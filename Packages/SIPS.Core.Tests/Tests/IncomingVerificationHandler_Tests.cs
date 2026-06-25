@@ -84,10 +84,22 @@ public class IncomingVerificationHandler_Tests
 
     var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
     var inbound = new SIPS.Core.Services.Implementations.InboundMessageService(signature.Object);
-    var callbacks = Mock.Of<SIPS.Core.Services.Abstractions.ICallbackOrchestrator>();
+    var callbacks = new Mock<SIPS.Core.Services.Abstractions.ICallbackOrchestrator>();
+    callbacks.Setup(c => c.SendJsonAsync(
+            It.IsAny<string>(),
+            It.IsAny<IDictionary<string, string>>(),
+            It.IsAny<object>(),
+            It.IsAny<string>(),
+            It.IsAny<IJsonAdapter>(),
+            It.IsAny<SIPS.Core.Services.Correlation.ICorrelationService>(),
+            It.IsAny<System.Text.Json.JsonSerializerOptions>(),
+            It.IsAny<SIPS.Core.Services.Callback.ICallbackClient>(),
+            It.IsAny<CancellationToken>(),
+            It.IsAny<string>()))
+        .ReturnsAsync(() => httpResultFactory());
     var isoService = new SIPS.Core.Services.Implementations.ISOMessageService(persistence);
     var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
-        var sut = new IncomingVerificationHandler(options, logger, signer, adapter, persistence, parser, signature.Object, correlation, callback, inbound, callbacks, isoService, coreOptions);
+        var sut = new IncomingVerificationHandler(options, logger, signer, adapter, persistence, parser, signature.Object, correlation, callback, inbound, callbacks.Object, isoService, coreOptions);
         return (sut, recorder, http, adapter);
     }
 
@@ -174,7 +186,7 @@ public class IncomingVerificationHandler_Tests
             {
                 var jo = System.Text.Json.JsonSerializer.Deserialize<JsonObject>(System.Text.Json.JsonSerializer.Serialize(dto));
                 if (jo != null) onBodyCaptured?.Invoke(jo);
-                return new SIPS.ISO20022.Models.DTOs.Response<JsonObject?>(new JsonObject { ["ok"] = true }) { StatusCode = HttpStatusCode.OK };
+                return httpResultFactory();
             });
 
     var persistence = new SIPS.Core.Services.Persistence.PersistenceGateway(recorder.Object);
@@ -209,10 +221,10 @@ public class IncomingVerificationHandler_Tests
     }
 
     [Fact]
-    public async Task HandleAsync_PersistsFailed_WhenHttpIsNotOk()
+    public async Task HandleAsync_PersistsFailed_WhenCoreBankReturnsBusinessError()
     {
         var xml = LoadFixture();
-        var (sut, recorder, _, _) = CreateSut(() => new Response<JsonObject?>(null) { StatusCode = HttpStatusCode.BadGateway, Message = "bad" });
+        var (sut, recorder, _, _) = CreateSut(() => new Response<JsonObject?>(null) { StatusCode = HttpStatusCode.BadRequest, Message = "bad" });
 
         var rsp = await sut.HandleAsync(xml, CancellationToken.None);
 
@@ -230,6 +242,74 @@ public class IncomingVerificationHandler_Tests
 
         rsp.Should().NotBeNullOrWhiteSpace();
         recorder.Verify(r => r.ISOMessageResponseAsync(It.Is<ISOMessage>(m => m.Status == TransactionStatus.Failed), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_PersistsFailed_WhenCoreBankVerificationTimesOut()
+    {
+        var req = new PayeeVerificationBuilder.Request
+        {
+            From = "BICA",
+            To = "BICB",
+            MsgDefIdr = "acmt.023.001.03",
+            BizMsgIdr = "BIZ",
+            MsgId = "MSG-TIMEOUT",
+            CreDt = DateTime.UtcNow,
+            Alias = "SO040014202305005007605",
+            Type = "IBAN",
+            SIPSRequestId = "VRID-TIMEOUT"
+        };
+        var (sut, recorder, _) = CreateSutWithRequest(
+            () => new Response<JsonObject?>(null)
+            {
+                StatusCode = HttpStatusCode.RequestTimeout,
+                Message = "CoreBank verification timeout"
+            },
+            req);
+
+        var rsp = await sut.HandleAsync("<xml />", CancellationToken.None);
+
+        rsp.Should().Be("signed");
+        recorder.Verify(r => r.ISOMessageResponseAsync(
+            It.Is<ISOMessage>(m =>
+                m.Status == TransactionStatus.Failed &&
+                m.Reason == "TIMEOUT" &&
+                m.AdditionalInfo == "CoreBank verification timeout"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_PersistsFailed_WhenCoreBankVerificationHasTransportFailure()
+    {
+        var req = new PayeeVerificationBuilder.Request
+        {
+            From = "BICA",
+            To = "BICB",
+            MsgDefIdr = "acmt.023.001.03",
+            BizMsgIdr = "BIZ",
+            MsgId = "MSG-TRANSPORT-FAILURE",
+            CreDt = DateTime.UtcNow,
+            Alias = "SO040014202305005007605",
+            Type = "IBAN",
+            SIPSRequestId = "VRID-TRANSPORT-FAILURE"
+        };
+        var (sut, recorder, _) = CreateSutWithRequest(
+            () => new Response<JsonObject?>(null)
+            {
+                StatusCode = HttpStatusCode.InternalServerError,
+                Message = "Connection refused"
+            },
+            req);
+
+        var rsp = await sut.HandleAsync("<xml />", CancellationToken.None);
+
+        rsp.Should().Be("signed");
+        recorder.Verify(r => r.ISOMessageResponseAsync(
+            It.Is<ISOMessage>(m =>
+                m.Status == TransactionStatus.Failed &&
+                m.Reason == "TIMEOUT" &&
+                m.AdditionalInfo == "Connection refused"),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
