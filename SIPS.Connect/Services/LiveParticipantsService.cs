@@ -63,7 +63,7 @@ public class LiveParticipantsService : ILiveParticipantsService
                 return FilterByStatus(freshData, isLive);
             }
 
-            _logger.LogWarning("No live participants data available from API");
+            _logger.LogInformation("No live participants data available from API");
             return new List<ParticipantStatus>();
         }
         catch (Exception ex)
@@ -149,12 +149,26 @@ public class LiveParticipantsService : ILiveParticipantsService
                 return null;
             }
 
-            // Create HTTP request with Bearer token
             var client = _httpClientFactory.CreateClient();
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}{_liveParticipantsEndpoint}");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            
-            var httpResponse = await client.SendAsync(request, cancellationToken);
+            var httpResponse = await SendLiveParticipantsRequestAsync(client, token, cancellationToken);
+
+            if (httpResponse.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            {
+                var errorContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Live participants request returned {StatusCode}. Refreshing Core API token and retrying once. Response: {Response}",
+                    httpResponse.StatusCode, errorContent);
+
+                _authService.InvalidateCachedToken();
+                token = await _authService.GetAuthTokenAsync(cancellationToken);
+                if (string.IsNullOrEmpty(token))
+                {
+                    _logger.LogError("Failed to refresh authentication token after live participants request returned {StatusCode}", httpResponse.StatusCode);
+                    return null;
+                }
+
+                httpResponse.Dispose();
+                httpResponse = await SendLiveParticipantsRequestAsync(client, token, cancellationToken);
+            }
             
             if (!httpResponse.IsSuccessStatusCode)
             {
@@ -193,6 +207,13 @@ public class LiveParticipantsService : ILiveParticipantsService
             _logger.LogError(ex, "Unexpected error fetching live participants from API");
             throw;
         }
+    }
+
+    private async Task<HttpResponseMessage> SendLiveParticipantsRequestAsync(HttpClient client, string token, CancellationToken cancellationToken)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}{_liveParticipantsEndpoint}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return await client.SendAsync(request, cancellationToken);
     }
 
     private List<ParticipantStatus> FilterByStatus(List<ParticipantStatus> participants, bool? isLive)

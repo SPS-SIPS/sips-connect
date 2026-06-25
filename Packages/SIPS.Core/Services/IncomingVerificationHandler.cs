@@ -323,9 +323,31 @@ public sealed class IncomingVerificationHandler(
             }
 
             _logger.LogInformation("[IncomingVerificationHandler] Callback for ReqId={ReqId} returned StatusCode={StatusCode}", request.SIPSRequestId, responseMessage?.StatusCode);
+            var coreBankVerificationIndeterminate = IsIndeterminateCoreBankVerification(responseMessage);
             if (responseMessage != null && responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
             {
                 ParseCallbackResult(responseMessage.Data, response);
+            }
+            else if (coreBankVerificationIndeterminate)
+            {
+                path = IsTimeoutLike(responseMessage) ? "CoreBankTimeout" : "CoreBankTransportFailure";
+                _logger.LogWarning("[{CorrelationId}] CoreBank verification could not be completed for ReqId={ReqId}. Returning failed verification without CheckStatus retry. StatusCode={StatusCode}", cid, request.SIPSRequestId, responseMessage?.StatusCode);
+                response.Verified = false;
+                response.Reason = "TIMEOUT";
+                response.AdditionalInfo = responseMessage?.Message ?? "CoreBank verification did not complete successfully.";
+
+                await _isoService.AppendAuditLedgerEventAsync(isoMessage.Id, new
+                {
+                    schemaVersion = 1,
+                    eventId = Guid.NewGuid(),
+                    actor = "System",
+                    @event = "VerificationTechnicalFailure",
+                    reason = "CoreBankVerificationUnavailable",
+                    statusCode = responseMessage?.StatusCode.ToString() ?? "NoResponse",
+                    timestampUtc = DateTimeOffset.UtcNow,
+                    correlation = new { msgId = request.SIPSRequestId, alias = request.Alias },
+                    retryPolicy = "CustomerMayRetry"
+                }, gct);
             }
             else
             {
@@ -346,7 +368,7 @@ public sealed class IncomingVerificationHandler(
             // Let's sign it first to be safe and consistent with "Store what you send".
             var signedRsp = _signer.SignEnvelope(rsp);
 
-            var finalStatus = path == "CoreBankTimeout" ? TransactionStatus.CheckStatus : (response.Verified ? TransactionStatus.Success : TransactionStatus.Failed);
+            var finalStatus = response.Verified ? TransactionStatus.Success : TransactionStatus.Failed;
             
             // [GOLD PATTERN]: Persist-Before-Return
             using var localDbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
@@ -363,7 +385,7 @@ public sealed class IncomingVerificationHandler(
         catch (TaskCanceledException ex) when (!gct.IsCancellationRequested)
         {
             path = "CoreBankTimeout";
-            _logger.LogWarning(ex, "[{CorrelationId}] [MANUAL_RECONCILIATION_REQUIRED:POTENTIAL_PHANTOM_CREDIT] CoreBank callback timed out for Verification ReqId={ReqId}. Raising CheckStatus for audit trail.", cid, request?.SIPSRequestId);
+            _logger.LogWarning(ex, "[{CorrelationId}] CoreBank callback timed out for Verification ReqId={ReqId}. Returning failed verification without CheckStatus retry.", cid, request?.SIPSRequestId);
             
             response ??= new PayeeVerificationResponseBuilder.Request
             {
@@ -374,7 +396,7 @@ public sealed class IncomingVerificationHandler(
                 Type = request?.Type ?? string.Empty
             };
             response.Verified = false;
-            response.Reason = MISS;
+            response.Reason = "TIMEOUT";
             response.AdditionalInfo = "CoreBank response exceeded internal SLA.";
             
             // [AUDIT-GRADE INTEGRITY]: Record "in-doubt" state even for verification
@@ -383,13 +405,13 @@ public sealed class IncomingVerificationHandler(
                 schemaVersion = 1,
                 eventId = Guid.NewGuid(),
                 actor = "System",
-                @event = "CheckStatusRaised",
+                @event = "VerificationTechnicalFailure",
                 reason = "CoreBankTimeout",
                 timestampUtc = DateTimeOffset.UtcNow,
                 slaContext = new { elapsedMs = sw.ElapsedMilliseconds, isoPath = path },
                 correlation = new { msgId = request?.SIPSRequestId, alias = request?.Alias },
                 coreBank = new { idempotencyKey = request?.SIPSRequestId, timeoutSeconds = _core.CoreBankTimeoutSeconds },
-                reconciliationState = "Open"
+                retryPolicy = "CustomerMayRetry"
             };
 
             if (isoMessage != null)
@@ -404,7 +426,7 @@ public sealed class IncomingVerificationHandler(
                 using var dbCts2 = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
                 if (isoMessage != null)
                 {
-                    await _isoService.PersistResponseAsync(isoMessage, TransactionStatus.CheckStatus, response.Reason, response.AdditionalInfo, signedRsp, dbCts2.Token);
+                    await _isoService.PersistResponseAsync(isoMessage, TransactionStatus.Failed, response.Reason, response.AdditionalInfo, signedRsp, dbCts2.Token);
                 }
             } catch { }
 
@@ -490,5 +512,19 @@ public sealed class IncomingVerificationHandler(
         response.Currency = deserializedContent?.Currency ?? string.Empty;
     }
 
+    private static bool IsIndeterminateCoreBankVerification(Response<JsonObject?>? responseMessage)
+    {
+        if (responseMessage == null)
+            return true;
+
+        return IsTimeoutLike(responseMessage)
+            || (int)responseMessage.StatusCode >= 500;
+    }
+
+    private static bool IsTimeoutLike(Response<JsonObject?>? responseMessage)
+    {
+        return responseMessage?.StatusCode == HttpStatusCode.RequestTimeout
+            || responseMessage?.StatusCode == HttpStatusCode.GatewayTimeout;
+    }
 
 }

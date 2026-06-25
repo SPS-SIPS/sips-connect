@@ -61,6 +61,54 @@ namespace SIPS.Core.Tests.Tests
         }
 
         [Fact]
+        public async Task Send_Should_Return_RequestTimeout_When_CallerBudget_Is_Cancelled()
+        {
+            var handler = new StubHandler(async (req, ct) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                };
+            });
+            var client = CreateClient(handler, httpTimeoutSeconds: 10);
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(10));
+            var headers = new Dictionary<string, string>
+            {
+                {"X-Idempotency-Key", "idem"},
+                {"X-Transaction-Id", "tx123"},
+                {"X-Correlation-Id", "corr123"}
+            };
+            var content = new StringContent("{}", Encoding.UTF8, "application/json");
+
+            var rsp = await client.Send("http://unit.test/caller-timeout", headers, content, cts.Token);
+
+            Assert.False(rsp.IsSuccess);
+            Assert.Equal(HttpStatusCode.RequestTimeout, rsp.StatusCode);
+        }
+
+        [Fact]
+        public async Task Send4XML_Should_Return_RequestTimeout_When_CallerBudget_Is_Cancelled()
+        {
+            var handler = new StubHandler(async (req, ct) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("<ok>true</ok>", Encoding.UTF8, "application/xml")
+                };
+            });
+            var client = CreateClient(handler, httpTimeoutSeconds: 10);
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(10));
+            var content = new StringContent("<req/>", Encoding.UTF8, "application/xml");
+
+            var rsp = await client.Send4XML("http://unit.test/xml-caller-timeout", content, cts.Token);
+
+            Assert.False(rsp.IsSuccess);
+            Assert.Equal(HttpStatusCode.RequestTimeout, rsp.StatusCode);
+        }
+
+        [Fact]
         public async Task Send_Should_Return_Success_For_200_Json()
         {
             var handler = new StubHandler((req, ct) =>

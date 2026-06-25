@@ -97,17 +97,43 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
                     continue;
                 }
 
+                var txId = transaction.TxId;
+                if (string.IsNullOrWhiteSpace(txId))
+                {
+                    txId = transaction.Transactions?
+                        .Select(x => x.TxId)
+                        .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+
+                    if (!string.IsNullOrWhiteSpace(txId))
+                    {
+                        _logger.LogWarning("SAF Job: Transaction {messageId} has null parent TxId. Recovered TxId {txId} from child transaction.",
+                            transaction.Id, txId);
+                        transaction.TxId = txId;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(txId))
+                {
+                    _logger.LogError("SAF Job: Transaction message {messageId} cannot be processed because TxId is missing. Marking as Failed to stop SAF retry churn.",
+                        transaction.Id);
+                    transaction.Status = TransactionStatus.Failed;
+                    transaction.Reason = "Missing TxId";
+                    transaction.AdditionalInfo = "SAF cannot query IPS status without a transaction id.";
+                    await storage.SaveChangesAsync(cancellationToken);
+                    continue;
+                }
+
                 _logger.LogInformation("SAF Job: Processing transaction {txId} with status {status}, round {round}...",
-                    transaction.TxId, transaction.Status, transaction.Round);
+                    txId, transaction.Status, transaction.Round);
 
                 // Send pacs.028 status request to IPS
                 var response = await outgoing.HandleAsync(new ISO20022.Models.DTOs.CB.StatusRequestDto
                 {
-                    TxId = transaction.TxId!
+                    TxId = txId
                 }, cancellationToken);
 
                 _logger.LogInformation("SAF Job: Completed processing transaction {txId} with response status {status}, round {round}...",
-                    transaction.TxId, response.Data?.Status, transaction.Round);
+                    txId, response.Data?.Status, transaction.Round);
             }
             await storage.SaveChangesAsync(cancellationToken);
         }

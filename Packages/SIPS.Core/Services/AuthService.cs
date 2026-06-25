@@ -70,7 +70,7 @@ public class AuthService(CoreOptions options, ILogger<AuthService> logger, IRepo
         var response = await _cacheService.GetAsync<LoginResponse>($"auth:login:{username}", cancellationToken);
         if (response == null)
         {
-            _logger.LogWarning("Login response not found in cache.");
+            _logger.LogDebug("Login response not found in cache for user {Username}.", username);
             return null;
         }
 

@@ -16,6 +16,10 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
 
     public async Task<(CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string sn, string issuerDN, CancellationToken cancellationToken = default)
     {
+        var serialNumber = sn.Trim();
+        var normalizedIssuerDN = NormalizeIssuerDN(issuerDN);
+        var cacheKey = CertificateCacheKey(serialNumber, normalizedIssuerDN);
+
         // Step 1: Validate configuration
         var url = _options.PublicKeysRepUrl;
         if (string.IsNullOrEmpty(url))
@@ -26,7 +30,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
 
         // Step 2: Check if the certificates are already cached
         // BPC Specification: Cache keying should be (issuer/serial)
-        var certificates = await GetCertificatesFromCacheAsync(sn, issuerDN, cancellationToken);
+        var certificates = await GetCertificatesFromCacheAsync(serialNumber, normalizedIssuerDN, cacheKey, cancellationToken);
         if (certificates != null)
             return (certificates, null);
 
@@ -48,7 +52,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
 
         // Step 4: Build request and call API (with 401 retry logic)
         _logger.LogInformation("Sending certificate download request to {Url}. SN: {SN}, Issuer: {Issuer}", url, sn, issuerDN);
-        var request = new CertificateRequest(sn, issuerDN);
+        var request = new CertificateRequest(serialNumber, issuerDN.Trim());
         var response = await _httpService.PostAsync<CertificateRequest, CertificateDownloadResponse>(url, request, cancellationToken);
 
         // [HARDENING]: Handle 401 Unauthorized via token refresh
@@ -78,7 +82,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
         // BPC Specification: Mandatory cache/refresh only when missing or older than 1 hour.
         var cacheDurationMins = Math.Max(response.CacheInMins, 60);
 
-        await _cacheService.SetAsync($"certificates:{sn}:{issuerDN}", response.Data, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
+        await _cacheService.SetAsync(cacheKey, response.Data, new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(cacheDurationMins)
         }, cancellationToken);
@@ -87,16 +91,40 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
         return (response.Data, null);
     }
 
-    private async Task<CertificateDownloadResponse?> GetCertificatesFromCacheAsync(string sn, string issuerDN, CancellationToken cancellationToken = default)
+    private async Task<CertificateDownloadResponse?> GetCertificatesFromCacheAsync(string sn, string issuerDN, string cacheKey, CancellationToken cancellationToken = default)
     {
-        var response = await _cacheService.GetAsync<CertificateDownloadResponse>($"certificates:{sn}:{issuerDN}", cancellationToken);
+        var response = await _cacheService.GetAsync<CertificateDownloadResponse>(cacheKey, cancellationToken);
         if (response == null)
         {
-            _logger.LogWarning("Certificates not found in cache SN: {SN}, Issuer: {Issuer}.", sn, issuerDN);
+            _logger.LogInformation("Certificates not found in cache SN: {SN}, Issuer: {Issuer}.", sn, issuerDN);
             return null;
         }
 
         _logger.LogInformation("Certificates found in cache SN: {SN}, Issuer: {Issuer}.", sn, issuerDN);
         return response;
+    }
+
+    private static string CertificateCacheKey(string sn, string issuerDN)
+    {
+        return $"certificates:{sn}:{issuerDN}";
+    }
+
+    internal static string NormalizeIssuerDN(string issuerDN)
+    {
+        return string.Join(",",
+            issuerDN
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(CollapseWhitespace));
+    }
+
+    private static string CollapseWhitespace(string value)
+    {
+        var normalized = value.Trim();
+        while (normalized.Contains("  "))
+        {
+            normalized = normalized.Replace("  ", " ");
+        }
+
+        return normalized;
     }
 }

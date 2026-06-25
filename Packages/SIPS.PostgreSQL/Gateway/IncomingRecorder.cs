@@ -60,6 +60,11 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
 
     public async Task<ISOMessage?> GetISOMessageWithTransactionsByTxIdAsync(string txId, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(txId))
+        {
+            return null;
+        }
+
         return await _storage.ISOMessages
         .Where(x => x.TxId == txId && x.MessageType == ISOMessageType.TransactionRequest)
         .Include(x => x.Transactions)

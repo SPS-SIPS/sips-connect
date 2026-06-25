@@ -137,9 +137,24 @@ public sealed class ReturnRetryHandler(
 
             Response<System.Text.Json.Nodes.JsonObject?>? result = null;
             var retryId = $"{transaction.TxId}-retry-{DateTime.UtcNow:yyyyMMddHHmmss}";
+            var coreBankResponseKind = "CB_PaymentResponse";
 
             if (_core.IncludeCoreBankOnListing)
             {
+                if (string.IsNullOrWhiteSpace(_callbackLinks.CompletionNotification))
+                {
+                    _logger.LogWarning("[{CorrelationId}] CompletionNotification URL not configured for return retry TxId {TxId}", cid, txId);
+                    return new ReturnRetryResult
+                    {
+                        Success = false,
+                        Message = "CompletionNotification URL is not configured",
+                        TxId = txId,
+                        Status = isoMessage.Status.ToString(),
+                        Reason = "CoreBank completion notification unavailable",
+                        AdditionalInfo = "Manual intervention required"
+                    };
+                }
+
                 // Path A: Permission enabled. Bank already saw the request. Send Completion Notification.
                 var notificationHeaders = new Dictionary<string, string>
                 {
@@ -151,6 +166,8 @@ public sealed class ReturnRetryHandler(
                     notificationHeaders["X-Transaction-Id"] = transaction.TxId;
                     notificationHeaders["X-Idempotency-Key"] = $"{transaction.TxId}-compl-{isoMessage.Round}";
                 }
+                if (!string.IsNullOrWhiteSpace(isoMessage.ReturnId))
+                    notificationHeaders["X-Return-Id"] = isoMessage.ReturnId;
 
                 var notificationDto = new CBCompletionNotification
                 {
@@ -162,6 +179,8 @@ public sealed class ReturnRetryHandler(
                 };
 
                 _logger.LogInformation("[{CorrelationId}] Calling CoreBank CompletionNotification endpoint for TxId {TxId} (Retry Flow)", cid, txId);
+                using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
                 result = await _callbacks.SendJsonAsync(
                     _callbackLinks.CompletionNotification!,
                     notificationHeaders,
@@ -171,14 +190,28 @@ public sealed class ReturnRetryHandler(
                     _correlation,
                     _jsonSerializerOptions,
                     _callback,
-                    ct,
+                    coreBankCts.Token,
                     cid
                 );
+                coreBankResponseKind = CB_CompletionNotificationResponse;
             }
             else
             {
                 // Path B: Permission disabled. Bank has not executed this yet. Send Return Request (Execution).
                 // Aligns with IncomingPaymentStatusReportHandler logic.
+                if (string.IsNullOrWhiteSpace(transaction.TxId) || string.IsNullOrWhiteSpace(isoMessage.ReturnId))
+                {
+                    _logger.LogWarning("[{CorrelationId}] Cannot retry return because transaction or return identifiers are missing. TxId={TxId}, ReturnId={ReturnId}", cid, transaction.TxId, isoMessage.ReturnId);
+                    return new ReturnRetryResult
+                    {
+                        Success = false,
+                        Message = "Return identifiers are missing",
+                        TxId = txId,
+                        Status = isoMessage.Status.ToString(),
+                        Reason = "Missing return identifiers",
+                        AdditionalInfo = "Manual intervention required"
+                    };
+                }
                 
                 var headers = new Dictionary<string, string>
                 {
@@ -200,14 +233,16 @@ public sealed class ReturnRetryHandler(
                 {
                     FromBIC = isoMessage.FromBIC ?? string.Empty,
                     OriginalEndToEnd = transaction.EndToEndId ?? string.Empty,
-                    OrgnlTxId = transaction.TxId ?? string.Empty,
-                    ReturnId = isoMessage.ReturnId ?? string.Empty,
+                    OrgnlTxId = transaction.TxId,
+                    ReturnId = isoMessage.ReturnId,
                     Reason = isoMessage.Reason ?? "Return retry",
                     AdditionalInfo = isoMessage.AdditionalInfo ?? string.Empty
                 };
 
                 _logger.LogInformation("[{CorrelationId}] Calling CoreBank Return endpoint for TxId {TxId} with RetryId {RetryId}", cid, txId, retryId);
 
+                using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
                 result = await _callbacks.SendJsonAsync(
                     _callbackLinks.Return!,
                     headers,
@@ -217,7 +252,7 @@ public sealed class ReturnRetryHandler(
                     _correlation,
                     _jsonSerializerOptions,
                     _callback,
-                    ct,
+                    coreBankCts.Token,
                     cid
                 );
             }
@@ -241,7 +276,7 @@ public sealed class ReturnRetryHandler(
                 cid, txId, result.StatusCode);
 
             // Step 8: Parse CoreBank response
-            var cbResponse = result.Data != null ? ParseCallbackResult(result.Data) : null;
+            var cbResponse = result.Data != null ? ParseCallbackResult(result.Data, coreBankResponseKind) : null;
             var cbStatus = cbResponse?.Status ?? string.Empty;
 
             _logger.LogInformation("[{CorrelationId}] CoreBank response status: {Status} for TxId {TxId}", cid, cbStatus, txId);
@@ -308,11 +343,26 @@ public sealed class ReturnRetryHandler(
         }
     }
 
-    private PaymentResponseDto ParseCallbackResult(JsonObject data)
+    private PaymentResponseDto ParseCallbackResult(JsonObject data, string transformKey = "CB_PaymentResponse")
     {
         try
         {
-            var md = _jsonAdapter.Transform(data, "CB_PaymentResponse");
+            if (string.Equals(transformKey, CB_CompletionNotificationResponse, StringComparison.Ordinal))
+            {
+                var completionMapped = _jsonAdapter.Transform(data, CB_CompletionNotificationResponse);
+                var completion = _jsonAdapter.ToObject<CBCompletionNotificationResponse>(completionMapped);
+                if (completion == null)
+                    return new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+
+                return new PaymentResponseDto
+                {
+                    Status = completion.Status ?? string.Empty,
+                    AdditionalInfo = completion.AdditionalInfo,
+                    Reason = completion.Reason
+                };
+            }
+
+            var md = _jsonAdapter.Transform(data, transformKey);
             var cb = _jsonAdapter.ToObject<CBPaymentStatusResponseDto>(md);
 
             if (cb == null)

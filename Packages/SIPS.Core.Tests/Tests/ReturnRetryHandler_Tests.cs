@@ -22,6 +22,7 @@ using SIPS.ISO20022.Options;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
 using SIPS.PostgreSQL.Models;
+using static SIPS.Core.Constants;
 using Xunit;
 
 namespace SIPS.Core.Tests.Tests;
@@ -32,11 +33,14 @@ public class ReturnRetryHandler_Tests
         CreateSut(
             ISOMessage? isoMessage = null,
             Func<Response<JsonObject?>>? httpResultFactory = null,
-            CBPaymentStatusResponseDto? cbResponse = null)
+            CBPaymentStatusResponseDto? cbResponse = null,
+            CBCompletionNotificationResponse? completionResponse = null,
+            bool includeCoreBankOnListing = false)
     {
         var options = new ISO20022Options
         {
             Return = "https://example.test/return",
+            CompletionNotification = "https://example.test/completion",
             Key = "test-key",
             Secret = "test-secret"
         };
@@ -74,6 +78,13 @@ public class ReturnRetryHandler_Tests
 
         adapter.Setup(a => a.ToObject<CBPaymentStatusResponseDto>(It.IsAny<JsonObject>()))
                .Returns(defaultCbResponse);
+        adapter.Setup(a => a.ToObject<CBCompletionNotificationResponse>(It.IsAny<JsonObject>()))
+               .Returns(completionResponse ?? new CBCompletionNotificationResponse
+               {
+                   Status = "ACSC",
+                   Reason = "Success",
+                   AdditionalInfo = "Completed"
+               });
 
         // Setup recorder mock
         var recorder = new Mock<IIncomingRecorder>();
@@ -123,7 +134,11 @@ public class ReturnRetryHandler_Tests
         var persistence = new PersistenceGateway(recorder.Object);
         var callback = new CallbackClient(http.Object, cbLogger, correlation, Microsoft.Extensions.Options.Options.Create(new CoreOptions()));
         var callbacks = new CallbackOrchestrator();
-        var coreOptions = Microsoft.Extensions.Options.Options.Create(new CoreOptions { DbPersistTimeoutSeconds = 10 });
+        var coreOptions = Microsoft.Extensions.Options.Options.Create(new CoreOptions
+        {
+            DbPersistTimeoutSeconds = 10,
+            IncludeCoreBankOnListing = includeCoreBankOnListing
+        });
 
         var sut = new ReturnRetryHandler(
             options,
@@ -162,6 +177,46 @@ public class ReturnRetryHandler_Tests
         // Verify database was updated
         recorder.Verify(r => r.ISOMessageResponseAsync(
             It.Is<ISOMessage>(m => m.Status == TransactionStatus.Success && m.Round == 1),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RetryReturnAsync_WithCoreBankOnListing_UsesCompletionNotificationResponse()
+    {
+        var paymentResponse = new CBPaymentStatusResponseDto
+        {
+            Status = RJCT,
+            TxId = "TX123",
+            Reason = "Wrong response shape"
+        };
+        var completionResponse = new CBCompletionNotificationResponse
+        {
+            Status = ACSC,
+            Reason = "Accepted",
+            AdditionalInfo = "Completion stored"
+        };
+
+        var (sut, recorder, http, adapter, _) = CreateSut(
+            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = ACSC })
+            {
+                StatusCode = HttpStatusCode.OK
+            },
+            cbResponse: paymentResponse,
+            completionResponse: completionResponse,
+            includeCoreBankOnListing: true);
+
+        var result = await sut.RetryReturnAsync("TX123", CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        result.Status.Should().Be("Success");
+        http.Verify(h => h.Send(
+            "https://example.test/completion",
+            It.IsAny<Dictionary<string, string>>(),
+            It.IsAny<StringContent>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+        adapter.Verify(a => a.Transform(It.IsAny<JsonObject>(), CB_CompletionNotificationResponse), Times.Once);
+        recorder.Verify(r => r.ISOMessageResponseAsync(
+            It.Is<ISOMessage>(m => m.Status == TransactionStatus.Success),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -403,6 +458,35 @@ public class ReturnRetryHandler_Tests
         result.Success.Should().BeFalse();
         result.Message.Should().Be("Transaction details not found");
         result.Status.Should().Be("NoTransactionDetails");
+    }
+
+    [Fact]
+    public async Task RetryReturnAsync_ReturnsError_AndSkipsCoreBank_WhenReturnIdMissing()
+    {
+        var isoMessage = new ISOMessage
+        {
+            TxId = "TX123",
+            Status = TransactionStatus.ReadyForReturn,
+            Round = 1,
+            ReturnId = string.Empty,
+            Transactions = new List<Transaction>
+            {
+                new() { TxId = "TX123", EndToEndId = "E2E123" }
+            }
+        };
+
+        var (sut, _, http, _, _) = CreateSut(isoMessage: isoMessage);
+
+        var result = await sut.RetryReturnAsync("TX123", CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Be("Return identifiers are missing");
+        result.Reason.Should().Be("Missing return identifiers");
+        http.Verify(h => h.Send(
+            It.IsAny<string>(),
+            It.IsAny<Dictionary<string, string>>(),
+            It.IsAny<StringContent>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

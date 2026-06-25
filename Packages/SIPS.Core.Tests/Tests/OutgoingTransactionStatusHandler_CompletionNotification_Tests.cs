@@ -222,6 +222,171 @@ public sealed class OutgoingTransactionStatusHandler_CompletionNotification_Test
         };
     }
 
+    private OutgoingTransactionStatusHandler CreateHandler(
+        ISOMessage testMessage,
+        FakeCallbackOrchestrator callbacks,
+        IJsonAdapter? jsonAdapter = null,
+        CoreOptions? coreOptions = null,
+        ISO20022Options? options = null)
+    {
+        options ??= new ISO20022Options
+        {
+            BIC = "DESTBIC",
+            SIPS = "http://test.sips",
+            Transfer = "http://corebank.test/transfer",
+            Return = "http://corebank.test/return",
+            CompletionNotification = "http://corebank.test/completion",
+            Key = "test-key",
+            Secret = "test-secret"
+        };
+
+        var persistence = new FakePersistence(testMessage);
+        var correlation = new CorrelationService();
+        var isoService = new ISOMessageService(persistence);
+        var statusOrchestrator = new StatusOrchestrator(new NullLogger<StatusOrchestrator>());
+
+        return new OutgoingTransactionStatusHandler(
+            options,
+            new NullLogger<OutgoingTransactionStatusHandler>(),
+            new FakeSigner(),
+            new FakeSignatureService(),
+            persistence,
+            correlation,
+            new FakeSipsSender(ACSC),
+            isoService,
+            statusOrchestrator,
+            callbacks,
+            jsonAdapter ?? Mock.Of<IJsonAdapter>(),
+            Mock.Of<ICallbackClient>(),
+            Microsoft.Extensions.Options.Options.Create(coreOptions ?? new CoreOptions { DbPersistTimeoutSeconds = 10 }));
+    }
+
+    private static async Task<bool> InvokePrivateBoolAsync(
+        OutgoingTransactionStatusHandler handler,
+        string methodName,
+        params object?[] args)
+    {
+        var method = typeof(OutgoingTransactionStatusHandler).GetMethod(
+            methodName,
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        method.Should().NotBeNull();
+        var task = method!.Invoke(handler, args).Should().BeAssignableTo<Task<bool>>().Subject;
+        return await task;
+    }
+
+    [Fact]
+    public async Task NotifyCoreBankCompletionAsync_ReturnsFalse_WhenResponseStatusIsEmpty()
+    {
+        var testMessage = CreateTestMessage(TransactionStatus.CheckStatus);
+        var callbacks = new FakeCallbackOrchestrator
+        {
+            ResponseToReturn = new JsonObject { ["status"] = string.Empty }
+        };
+        var adapter = new Mock<IJsonAdapter>();
+        adapter.Setup(a => a.Transform(It.IsAny<JsonObject>(), CB_CompletionNotificationResponse))
+            .Returns(new JsonObject());
+        adapter.Setup(a => a.ToObject<CBCompletionNotificationResponse>(It.IsAny<JsonObject>()))
+            .Returns(new CBCompletionNotificationResponse { Status = string.Empty });
+        var handler = CreateHandler(testMessage, callbacks, adapter.Object);
+
+        var accepted = await InvokePrivateBoolAsync(
+            handler,
+            "NotifyCoreBankCompletionAsync",
+            testMessage,
+            ACSC,
+            "Completed",
+            "SAF resolved",
+            CancellationToken.None,
+            "cid");
+
+        accepted.Should().BeFalse("CoreBank 2xx with an empty completion status must remain retryable");
+        callbacks.CallbacksSent.Should().ContainSingle(c => c.transformKey == CB_CompletionNotification);
+        adapter.Verify(a => a.Transform(It.IsAny<JsonObject>(), CB_CompletionNotificationResponse), Times.Once);
+    }
+
+    [Fact]
+    public async Task NotifyCoreBankCompletionAsync_ReturnsFalse_WhenResponseStatusIsRejected()
+    {
+        var testMessage = CreateTestMessage(TransactionStatus.CheckStatus);
+        var callbacks = new FakeCallbackOrchestrator
+        {
+            ResponseToReturn = new JsonObject { ["status"] = RJCT }
+        };
+        var adapter = new Mock<IJsonAdapter>();
+        adapter.Setup(a => a.Transform(It.IsAny<JsonObject>(), CB_CompletionNotificationResponse))
+            .Returns(new JsonObject());
+        adapter.Setup(a => a.ToObject<CBCompletionNotificationResponse>(It.IsAny<JsonObject>()))
+            .Returns(new CBCompletionNotificationResponse { Status = RJCT });
+        var handler = CreateHandler(testMessage, callbacks, adapter.Object);
+
+        var accepted = await InvokePrivateBoolAsync(
+            handler,
+            "NotifyCoreBankCompletionAsync",
+            testMessage,
+            RJCT,
+            "Rejected",
+            "SAF resolved",
+            CancellationToken.None,
+            "cid");
+
+        accepted.Should().BeFalse("CoreBank rejection of the notification must not be treated as delivered");
+    }
+
+    [Fact]
+    public async Task CallCoreBankTransferAsync_ReturnsFalse_AndSkipsCallback_WhenTransactionDetailsMissing()
+    {
+        var testMessage = CreateTestMessage(TransactionStatus.CheckStatus);
+        testMessage.Transactions.Clear();
+        var callbacks = new FakeCallbackOrchestrator();
+        var handler = CreateHandler(
+            testMessage,
+            callbacks,
+            coreOptions: new CoreOptions { IncludeCoreBankOnListing = false, DbPersistTimeoutSeconds = 10 });
+
+        var accepted = await InvokePrivateBoolAsync(
+            handler,
+            "CallCoreBankTransferAsync",
+            testMessage,
+            CancellationToken.None,
+            "cid");
+
+        accepted.Should().BeFalse();
+        callbacks.CallbacksSent.Should().BeEmpty("SAF must not send blank CoreBank transfer DTOs");
+    }
+
+    [Fact]
+    public async Task CallCoreBankReturnAsync_WithCoreBankOnListing_UsesCompletionNotificationResponse()
+    {
+        var testMessage = CreateTestMessage(TransactionStatus.ReadyForReturn);
+        testMessage.ReturnId = "RET123";
+        var callbacks = new FakeCallbackOrchestrator
+        {
+            ResponseToReturn = new JsonObject { ["status"] = SUCC }
+        };
+        var adapter = new Mock<IJsonAdapter>();
+        adapter.Setup(a => a.Transform(It.IsAny<JsonObject>(), CB_CompletionNotificationResponse))
+            .Returns(new JsonObject());
+        adapter.Setup(a => a.ToObject<CBCompletionNotificationResponse>(It.IsAny<JsonObject>()))
+            .Returns(new CBCompletionNotificationResponse { Status = SUCC });
+        var handler = CreateHandler(
+            testMessage,
+            callbacks,
+            adapter.Object,
+            new CoreOptions { IncludeCoreBankOnListing = true, DbPersistTimeoutSeconds = 10 });
+
+        var accepted = await InvokePrivateBoolAsync(
+            handler,
+            "CallCoreBankReturnAsync",
+            testMessage,
+            CancellationToken.None,
+            "cid");
+
+        accepted.Should().BeTrue();
+        testMessage.Status.Should().Be(TransactionStatus.Success);
+        callbacks.CallbacksSent.Should().ContainSingle(c => c.transformKey == CB_CompletionNotification);
+        adapter.Verify(a => a.Transform(It.IsAny<JsonObject>(), CB_CompletionNotificationResponse), Times.Once);
+    }
+
     [Fact(Skip = "Requires exact pacs.002 XML format - covered by integration tests")]
     public async Task HandleAsync_WhenCheckStatusResolvedToSuccess_SendsCompletionNotification()
     {

@@ -349,7 +349,12 @@ public sealed class IncomingTransactionHandler(
                         if (result?.Data != null)
                         {
                             var cbResponse = ParseCallbackResult(result.Data);
-                            if (cbResponse.Status == RJCT)
+                            if (IsCoreBankSuccess(cbResponse.Status))
+                            {
+                                _logger.LogInformation("[{CorrelationId}] CoreBank returned success status {Status} for transaction {TxId}. Proceeding with ACSC.", cid, cbResponse.Status, request.TxId);
+                                response.AcceptanceDate = cbResponse.AcceptanceDate;
+                            }
+                            else if (string.Equals(cbResponse.Status?.Trim(), RJCT, StringComparison.OrdinalIgnoreCase))
                             {
                                 _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}. Reason: {Reason}", cid, request.TxId, cbResponse.Reason);
                                 response.Status = RJCT;
@@ -360,8 +365,14 @@ public sealed class IncomingTransactionHandler(
                             }
                             else
                             {
-                                _logger.LogInformation("[{CorrelationId}] CoreBank returned status {Status} for transaction {TxId}. Proceeding with ACSC.", cid, cbResponse.Status, request.TxId);
-                                response.AcceptanceDate = cbResponse.AcceptanceDate;
+                                var returnedStatus = string.IsNullOrWhiteSpace(cbResponse.Status) ? "<empty>" : cbResponse.Status;
+                                _logger.LogWarning("[{CorrelationId}] CoreBank returned non-success status {Status} for transaction {TxId}. Rejecting for safety.", cid, returnedStatus, request.TxId);
+                                response.Status = RJCT;
+                                response.Reason = "MS03";
+                                response.AdditionalInfo = IsoText.StatusAdditionalInfo(
+                                    cbResponse.AdditionalInfo,
+                                    cbResponse.Reason,
+                                    $"CoreBank returned non-success status: {returnedStatus}.");
                             }
                         }
                         else
@@ -415,7 +426,11 @@ public sealed class IncomingTransactionHandler(
                 }
 
                 var rsp = PaymentRequestResponseBuilder.Build(response);
-                var finalStatus = path == "CoreBankTimeout" ? TransactionStatus.CheckStatus : TransactionStatus.Pending;
+                var finalStatus = path == "CoreBankTimeout"
+                    ? TransactionStatus.CheckStatus
+                    : string.Equals(response.Status, RJCT, StringComparison.OrdinalIgnoreCase)
+                        ? TransactionStatus.Failed
+                        : TransactionStatus.Pending;
                 
                 // DB persistence should also respect the global deadline
                 using var dbCts = CancellationTokenSource.CreateLinkedTokenSource(gct);
@@ -536,5 +551,12 @@ public sealed class IncomingTransactionHandler(
             Reason = cb.Reason,
             EndToEndId = cb.EndToEndId ?? string.Empty
         };
+    }
+
+    private static bool IsCoreBankSuccess(string? status)
+    {
+        var normalizedStatus = status?.Trim();
+        return string.Equals(normalizedStatus, ACSC, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalizedStatus, "SUCC", StringComparison.OrdinalIgnoreCase);
     }
 }
