@@ -281,43 +281,58 @@ public sealed class IncomingReturnTransactionHandler(
                 if (result?.Data != null)
                 {
                     var cbResult = ParseCallbackResult(result.Data, originalMessage);
-                    if (cbResult != null && cbResult.Status == RJCT)
+                    if (cbResult != null && IsCoreBankSuccess(cbResult.Status))
                     {
-                        // Active Decision: CoreBank rejected the return
-                        _logger.LogWarning("[{CorrelationId}] Return rejected by CoreBank for TxId {TxId}. Reason: {Reason}", cid, request.OrgnlTxId, cbResult.Reason);
+                        response.Status = ACSC;
+                        response.Reason = "Return accepted by CoreBank - awaiting confirm";
+                        response.AdditionalInfo = cbResult.AdditionalInfo ?? "Return pre-approved by CoreBank.";
+                    }
+                    else
+                    {
+                        var returnedStatus = string.IsNullOrWhiteSpace(cbResult?.Status) ? "<empty>" : cbResult.Status;
+                        _logger.LogWarning("[{CorrelationId}] Return rejected by CoreBank for TxId {TxId}. Status={Status}, Reason={Reason}", cid, request.OrgnlTxId, returnedStatus, cbResult?.Reason);
                         response.Status = RJCT;
                         response.Reason = "MS03";
                         response.AdditionalInfo = IsoText.StatusAdditionalInfo(
-                            cbResult.AdditionalInfo,
-                            cbResult.Reason,
-                            "Rejected by CoreBank");
+                            cbResult?.AdditionalInfo,
+                            cbResult?.Reason,
+                            $"CoreBank returned non-success status: {returnedStatus}.");
 
-                        // We still persist the return request, but mark it as rejected.
-                        
                         var rspReject = ReturnPaymentResponseBuilder.Build(response);
-                        // User Requirement: Return RJCT to switch, but persist as Pending (PDNG) locally
-                        // to allow for downstream/manual resolution or waiting for switch confirmation (if applicable).
                         if (record != null)
                         {
                             using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-                            await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspReject, updateCts.Token);
+                            await _isoService.PersistReturnResponseAsync(record, RJCT, response.Reason, response.AdditionalInfo, rspReject, updateCts.Token);
 
-                            // [FIX 3]: Audit ledger event for PDNG status divergence
                             var ev = new
                             {
                                 schemaVersion = 1,
                                 eventId = Guid.NewGuid(),
                                 actor = "System",
-                                @event = "ReturnRejectedByCoreBankPersistedAsPDNG",
+                                @event = "ReturnRejectedByCoreBank",
                                 timestampUtc = DateTimeOffset.UtcNow,
                                 correlation = new { transactionId = request.OrgnlTxId, returnId = request.ReturnId, msgId = request.MsgId },
-                                coreBankDecision = new { status = cbResult.Status, reason = cbResult.Reason },
-                                reconciliationState = "Open"
+                                coreBankDecision = new { status = cbResult?.Status, reason = cbResult?.Reason },
+                                finalState = "Rejected"
                             };
                             await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, updateCts.Token);
                         }
                         return _signer.SignEnvelope(rspReject);
                     }
+                }
+                else
+                {
+                    _logger.LogWarning("[{CorrelationId}] CoreBank returned null or empty return response for TxId {TxId}. Rejecting for safety.", cid, request.OrgnlTxId);
+                    response.Status = RJCT;
+                    response.Reason = "MS03";
+                    response.AdditionalInfo = "CoreBank returned empty response.";
+                    var rspEmpty = ReturnPaymentResponseBuilder.Build(response);
+                    if (record != null)
+                    {
+                        using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                        await _isoService.PersistReturnResponseAsync(record, RJCT, response.Reason, response.AdditionalInfo, rspEmpty, updateCts.Token);
+                    }
+                    return _signer.SignEnvelope(rspEmpty);
                 }
             }
             catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
@@ -331,7 +346,7 @@ public sealed class IncomingReturnTransactionHandler(
                 if (record != null)
                 {
                     using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-                    await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspTimeout, updateCts.Token);
+                    await _isoService.PersistReturnResponseAsync(record, RJCT, response.Reason, response.AdditionalInfo, rspTimeout, updateCts.Token);
 
                     var ev = new
                     {
@@ -342,7 +357,7 @@ public sealed class IncomingReturnTransactionHandler(
                         timestampUtc = DateTimeOffset.UtcNow,
                         correlation = new { transactionId = request.OrgnlTxId, returnId = request.ReturnId, msgId = request.MsgId },
                         coreBank = new { timeoutSeconds = _core.CoreBankTimeoutSeconds },
-                        reconciliationState = "Open"
+                        finalState = "Rejected"
                     };
                     await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, updateCts.Token);
                 }
@@ -359,7 +374,7 @@ public sealed class IncomingReturnTransactionHandler(
                 if (record != null)
                 {
                     using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-                    await _isoService.PersistReturnResponseAsync(record, PDNG, response.Reason, response.AdditionalInfo, rspErr, updateCts.Token);
+                    await _isoService.PersistReturnResponseAsync(record, RJCT, response.Reason, response.AdditionalInfo, rspErr, updateCts.Token);
                 }
                 return _signer.SignEnvelope(rspErr);
             }
@@ -391,7 +406,7 @@ public sealed class IncomingReturnTransactionHandler(
             // Persist return message as ReadyForReturn (not final status yet)
             if (record != null)
             {
-                await _isoService.PersistReturnResponseAsync(record, ACSC, response.Reason ?? ACSC, response.AdditionalInfo ?? string.Empty, rsp, updateCts.Token);
+                await _isoService.PersistReturnResponseAsync(record, ACSC, response.Reason ?? ACSC, response.AdditionalInfo ?? string.Empty, rsp, updateCts.Token, TransactionStatus.ReadyForReturn);
             }
 
             return _signer.SignEnvelope(rsp);
@@ -464,5 +479,12 @@ public sealed class IncomingReturnTransactionHandler(
         var md = _jsonAdapter.Transform(js!, CB_ReturnResponse);
 
         return _jsonAdapter.ToObject<CBReturnResponseDto>(md);
+    }
+
+    private static bool IsCoreBankSuccess(string? status)
+    {
+        var normalizedStatus = status?.Trim();
+        return string.Equals(normalizedStatus, ACSC, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalizedStatus, "SUCC", StringComparison.OrdinalIgnoreCase);
     }
 }

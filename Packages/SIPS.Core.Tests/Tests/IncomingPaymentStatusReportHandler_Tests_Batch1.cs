@@ -269,6 +269,7 @@ public class IncomingPaymentStatusReportHandler_Tests
             {
                 Transfer = "http://corebank/transfer",
                 Return = "http://corebank/return",
+                CompletionNotification = "http://corebank/completion",
                 Status = "http://corebank/status",
                 Key = "test-api-key",
                 Secret = "test-api-secret"
@@ -298,16 +299,25 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .Setup(x => x.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((ISOMessageStatus status, CancellationToken _) => status);
 
+            MockPersistence
+                .Setup(x => x.RecordISOMessageAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ISOMessage message, CancellationToken _) => message);
+
             // No default setup for StatusOrchestrator
         }
 
-        protected IncomingPaymentStatusReportHandler CreateHandler()
+        protected IncomingPaymentStatusReportHandler CreateHandler(bool includeCoreBankOnListing = false)
         {
             var responseFactory = new ResponseFactory();
             var correlation = new CorrelationService();
             var parser = new PaymentStatusReportParser();
             var inbound = new InboundMessageService(MockSignatureService.Object);
             var isoService = new ISOMessageService(MockPersistence.Object);
+            var coreOptions = Microsoft.Extensions.Options.Options.Create(new CoreOptions
+            {
+                DbPersistTimeoutSeconds = 10,
+                IncludeCoreBankOnListing = includeCoreBankOnListing
+            });
 
             // Use REAL StatusOrchestrator to test actual business logic
             var statusOrchestratorLogger = Mock.Of<ILogger<StatusOrchestrator>>();
@@ -327,7 +337,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 MockCallbackOrchestrator.Object,
                 isoService,
                 statusOrchestrator,  // Real implementation!
-                CoreOptions
+                coreOptions
             );
         }
 
@@ -431,7 +441,7 @@ public class IncomingPaymentStatusReportHandler_Tests
         }
 
         [Fact]
-        public async Task HandleAsync_WhenAcscAndCoreBankFails_ShouldStillSetStatusToSuccess()
+        public async Task HandleAsync_WhenAcscAndCoreBankFails_ShouldSetStatusToReadyForReturn()
         {
             // Arrange
             const string txId = "TX-HAPPY-002";
@@ -461,11 +471,11 @@ public class IncomingPaymentStatusReportHandler_Tests
             // Assert
             result.Should().NotBeNullOrEmpty("Handler should return a response");
 
-            pendingTransaction.Status.Should().Be(TransactionStatus.Success,
-                "Transaction status should be Success when IPS accepts (ACSC), even if CoreBank fails - Switch Status Priority");
+            pendingTransaction.Status.Should().Be(TransactionStatus.ReadyForReturn,
+                "local Success requires CoreBank confirmation even when IPS accepts");
 
             pendingTransaction.Reason.Should().Contain("CoreBank",
-                "Transaction reason should mention CoreBank issue but status remains Success");
+                "Transaction reason should mention CoreBank issue");
             
             MockCallbackOrchestrator.Verify(
                 x => x.SendJsonAsync(
@@ -486,7 +496,7 @@ public class IncomingPaymentStatusReportHandler_Tests
         }
 
         [Fact]
-        public async Task HandleAsync_WhenRjctReceived_ShouldSetStatusToFailedAndNotifyCoreBank()
+        public async Task HandleAsync_WhenRjctReceivedAndCoreBankOnListing_ShouldSetStatusToFailedAndNotifyCoreBank()
         {
             // Arrange
             const string txId = "TX-HAPPY-003";
@@ -520,7 +530,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .ReturnsAsync(Response<JsonObject?>.Success(new JsonObject()));
 
             // Using REAL StatusOrchestrator - no mocking needed!
-            var handler = CreateHandler();
+            var handler = CreateHandler(includeCoreBankOnListing: true);
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "RJCT");
 
             // Act
@@ -551,6 +561,56 @@ public class IncomingPaymentStatusReportHandler_Tests
                 "CoreBank SHOULD be called for RJCT status (Active Rejection Notification)");
 
             // Using REAL StatusOrchestrator - no need to verify mock calls
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenRjctReceivedAndCoreBankNotOnListing_ShouldSetStatusToFailedAndSkipCoreBank()
+        {
+            const string txId = "TX-HAPPY-003B";
+            var pendingTransaction = ISOMessageBuilder.CreatePendingTransaction(txId);
+
+            MockPersistence
+                .Setup(x => x.GetISOMessageWithTransactionsByTxIdAsync(txId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(pendingTransaction);
+
+            MockPersistence
+                .Setup(x => x.RecordISOMessageStatusAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ISOMessageStatus { ISOMessage = pendingTransaction });
+
+            MockPersistence
+                .Setup(x => x.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ISOMessageStatus { ISOMessage = pendingTransaction });
+
+            var handler = CreateHandler(includeCoreBankOnListing: false);
+            var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "RJCT");
+
+            var result = await handler.HandleAsync(pacs002Message, CancellationToken.None);
+
+            result.Should().NotBeNullOrEmpty();
+            pendingTransaction.Status.Should().Be(TransactionStatus.Failed);
+            pendingTransaction.Reason.Should().Be("Received rejection confirmation");
+
+            MockCallbackOrchestrator.Verify(
+                x => x.SendJsonAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<Dictionary<string, string>>(),
+                    It.IsAny<CBCompletionNotification>(),
+                    "CB_CompletionNotification",
+                    It.IsAny<IJsonAdapter>(),
+                    It.IsAny<ICorrelationService>(),
+                    It.IsAny<JsonSerializerOptions>(),
+                    It.IsAny<ICallbackClient>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<string>()),
+                Times.Never,
+                "CoreBank was not listed for this incoming payment");
+
+            MockPersistence.Verify(
+                x => x.ISOMessageResponseAsync(
+                    It.Is<ISOMessage>(m => m.Status == TransactionStatus.Failed && m.TxId == txId),
+                    It.IsAny<CancellationToken>()),
+                Times.Once,
+                "Parent transaction status must be persisted as Failed");
         }
     }
 
@@ -597,7 +657,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .ReturnsAsync(TestHelpers.CreateSuccessCallbackResponse());
 
             // Using REAL StatusOrchestrator - no mocking needed!
-            var handler = CreateHandler();
+            var handler = CreateHandler(includeCoreBankOnListing: true);
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "ACSC");
 
             // Act
@@ -898,6 +958,19 @@ public class IncomingPaymentStatusReportHandler_Tests
             result.Should().NotBeNullOrEmpty("Handler should return a response even for not found");
             result.Should().Contain("admi.002", "Response should be an administrative message for not found");
 
+            MockPersistence.Verify(
+                x => x.RecordISOMessageAsync(
+                    It.Is<ISOMessage>(m =>
+                        m.MessageType == ISOMessageType.StatusResponse &&
+                        m.Status == TransactionStatus.CheckStatus &&
+                        m.UETR == txId &&
+                        m.TxId == null &&
+                        m.AdditionalInfo != null &&
+                        m.AdditionalInfo.Contains(txId)),
+                    It.IsAny<CancellationToken>()),
+                Times.Once,
+                "orphan pacs.002 should be retained for reconciliation instead of being lost");
+
             MockCallbackOrchestrator.Verify(
                 x => x.SendJsonAsync(
                     It.IsAny<string>(),
@@ -958,8 +1031,8 @@ public class IncomingPaymentStatusReportHandler_Tests
             // Assert
             result.Should().NotBeNullOrEmpty("Handler should return a response");
 
-            pendingTransaction.Status.Should().Be(TransactionStatus.Success,
-                "Transaction status should be Success when CoreBank returns null but Switch accepts - Switch Priority");
+            pendingTransaction.Status.Should().Be(TransactionStatus.ReadyForReturn,
+                "local Success requires CoreBank confirmation even when IPS accepts");
 
             pendingTransaction.Reason.Should().Contain("CoreBank",
                 "Reason should mention CoreBank failure");
@@ -981,7 +1054,7 @@ public class IncomingPaymentStatusReportHandler_Tests
         }
 
         [Fact]
-        public async Task HandleAsync_WhenCoreBankReturnsNullData_ShouldSetStatusToSuccess()
+        public async Task HandleAsync_WhenCoreBankReturnsNullData_ShouldSetStatusToReadyForReturn()
         {
             // Arrange
             const string txId = "TX-EDGE-005";
@@ -1026,8 +1099,8 @@ public class IncomingPaymentStatusReportHandler_Tests
             // Assert
             result.Should().NotBeNullOrEmpty("Handler should return a response");
 
-            pendingTransaction.Status.Should().Be(TransactionStatus.Success,
-                "Transaction status should be Success when CoreBank returns null data but Switch accepts");
+            pendingTransaction.Status.Should().Be(TransactionStatus.ReadyForReturn,
+                "local Success requires CoreBank confirmation even when IPS accepts");
 
             pendingTransaction.Reason.Should().Contain("CoreBank",
                 "Reason should mention CoreBank issue");
@@ -1170,7 +1243,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .Setup(x => x.RecordISOMessageStatusAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new ISOMessageStatus { ISOMessage = failedTransaction });
 
-            var handler = CreateHandler();
+            var handler = CreateHandler(includeCoreBankOnListing: true);
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "RJCT");
 
             // Act
@@ -1298,8 +1371,8 @@ public class IncomingPaymentStatusReportHandler_Tests
             // Assert
             result.Should().NotBeNullOrEmpty("Handler should return a response");
 
-            pendingTransaction.Status.Should().Be(TransactionStatus.Success,
-                "Transaction status should be Success as handler overrides StatusOrchestrator for ACSC");
+            pendingTransaction.Status.Should().Be(TransactionStatus.ReadyForReturn,
+                "Transaction status should stay ReadyForReturn when CoreBank does not confirm success");
 
             pendingTransaction.Reason.Should().Be("CoreBank callback failed",
                 "Reason should come from StatusOrchestrator");
@@ -1358,7 +1431,7 @@ public class IncomingPaymentStatusReportHandler_Tests
                 .Setup(x => x.MapCompletionStatus("RJCT", null, false))
                 .Returns((TransactionStatus.Failed, TransactionStatus.Failed, "Rejected", "Rejected Info"));
 
-            var handler = CreateHandler();
+            var handler = CreateHandler(includeCoreBankOnListing: true);
             var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "RJCT");
 
             // Act
@@ -1520,4 +1593,3 @@ public class IncomingPaymentStatusReportHandler_Tests
     }
     #endregion
 }
-

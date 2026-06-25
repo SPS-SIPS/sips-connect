@@ -301,12 +301,20 @@ public static class PaymentRequestResponseBuilder
             request.AdditionalInfo,
             IsoText.IsSafeMax35Text(rawReason) ? null : rawReason);
 
+        var reasonChoice = new StatusReason6Choice();
+        try
+        {
+            reasonChoice.Prtry = reasonCode;
+        }
+        catch (Xml.Schema.Linq.LinqToXsdException) when (reasonCode != "NARR")
+        {
+            reasonChoice.Prtry = "NARR";
+            additionalInfo = IsoText.StatusAdditionalInfo(additionalInfo, rawReason);
+        }
+
         var statusReason = new StatusReasonInformation12
         {
-            Rsn = new StatusReason6Choice
-            {
-                Prtry = reasonCode
-            }
+            Rsn = reasonChoice
         };
 
         if (!string.IsNullOrEmpty(additionalInfo))

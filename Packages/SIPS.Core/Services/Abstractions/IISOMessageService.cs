@@ -85,7 +85,8 @@ public interface IISOMessageService
         string reason,
         string? additionalInfo,
         string responseXml,
-        CancellationToken ct);
+        CancellationToken ct,
+        TransactionStatus? internalStatus = null);
 
     /// <summary>
     /// Marks an ISOMessage as CheckStatus for SAF processing.

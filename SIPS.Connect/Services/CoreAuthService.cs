@@ -8,6 +8,7 @@ namespace SIPS.Connect.Services;
 public interface ICoreAuthService
 {
     Task<string?> GetAuthTokenAsync(CancellationToken cancellationToken = default);
+    void InvalidateCachedToken();
 }
 
 public class CoreAuthService : ICoreAuthService
@@ -99,6 +100,13 @@ public class CoreAuthService : ICoreAuthService
             _logger.LogError(ex, "Error authenticating with Core API");
             return null;
         }
+    }
+
+    public void InvalidateCachedToken()
+    {
+        _cachedToken = null;
+        _tokenExpiry = DateTime.MinValue;
+        _logger.LogInformation("Invalidated cached Core API authentication token");
     }
 }
 

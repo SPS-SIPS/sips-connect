@@ -14,8 +14,11 @@ using SIPS.Core.Services.ISOParsers;
 using SIPS.Core.Services.Persistence;
 using SIPS.Core.Services.Responses;
 using SIPS.Core.Services.Verification;
+using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Options;
+using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
+using SIPS.PostgreSQL.Models;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Models;
 using Xunit;
@@ -99,5 +102,87 @@ public class IncomingTransactionStatusHandlerTests
         // Assert
         result.Should().NotBeNullOrWhiteSpace();
         result.Should().Contain("Failed to verify the signature or parse the message");
+    }
+
+    [Fact]
+    public async Task HandleAsync_ReturnsErrorWithoutDbLookup_WhenOriginalTxIdIsMissing()
+    {
+        // Arrange
+        var signature = new Mock<ISignatureService>();
+        signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((true, "ok"));
+
+        var request = new PaymentStatusRequestBuilder.Request
+        {
+            From = "SENDER",
+            To = "RECEIVER",
+            BizMsgIdr = "BIZ-MISSING-TXID",
+            MsgDefIdr = "pacs.028.001.03",
+            MsgId = "MSG-MISSING-TXID",
+            OrgnlTxId = " "
+        };
+
+        var parser = new Mock<IPaymentStatusRequestParser>();
+        parser.Setup(p => p.TryParse(It.IsAny<string>(), out request))
+              .Returns(true);
+
+        var recorder = new Mock<IIncomingRecorder>();
+        var sut = CreateSut(signatureMock: signature, parserMock: parser, recorderMock: recorder);
+
+        // Act
+        var result = await sut.HandleAsync("<xml>payload</xml>", CancellationToken.None);
+
+        // Assert
+        result.Should().Contain("Mandatory TxId is missing");
+        recorder.Verify(r => r.GetISOMessageWithTransactionsByTxIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        recorder.Verify(r => r.ISOMessageAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_PreservesOriginalTxId_WhenReferencedTransactionIsMissing()
+    {
+        // Arrange
+        const string txId = "UNKNOWN-TX-123";
+        var signature = new Mock<ISignatureService>();
+        signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((true, "ok"));
+
+        var request = new PaymentStatusRequestBuilder.Request
+        {
+            From = "SENDER",
+            To = "RECEIVER",
+            BizMsgIdr = "BIZ-UNKNOWN-TX",
+            MsgDefIdr = "pacs.028.001.03",
+            MsgId = "MSG-UNKNOWN-TX",
+            OriginalEndToEnd = "E2E-UNKNOWN-TX",
+            OrgnlTxId = txId
+        };
+
+        var parser = new Mock<IPaymentStatusRequestParser>();
+        parser.Setup(p => p.TryParse(It.IsAny<string>(), out request))
+              .Returns(true);
+
+        var recorder = new Mock<IIncomingRecorder>();
+        recorder.Setup(r => r.GetISOMessageWithTransactionsByTxIdAsync(txId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ISOMessage?)null);
+        recorder.Setup(r => r.ISOMessageAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ISOMessage message, CancellationToken _) => message);
+
+        var sut = CreateSut(signatureMock: signature, parserMock: parser, recorderMock: recorder);
+
+        // Act
+        var result = await sut.HandleAsync("<xml>payload</xml>", CancellationToken.None);
+
+        // Assert
+        result.Should().Contain("Failed to get the Message");
+        recorder.Verify(
+            r => r.ISOMessageAsync(
+                It.Is<ISOMessage>(m =>
+                    m.MessageType == ISOMessageType.StatusRequest &&
+                    m.Status == TransactionStatus.Failed &&
+                    m.TxId == txId &&
+                    m.EndToEndId == "E2E-UNKNOWN-TX"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

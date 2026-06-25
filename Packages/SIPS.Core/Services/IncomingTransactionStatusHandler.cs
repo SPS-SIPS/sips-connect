@@ -126,6 +126,12 @@ public sealed class IncomingTransactionStatusHandler(
         if (!isValid || request == null)
             return AdminMessage.Generate("Failed to verify the signature or parse the message.");
 
+        if (string.IsNullOrWhiteSpace(request.OrgnlTxId))
+        {
+            _logger.LogWarning("[{CorrelationId}] pacs.028 rejected: Mandatory OrgnlTxId is missing", cid);
+            return AdminMessage.Generate("Mandatory TxId is missing.");
+        }
+
         // Step 2: Retrieve ISO message by TxId (with transactions for richer context)
         var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.OrgnlTxId, ct);
         if (isoMessage == null)
@@ -257,7 +263,9 @@ public sealed class IncomingTransactionStatusHandler(
                        Reason = "Failed to get message from DB",
                        BizMsgIdr = request.BizMsgIdr,
                        MsgDefIdr = request.MsgDefIdr,
-                       MsgId = request.MsgId
+                       MsgId = request.MsgId,
+                       TxId = request.OrgnlTxId,
+                       EndToEndId = request.OriginalEndToEnd
                    }
                , ct);
     }

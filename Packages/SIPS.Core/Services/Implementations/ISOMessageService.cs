@@ -425,12 +425,13 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
         string reason,
         string? additionalInfo,
         string responseXml,
-        CancellationToken ct)
+        CancellationToken ct,
+        TransactionStatus? internalStatus = null)
     {
         var sw = Stopwatch.StartNew();
         // update original object
         isoMessage.Response = Encoding.UTF8.GetBytes(responseXml);
-        isoMessage.Status = status == "ACSC" ? TransactionStatus.Success : TransactionStatus.Failed;
+        isoMessage.Status = internalStatus ?? (status == "ACSC" ? TransactionStatus.Success : TransactionStatus.Failed);
         isoMessage.Reason = reason;
         isoMessage.AdditionalInfo = additionalInfo;
         // snapshot for persistence

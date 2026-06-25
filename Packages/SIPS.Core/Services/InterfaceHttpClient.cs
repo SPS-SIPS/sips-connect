@@ -70,9 +70,9 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
             _logger.LogInformation("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} idem={Idempotency} txId={TxId} corr={CorrelationId}", completeUrl, (int)response.StatusCode, sw.ElapsedMilliseconds, string.IsNullOrWhiteSpace(idemKey) ? "none" : idemKey, txId ?? "none", corrId ?? "none");
             return Response<JsonObject?>.Success(data);
         }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        catch (TaskCanceledException ex)
         {
-            _logger.LogError(ex, "HTTP POST timeout: {Url} idem={Idempotency} txId={TxId} corr={CorrelationId}", completeUrl, "timeout", "timeout", "timeout");
+            _logger.LogError(ex, "HTTP POST timeout: {Url} idem={Idempotency} txId={TxId} corr={CorrelationId}", completeUrl, idemKey ?? "none", txId ?? "none", corrId ?? "none");
             return Response<JsonObject?>.Fail("Request timed out", HttpStatusCode.RequestTimeout);
         }
         catch (Exception ex)
@@ -124,9 +124,9 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
             _logger.LogInformation("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} txId={TxId} corr={CorrelationId}", url, (int)response.StatusCode, sw.ElapsedMilliseconds, txId ?? "none", corrId ?? "none");
             return Response<string>.Success(content);
         }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        catch (TaskCanceledException ex)
         {
-            _logger.LogError(ex, "HTTP POST timeout: {Url} txId={TxId} corr={CorrelationId}", url, "timeout", "timeout");
+            _logger.LogError(ex, "HTTP POST timeout: {Url} txId={TxId} corr={CorrelationId}", url, txId ?? "none", corrId ?? "none");
             return Response<string>.Fail("Request timed out", HttpStatusCode.RequestTimeout, "Request timed out");
         }
         catch (Exception ex)
