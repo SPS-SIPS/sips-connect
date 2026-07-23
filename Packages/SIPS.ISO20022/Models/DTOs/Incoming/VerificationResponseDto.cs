@@ -19,6 +19,8 @@ public sealed class VerificationResponseDto
     public string? Address { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("currency")]
     public string? Currency { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("paymentCurrency")]
+    public string? PaymentCurrency { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("invoiceId")]
     public string? InvoiceId { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("upr")]
@@ -45,4 +47,6 @@ public sealed class VerificationResponseDto
     public bool CreditorLocked { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("parsed")]
     public QrCodeData? Parsed { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("bankName")]
+    public string? BankName { get; set; }
 }

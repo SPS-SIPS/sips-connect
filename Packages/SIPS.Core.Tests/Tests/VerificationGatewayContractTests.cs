@@ -103,10 +103,11 @@ public class VerificationGatewayContractTests
             ["creditorAccount"] = "401005007403",
             ["creditorAccountType"] = "ACCT",
             ["creditorName"] = "Revenue Account",
-            ["currency"] = "USD"
+            ["paymentCurrency"] = "USD"
         };
 
         var transformed = adapter.Transform(p2gResponse, "CB_VerificationResponse");
+        var dto = adapter.ToObject<VerificationResponseDto>(transformed);
 
         Assert.True(transformed["IsVerified"]?.GetValue<bool>());
         Assert.Equal("SUCC", transformed["Status"]?.GetValue<string>());
@@ -114,7 +115,8 @@ public class VerificationGatewayContractTests
         Assert.Equal("401005007403", transformed["AccountNo"]?.GetValue<string>());
         Assert.Equal("ACCT", transformed["AccountType"]?.GetValue<string>());
         Assert.Equal("Revenue Account", transformed["CreditorName"]?.GetValue<string>());
-        Assert.Equal("USD", transformed["Currency"]?.GetValue<string>());
+        Assert.Equal("USD", transformed["PaymentCurrency"]?.GetValue<string>());
+        Assert.Equal("USD", dto.PaymentCurrency);
     }
 
     [Theory]
@@ -164,5 +166,42 @@ public class VerificationGatewayContractTests
         Assert.Equal("ACCT", transformed["creditorAccountType"]?.GetValue<string>());
         Assert.True(transformed["amountLocked"]?.GetValue<bool>());
         Assert.True(transformed["creditorLocked"]?.GetValue<bool>());
+    }
+
+    [Theory]
+    [InlineData("jsonAdapter.json")]
+    [InlineData("jsonAdapter.node-a.json")]
+    [InlineData("jsonAdapter.node-b.json")]
+    public void VerifyPayee_JsonResponse_Omits_Empty_Optional_Fields(string adapterFile)
+    {
+        var adapterPath = Path.Combine(_basePath, adapterFile);
+        var jsonContent = File.ReadAllText(adapterPath);
+        var options = JsonSerializer.Deserialize<JsonAdapterOptions>(jsonContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var adapter = new JsonAdapter(options, NullLogger<JsonAdapter>.Instance);
+
+        var dto = new VerificationResponseDto
+        {
+            IsVerified = true,
+            SIPSRequestId = "MSG_ID_123",
+            Reason = "SUCC",
+            AccountNo = "401005007403",
+            AccountType = "ACCT",
+            Name = "Treasury MDA",
+            CreditorAccount = "401005007403",
+            CreditorName = "Treasury MDA",
+            CreditorAccountType = "ACCT",
+            Address = null,
+            Currency = "",
+            Parsed = null,
+            BankName = null
+        };
+
+        var transformed = adapter.Transform(dto, "VerificationResponse");
+
+        Assert.False(transformed.ContainsKey("address"));
+        Assert.False(transformed.ContainsKey("account_currency"));
+        Assert.False(transformed.ContainsKey("currency"));
+        Assert.False(transformed.ContainsKey("parsed"));
+        Assert.False(transformed.ContainsKey("bankName"));
     }
 }
