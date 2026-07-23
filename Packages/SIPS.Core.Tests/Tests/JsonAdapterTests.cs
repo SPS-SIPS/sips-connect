@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -12,6 +14,8 @@ namespace SIPS.Core.Tests.Tests;
 
 public class JsonAdapterTests
 {
+    private readonly string _basePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
+
     private static JsonAdapter CreateAdapter(JsonAdapterOptions opts)
     {
         var logger = Mock.Of<ILogger<JsonAdapter>>();
@@ -154,6 +158,34 @@ public class JsonAdapterTests
         mapped["invoiceIdOrUpr"]!.GetValue<string>().Should().Be("INV-123");
         mapped["agent"]!.GetValue<string>().Should().Be("BANK01");
         mapped.ContainsKey("accountNo").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("jsonAdapter.json")]
+    [InlineData("jsonAdapter.node-a.json")]
+    [InlineData("jsonAdapter.node-b.json")]
+    public void Transform_CBVerificationResponse_Keeps_Descriptor_Out_Of_CreditorName(string adapterFile)
+    {
+        var adapterPath = Path.Combine(_basePath, adapterFile);
+        var jsonContent = File.ReadAllText(adapterPath);
+        var options = JsonSerializer.Deserialize<JsonAdapterOptions>(jsonContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var adapter = CreateAdapter(options);
+        var user = new JsonObject
+        {
+            ["isVerified"] = true,
+            ["accountNo"] = "401005007403",
+            ["accountType"] = "ACCT",
+            ["name"] = "P2G1|IMO-IRS-00|PAYE-2024|INV-|USD|1500.00|20260731|TAX-123457|E58D8569",
+            ["creditorName"] = "Treasury MDA",
+            ["address"] = "Treasury MDA",
+            ["currency"] = "USD"
+        };
+
+        var mapped = adapter.Transform(user, "CB_VerificationResponse");
+        var dto = adapter.ToObject<VerificationResponseDto>(mapped);
+
+        dto.Name.Should().Be("P2G1|IMO-IRS-00|PAYE-2024|INV-|USD|1500.00|20260731|TAX-123457|E58D8569");
+        dto.CreditorName.Should().Be("Treasury MDA");
     }
 
     [Fact]

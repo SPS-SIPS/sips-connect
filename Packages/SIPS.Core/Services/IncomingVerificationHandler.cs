@@ -537,7 +537,11 @@ public sealed class IncomingVerificationHandler(
         response.Id = deserializedContent?.AccountNo ?? string.Empty;
         // Map Type from callback; default to IBAN only if unspecified
         response.Type = string.IsNullOrWhiteSpace(deserializedContent?.AccountType) ? IBAN : deserializedContent.AccountType;
-        response.Name = deserializedContent?.Name ?? string.Empty;
+        response.Name = FirstNonEmpty(
+            deserializedContent?.CreditorName,
+            deserializedContent?.Address,
+            deserializedContent?.Mda,
+            deserializedContent?.Name);
         response.Address = deserializedContent?.Address ?? string.Empty;
         response.Currency = deserializedContent?.Currency ?? string.Empty;
         response.InvoiceId = deserializedContent?.InvoiceId;
