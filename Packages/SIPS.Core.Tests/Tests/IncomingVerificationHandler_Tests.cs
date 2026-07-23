@@ -141,10 +141,16 @@ public class IncomingVerificationHandler_Tests
                    var jo = new JsonObject
                    {
                        ["alias"] = dto.Alias,
-                       ["type"] = dto.Type,
                        ["fromBIC"] = dto.FromBIC,
-                       ["verificationId"] = dto.VerificationId
+                       ["verificationId"] = dto.VerificationId,
+                       ["agent"] = dto.Agent,
+                       ["verificationRequestId"] = dto.VerificationRequestId
                    };
+                   if (!string.IsNullOrWhiteSpace(dto.Type)) jo["type"] = dto.Type;
+                   if (!string.IsNullOrWhiteSpace(dto.InvoiceIdOrUpr)) jo["invoiceIdOrUpr"] = dto.InvoiceIdOrUpr;
+                   if (!string.IsNullOrWhiteSpace(dto.AccountNo)) jo["accountNo"] = dto.AccountNo;
+                   if (!string.IsNullOrWhiteSpace(dto.PayerBankCode)) jo["payerBankCode"] = dto.PayerBankCode;
+                   if (!string.IsNullOrWhiteSpace(dto.PayerChannel)) jo["payerChannel"] = dto.PayerChannel;
                    onBodyCaptured?.Invoke(jo);
                    return jo;
                });
@@ -184,7 +190,9 @@ public class IncomingVerificationHandler_Tests
                 It.IsAny<string>()))
             .ReturnsAsync((string url, IDictionary<string, string> headers, object dto, string key, IJsonAdapter ja, SIPS.Core.Services.Correlation.ICorrelationService cs, System.Text.Json.JsonSerializerOptions so, SIPS.Core.Services.Callback.ICallbackClient cc, CancellationToken ct, string cid) =>
             {
-                var jo = System.Text.Json.JsonSerializer.Deserialize<JsonObject>(System.Text.Json.JsonSerializer.Serialize(dto));
+                var jo = dto is CBVerificationRequestDto verificationDto
+                    ? ja.Transform(verificationDto, key)
+                    : System.Text.Json.JsonSerializer.Deserialize<JsonObject>(System.Text.Json.JsonSerializer.Serialize(dto));
                 if (jo != null) onBodyCaptured?.Invoke(jo);
                 return httpResultFactory();
             });
@@ -313,7 +321,7 @@ public class IncomingVerificationHandler_Tests
     }
 
     [Fact]
-    public async Task Normalizes_USD_Prefix_And_Forces_IBAN_When_Alias_StartsWith_SO()
+    public async Task Normalizes_USD_Prefix_And_Keeps_ACCT_Lookup_When_Type_Is_ACCT()
     {
         JsonObject? captured = null;
         var req = new PayeeVerificationBuilder.Request
@@ -338,8 +346,11 @@ public class IncomingVerificationHandler_Tests
         rsp.Should().Be("signed");
         var aliasVal = (captured!["alias"]?.GetValue<string>()) ?? (captured!["Alias"]?.GetValue<string>());
         var typeVal = (captured!["type"]?.GetValue<string>()) ?? (captured!["Type"]?.GetValue<string>());
+        var accountVal = (captured!["accountNo"]?.GetValue<string>()) ?? (captured!["AccountNo"]?.GetValue<string>());
         aliasVal.Should().Be("SO040014202305005007605");
-        typeVal.Should().Be("IBAN");
+        typeVal.Should().Be("ACCT");
+        accountVal.Should().Be("SO040014202305005007605");
+        captured.ContainsKey("invoiceIdOrUpr").Should().BeFalse();
     }
 
     [Fact]
@@ -368,12 +379,15 @@ public class IncomingVerificationHandler_Tests
         rsp.Should().Be("signed");
         var aliasVal = (captured!["alias"]?.GetValue<string>()) ?? (captured!["Alias"]?.GetValue<string>());
         var typeVal = (captured!["type"]?.GetValue<string>()) ?? (captured!["Type"]?.GetValue<string>());
+        var accountVal = (captured!["accountNo"]?.GetValue<string>()) ?? (captured!["AccountNo"]?.GetValue<string>());
         aliasVal.Should().Be("1234567890");
         typeVal.Should().Be("ACCT");
+        accountVal.Should().Be("1234567890");
+        captured.ContainsKey("invoiceIdOrUpr").Should().BeFalse();
     }
 
     [Fact]
-    public async Task Forces_IBAN_When_Alias_SO_Without_USD_Prefix()
+    public async Task Keeps_ACCT_Lookup_When_Alias_SO_And_Type_Is_ACCT()
     {
         JsonObject? captured = null;
         var req = new PayeeVerificationBuilder.Request
@@ -398,8 +412,76 @@ public class IncomingVerificationHandler_Tests
         rsp.Should().Be("signed");
         var aliasVal = (captured!["alias"]?.GetValue<string>()) ?? (captured!["Alias"]?.GetValue<string>());
         var typeVal = (captured!["type"]?.GetValue<string>()) ?? (captured!["Type"]?.GetValue<string>());
+        var accountVal = (captured!["accountNo"]?.GetValue<string>()) ?? (captured!["AccountNo"]?.GetValue<string>());
         aliasVal.Should().Be("SO040014202305005007605");
-        typeVal.Should().Be("IBAN");
+        typeVal.Should().Be("ACCT");
+        accountVal.Should().Be("SO040014202305005007605");
+        captured.ContainsKey("invoiceIdOrUpr").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Builds_Invoice_First_Verification_When_Type_Is_Not_ACCT()
+    {
+        JsonObject? captured = null;
+        var req = new PayeeVerificationBuilder.Request
+        {
+            From = "BANK01",
+            To = "P2G",
+            MsgDefIdr = "acmt.023.001.03",
+            BizMsgIdr = "BIZ",
+            MsgId = "MSG-INVOICE",
+            CreDt = DateTime.UtcNow,
+            Alias = "INV-123",
+            Type = "BILL",
+            SIPSRequestId = "VERIFY-123"
+        };
+        var (sut, _, _) = CreateSutWithRequest(
+            () => new Response<JsonObject?>(new JsonObject { ["ok"] = true }) { StatusCode = HttpStatusCode.OK },
+            req,
+            onBodyCaptured: jo => { captured = jo; });
+
+        await sut.HandleAsync("<xml />", CancellationToken.None);
+
+        captured.Should().NotBeNull();
+        captured!["invoiceIdOrUpr"]!.GetValue<string>().Should().Be("INV-123");
+        captured["agent"]!.GetValue<string>().Should().Be("BANK01");
+        captured["verificationRequestId"]!.GetValue<string>().Should().Be("VERIFY-123");
+        captured["payerBankCode"]!.GetValue<string>().Should().Be("BANK01");
+        captured["payerChannel"]!.GetValue<string>().Should().Be("SIPS_CONNECT");
+        captured.ContainsKey("accountNo").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Builds_Mda_Account_Verification_When_Type_Is_ACCT()
+    {
+        JsonObject? captured = null;
+        var req = new PayeeVerificationBuilder.Request
+        {
+            From = "BANK01",
+            To = "P2G",
+            MsgDefIdr = "acmt.023.001.03",
+            BizMsgIdr = "BIZ",
+            MsgId = "MSG-ACCT",
+            CreDt = DateTime.UtcNow,
+            Alias = "123456789",
+            Type = "ACCT",
+            SIPSRequestId = "VERIFY-ACCT"
+        };
+        var (sut, _, _) = CreateSutWithRequest(
+            () => new Response<JsonObject?>(new JsonObject { ["ok"] = true }) { StatusCode = HttpStatusCode.OK },
+            req,
+            onBodyCaptured: jo => { captured = jo; });
+
+        await sut.HandleAsync("<xml />", CancellationToken.None);
+
+        captured.Should().NotBeNull();
+        captured!["accountNo"]!.GetValue<string>().Should().Be("123456789");
+        captured["type"]!.GetValue<string>().Should().Be("ACCT");
+        captured["agent"]!.GetValue<string>().Should().Be("BANK01");
+        captured["verificationRequestId"]!.GetValue<string>().Should().Be("VERIFY-ACCT");
+        captured.ContainsKey("invoiceIdOrUpr").Should().BeFalse();
+        captured.ContainsKey("payerBankCode").Should().BeFalse();
+        captured.ContainsKey("payerChannel").Should().BeFalse();
     }
 
     [Fact]

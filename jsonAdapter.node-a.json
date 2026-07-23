@@ -27,23 +27,59 @@
     "CB_VerificationRequest": {
       "FieldMappings": [
         {
-          "InternalField": "Alias",
+          "InternalField": "InvoiceIdOrUpr",
+          "UserField": "invoiceIdOrUpr",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "AccountNo",
           "UserField": "accountNo",
-          "Type": "string"
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         },
         {
           "InternalField": "Type",
-          "UserField": "accountType",
-          "Type": "string"
+          "UserField": "type",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         },
         {
-          "InternalField": "FromBIC",
+          "InternalField": "Agent",
           "UserField": "agent",
           "Type": "string"
         },
         {
+          "InternalField": "VerificationRequestId",
+          "UserField": "verificationRequestId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "PayerBankCode",
+          "UserField": "payerBankCode",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "PayerChannel",
+          "UserField": "payerChannel",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
           "InternalField": "VerificationId",
           "UserField": "verificationId",
+          "Type": "string",
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "FromBIC",
+          "UserField": "fromBIC",
           "Type": "string"
         }
       ]
@@ -71,8 +107,18 @@
           "Type": "string"
         },
         {
+          "InternalField": "CreditorAccount",
+          "UserField": "creditorAccount",
+          "Type": "string"
+        },
+        {
           "InternalField": "AccountType",
           "UserField": "type",
+          "Type": "string"
+        },
+        {
+          "InternalField": "CreditorAccountType",
+          "UserField": "creditorAccountType",
           "Type": "string"
         },
         {
@@ -81,9 +127,77 @@
           "Type": "string"
         },
         {
+          "InternalField": "CreditorName",
+          "UserField": "creditorName",
+          "Type": "string"
+        },
+        {
           "InternalField": "Currency",
           "UserField": "account_currency",
           "Type": "string"
+        },
+        {
+          "InternalField": "Currency",
+          "UserField": "currency",
+          "Type": "string"
+        },
+        {
+          "InternalField": "InvoiceId",
+          "UserField": "invoiceId",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "Upr",
+          "UserField": "upr",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "BillReference",
+          "UserField": "billReference",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "Mda",
+          "UserField": "mda",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "MdaId",
+          "UserField": "mdaId",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "MdaCode",
+          "UserField": "mdaCode",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "AmountPayable",
+          "UserField": "amountPayable",
+          "Type": "double",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "AmountLocked",
+          "UserField": "amountLocked",
+          "Type": "bool"
+        },
+        {
+          "InternalField": "CreditorLocked",
+          "UserField": "creditorLocked",
+          "Type": "bool"
         },
         {
           "InternalField": "SIPSRequestId",
@@ -111,7 +225,12 @@
         },
         {
           "InternalField": "Reason",
-          "UserField": "message",
+          "UserField": "reason",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AccountNo",
+          "UserField": "creditorAccount",
           "Type": "string"
         },
         {
@@ -121,7 +240,17 @@
         },
         {
           "InternalField": "AccountType",
+          "UserField": "creditorAccountType",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AccountType",
           "UserField": "accountType",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Name",
+          "UserField": "creditorName",
           "Type": "string"
         },
         {
@@ -138,6 +267,66 @@
           "InternalField": "Currency",
           "UserField": "currency",
           "Type": "string"
+        },
+        {
+          "InternalField": "Status",
+          "UserField": "status",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Message",
+          "UserField": "message",
+          "Type": "string"
+        },
+        {
+          "InternalField": "InvoiceId",
+          "UserField": "invoiceId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Upr",
+          "UserField": "upr",
+          "Type": "string"
+        },
+        {
+          "InternalField": "BillReference",
+          "UserField": "billReference",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Mda",
+          "UserField": "mda",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Mda",
+          "UserField": "mdaName",
+          "Type": "string"
+        },
+        {
+          "InternalField": "MdaId",
+          "UserField": "mdaId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "MdaCode",
+          "UserField": "mdaCode",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AmountPayable",
+          "UserField": "amountPayable",
+          "Type": "double"
+        },
+        {
+          "InternalField": "AmountPayable",
+          "UserField": "amountDue",
+          "Type": "double"
+        },
+        {
+          "InternalField": "AmountPayable",
+          "UserField": "payableAmount",
+          "Type": "double"
         }
       ]
     },
@@ -167,6 +356,12 @@
           "InternalField": "Amount",
           "UserField": "amount",
           "Type": "double"
+        },
+        {
+          "InternalField": "AmountPayable",
+          "UserField": "amountPayable",
+          "Type": "double",
+          "OmitIfNull": true
         },
         {
           "InternalField": "Currency",
@@ -199,13 +394,28 @@
           "Type": "string"
         },
         {
+          "InternalField": "CreditorName",
+          "UserField": "creditorName",
+          "Type": "string"
+        },
+        {
           "InternalField": "CreditorAccount",
           "UserField": "crAccount",
           "Type": "string"
         },
         {
+          "InternalField": "CreditorAccount",
+          "UserField": "creditorAccount",
+          "Type": "string"
+        },
+        {
           "InternalField": "CreditorAccountType",
           "UserField": "crAccountType",
+          "Type": "string"
+        },
+        {
+          "InternalField": "CreditorAccountType",
+          "UserField": "creditorAccountType",
           "Type": "string"
         },
         {
@@ -227,6 +437,27 @@
           "InternalField": "RemittanceInformation",
           "UserField": "narration",
           "Type": "string"
+        },
+        {
+          "InternalField": "BillReference",
+          "UserField": "billReference",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "Upr",
+          "UserField": "upr",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "InvoiceId",
+          "UserField": "invoiceId",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         }
       ]
     },
@@ -321,6 +552,20 @@
           "InternalField": "RemittanceInformation",
           "UserField": "remittanceInformation",
           "Type": "string"
+        },
+        {
+          "InternalField": "InvoiceId",
+          "UserField": "invoiceId",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "Upr",
+          "UserField": "upr",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         },
         {
           "InternalField": "Date",

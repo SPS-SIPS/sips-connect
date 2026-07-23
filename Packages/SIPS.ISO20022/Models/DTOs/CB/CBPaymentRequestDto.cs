@@ -26,6 +26,8 @@ public sealed class CBPaymentRequestDto
     public string CreditorIssuer { get; set; } = "C";
 
     public string RemittanceInformation { get; set; } = default!;
+    public string? InvoiceId { get; set; }
+    public string? Upr { get; set; }
 
     // Extra
     public DateTime Date { get; set; }

@@ -324,6 +324,7 @@ public sealed class IncomingTransactionHandler(
                             ClearingSystem = request.ClearingSystem ?? string.Empty,
                             MsgId = request.MsgId ?? string.Empty
                         };
+                        BillReferenceMapper.Apply(dto);
 
                         // Create a bounded cancellation token for CoreBank callback
                         using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(gct);
