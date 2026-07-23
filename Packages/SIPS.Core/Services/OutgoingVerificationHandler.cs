@@ -155,16 +155,37 @@ public sealed class OutgoingVerificationHandler(
             await PersistISOMessageAsync(record, finalStatus, parsedResponse.Reason ?? string.Empty, parsedResponse.VerificationId ?? string.Empty, responseMessage.Data, updateCt);
 
             // Step 8: Return success response
+            var accountNo = parsedResponse.Verified ? parsedResponse.Id : null;
+            var accountType = parsedResponse.Verified ? parsedResponse.Type : null;
+            var name = parsedResponse.Verified ? parsedResponse.Name : null;
+            var billReference = FirstNonEmpty(
+                parsedResponse.BillReference,
+                parsedResponse.Upr,
+                parsedResponse.InvoiceId,
+                message.Alias);
+
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto
             {
                 IsVerified = parsedResponse.Verified,
                 SIPSRequestId = parsedResponse.MsgId ?? string.Empty, // Anchor to MsgId
                 Reason = parsedResponse.Reason ?? string.Empty,
-                AccountNo = parsedResponse.Verified ? parsedResponse.Id : null,
-                AccountType = parsedResponse.Verified ? parsedResponse.Type : null,
-                Name = parsedResponse.Verified ? parsedResponse.Name : null,
+                AccountNo = accountNo,
+                AccountType = accountType,
+                Name = name,
                 Address = parsedResponse.Verified ? parsedResponse.Address : null,
                 Currency = parsedResponse.Verified ? parsedResponse.Currency : null,
+                InvoiceId = parsedResponse.Verified ? parsedResponse.InvoiceId : null,
+                Upr = parsedResponse.Verified ? parsedResponse.Upr : null,
+                BillReference = parsedResponse.Verified ? billReference : null,
+                Mda = parsedResponse.Verified ? parsedResponse.Mda : null,
+                MdaId = parsedResponse.Verified ? parsedResponse.MdaId : null,
+                MdaCode = parsedResponse.Verified ? parsedResponse.MdaCode : null,
+                AmountPayable = parsedResponse.Verified ? parsedResponse.AmountPayable : null,
+                CreditorAccount = accountNo,
+                CreditorName = name,
+                CreditorAccountType = accountType,
+                AmountLocked = parsedResponse.Verified && parsedResponse.AmountPayable.HasValue,
+                CreditorLocked = parsedResponse.Verified && !string.IsNullOrWhiteSpace(accountNo),
                 Parsed = qrData
             });
         }
@@ -173,6 +194,19 @@ public sealed class OutgoingVerificationHandler(
             _logger.LogError(ex, "[{CorrelationId}] Failed to process the verification request.", cid);
             return Response<VerificationResponseDto>.Fail("Failed to process the request", System.Net.HttpStatusCode.InternalServerError);
         }
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
     }
 
     private bool BuildRequest(VerificationRequestDto message, string fromBIC, string? anchorMsgId, out string signedMessage, out string bizMsgIdr, out string type, out string msgId)

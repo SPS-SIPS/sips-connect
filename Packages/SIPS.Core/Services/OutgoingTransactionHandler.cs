@@ -53,6 +53,8 @@ public sealed class OutgoingTransactionHandler(
 
         try
         {
+            NormalizeBillPaymentContract(message);
+
             // Step 1: Build, sign, and persist outgoing transaction request as Pending
             string document, bizMsgIdr, type, msgId, signed;
             using (SipsMetrics.TrackStep("Outgoing", "Transaction", "BuildAndSign"))
@@ -148,6 +150,37 @@ public sealed class OutgoingTransactionHandler(
             return Response<PaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
         }
     }
+    private static void NormalizeBillPaymentContract(PaymentRequestDto message)
+    {
+        if (message.AmountPayable.HasValue)
+        {
+            message.Amount = message.AmountPayable.Value;
+        }
+
+        var reference = FirstNonEmpty(message.BillReference, message.Upr, message.InvoiceId);
+        if (string.IsNullOrWhiteSpace(reference))
+        {
+            return;
+        }
+
+        message.RemittanceInformation = reference.StartsWith("BILL:", StringComparison.OrdinalIgnoreCase)
+            ? reference
+            : $"BILL:{reference}";
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
+    }
+
     private static (string document, string bizMsgIdr, string type, string msgId) BuildRequest(PaymentRequestDto message, string fromBIC, string agentBIC, string txId)
     {
         return PaymentRequestBuilder.Build(new PaymentRequestBuilder.Request

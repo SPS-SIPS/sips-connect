@@ -40,6 +40,10 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
                 {
                     // Validate and convert the value to the expected type
                     object? convertedValue = ConvertToType(node.ToString(), expectedType);
+                    if (ShouldOmit(convertedValue, mapping))
+                    {
+                        continue;
+                    }
                     outputJson[internalField] = JsonValue.Create(convertedValue);
                 }
                 catch (Exception ex)
@@ -93,6 +97,11 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
                     {
                         convertedValue = ConvertToType(value.ToString() ?? string.Empty, expectedType);
                     }
+                }
+
+                if (ShouldOmit(convertedNode ?? convertedValue, mapping))
+                {
+                    continue;
                 }
 
                 // Use the userField for the output JSON property name
@@ -248,5 +257,17 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
         }
 
         return current;
+    }
+
+    private static bool ShouldOmit(object? value, FieldMapping mapping)
+    {
+        if (value == null)
+        {
+            return mapping.OmitIfNull;
+        }
+
+        return mapping.OmitIfEmpty
+            && value is string text
+            && string.IsNullOrWhiteSpace(text);
     }
 }

@@ -289,17 +289,37 @@ public sealed class IncomingVerificationHandler(
             {
                 normalizedAlias = normalizedAlias.Substring(4);
             }
-            if (normalizedAlias.StartsWith("SO", StringComparison.OrdinalIgnoreCase))
+            if (normalizedAlias.StartsWith("SO", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(normalizedType, "ACCT", StringComparison.OrdinalIgnoreCase))
             {
                 normalizedType = "IBAN";
             }
 
+            var isMdaAccountLookup = string.Equals(normalizedType, "ACCT", StringComparison.OrdinalIgnoreCase);
+            var verificationRequestId = request.SIPSRequestId
+                ?? request.MsgId
+                ?? Guid.NewGuid().ToString("N");
+            var callbackAgent = !string.IsNullOrWhiteSpace(_callbackLinks.Agent)
+                ? _callbackLinks.Agent!
+                : request.From;
+            var payerBankCode = !string.IsNullOrWhiteSpace(_callbackLinks.PayerBankCode)
+                ? _callbackLinks.PayerBankCode!
+                : request.From;
+
             var dto = new CBVerificationRequestDto
             {
                 Alias = normalizedAlias,
-                Type = normalizedType,
+                Type = isMdaAccountLookup ? "ACCT" : null,
                 FromBIC = request.From,
-                VerificationId = request.SIPSRequestId!
+                VerificationId = verificationRequestId,
+                InvoiceIdOrUpr = isMdaAccountLookup ? null : normalizedAlias,
+                AccountNo = isMdaAccountLookup ? normalizedAlias : null,
+                Agent = callbackAgent,
+                VerificationRequestId = verificationRequestId,
+                PayerBankCode = isMdaAccountLookup ? null : payerBankCode,
+                PayerChannel = isMdaAccountLookup
+                    ? null
+                    : string.IsNullOrWhiteSpace(_callbackLinks.PayerChannel) ? "SIPS_CONNECT" : _callbackLinks.PayerChannel
             };
 
             // Create a bounded cancellation token for CoreBank callback
@@ -503,13 +523,47 @@ public sealed class IncomingVerificationHandler(
         _logger.LogInformation("[ParseCallbackResult] Verification result for {Alias}: Verified={Verified}", response.Original?.Alias, deserializedContent?.IsVerified);
 
         response.Verified = deserializedContent?.IsVerified ?? false;
-        response.Reason = response.Verified ? SUCC : MISS;
+        var businessReason = FirstNonEmpty(
+            deserializedContent?.Reason,
+            deserializedContent?.Status,
+            deserializedContent?.Message);
+        response.Reason = response.Verified
+            ? FirstNonEmpty(businessReason, SUCC)
+            : FirstNonEmpty(businessReason, MISS);
+        response.AdditionalInfo = FirstNonEmpty(
+            deserializedContent?.Message,
+            deserializedContent?.Reason,
+            deserializedContent?.Status);
         response.Id = deserializedContent?.AccountNo ?? string.Empty;
         // Map Type from callback; default to IBAN only if unspecified
         response.Type = string.IsNullOrWhiteSpace(deserializedContent?.AccountType) ? IBAN : deserializedContent.AccountType;
         response.Name = deserializedContent?.Name ?? string.Empty;
         response.Address = deserializedContent?.Address ?? string.Empty;
         response.Currency = deserializedContent?.Currency ?? string.Empty;
+        response.InvoiceId = deserializedContent?.InvoiceId;
+        response.Upr = deserializedContent?.Upr;
+        response.BillReference = FirstNonEmpty(
+            deserializedContent?.BillReference,
+            deserializedContent?.Upr,
+            deserializedContent?.InvoiceId,
+            response.Original?.Alias);
+        response.Mda = deserializedContent?.Mda;
+        response.MdaId = deserializedContent?.MdaId;
+        response.MdaCode = deserializedContent?.MdaCode;
+        response.AmountPayable = deserializedContent?.AmountPayable;
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
     }
 
     private static bool IsIndeterminateCoreBankVerification(Response<JsonObject?>? responseMessage)

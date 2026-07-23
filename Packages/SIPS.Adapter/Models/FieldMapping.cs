@@ -10,4 +10,9 @@ public class FieldMapping
 
     // New optional enum-based type to avoid magic strings.
     public MappingType? EnumType { get; set; }
+
+    // Useful for adapter contracts where a missing optional field changes the
+    // business flow, for example P2G invoice verification vs account lookup.
+    public bool OmitIfNull { get; set; }
+    public bool OmitIfEmpty { get; set; }
 }

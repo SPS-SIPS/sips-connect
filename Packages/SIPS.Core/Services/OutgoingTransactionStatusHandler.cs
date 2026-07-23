@@ -776,6 +776,7 @@ public sealed class OutgoingTransactionStatusHandler(
                 ClearingSystem = string.Empty,
                 MsgId = isoMessage.MsgId ?? string.Empty
             };
+            BillReferenceMapper.Apply(dto);
 
             using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));

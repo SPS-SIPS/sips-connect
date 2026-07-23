@@ -24,4 +24,11 @@ public class CoreOptions
     public int CallbackSlaSeconds { get; set; } = 10;
     public int CallbackInternalBudgetSeconds { get; set; } = 9;
     public bool VerificationOnlyMode { get; set; } = false;
+
+    public bool CallbackAuthEnabled { get; set; } = false;
+    public string CallbackTokenEndpoint { get; set; } = "";
+    public string CallbackClientId { get; set; } = "";
+    public string CallbackClientSecret { get; set; } = "";
+    public string CallbackScope { get; set; } = "";
+    public string CallbackAudience { get; set; } = "";
 }
