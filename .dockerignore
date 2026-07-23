@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+
+.git/
+.vscode/
+.DS_Store
+
+logs/
+keys/
+certs/
+artifacts/
+node_modules/
+
+*.user
+*.suo
+*.swp
+*.tmp
