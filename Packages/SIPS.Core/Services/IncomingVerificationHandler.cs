@@ -282,7 +282,8 @@ public sealed class IncomingVerificationHandler(
                 headers["X-Idempotency-Key"] = request.SIPSRequestId!;
             // Normalize alias and type prior to CoreBank matching
             var normalizedAlias = request.Alias ?? string.Empty;
-            var normalizedType = request.Type ?? string.Empty;
+            var requestedType = request.Type;
+            var normalizedType = requestedType ?? string.Empty;
 
             // [BUSINESS COMPLIANCE]: Strip legacy 'USD:' prefix and auto-detect IBAN for Somalia ISO standards.
             if (normalizedAlias.StartsWith("USD:", StringComparison.OrdinalIgnoreCase))
@@ -295,7 +296,7 @@ public sealed class IncomingVerificationHandler(
                 normalizedType = "IBAN";
             }
 
-            var isMdaAccountLookup = string.Equals(normalizedType, "ACCT", StringComparison.OrdinalIgnoreCase);
+            var isMdaAccountLookup = !string.IsNullOrWhiteSpace(requestedType) && !IsBillLookupType(requestedType);
             var verificationRequestId = request.SIPSRequestId
                 ?? request.MsgId
                 ?? Guid.NewGuid().ToString("N");
@@ -309,7 +310,7 @@ public sealed class IncomingVerificationHandler(
             var dto = new CBVerificationRequestDto
             {
                 Alias = normalizedAlias,
-                Type = isMdaAccountLookup ? "ACCT" : null,
+                Type = isMdaAccountLookup ? normalizedType : null,
                 FromBIC = request.From,
                 VerificationId = verificationRequestId,
                 InvoiceIdOrUpr = isMdaAccountLookup ? null : normalizedAlias,
@@ -569,6 +570,11 @@ public sealed class IncomingVerificationHandler(
 
         return string.Empty;
     }
+
+    private static bool IsBillLookupType(string value) =>
+        string.Equals(value, "BILL", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "INVOICE", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "UPR", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsIndeterminateCoreBankVerification(Response<JsonObject?>? responseMessage)
     {
