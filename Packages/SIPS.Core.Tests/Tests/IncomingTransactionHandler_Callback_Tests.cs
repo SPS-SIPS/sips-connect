@@ -160,6 +160,38 @@ public class IncomingTransactionHandler_Callback_Tests
     }
 
     [Fact]
+    public async Task HandleAsync_Accepts_WhenCoreBankReturnsAcsc()
+    {
+        var xml = MakeValidPaymentRequestXml();
+        var coreBankResponse = new CBPaymentStatusResponseDto
+        {
+            Status = "ACSC",
+            Reason = "Accepted",
+            AdditionalInfo = "Invoice payment accepted",
+            AcceptanceDate = DateTime.UtcNow,
+            TxId = "TX"
+        };
+        var (sut, recorder, _, _) = CreateSut(
+            () => new Response<JsonObject?>(new JsonObject { ["status"] = "ACSC" }) { StatusCode = HttpStatusCode.OK },
+            coreBankResponse);
+
+        var rsp = await sut.HandleAsync(xml, CancellationToken.None);
+
+        rsp.Should().NotBeNullOrWhiteSpace();
+
+        recorder.Verify(r => r.ISOMessageResponseAsync(It.IsAny<SIPS.PostgreSQL.Models.ISOMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        var responseInvocation = recorder.Invocations.First(i => i.Method.Name == "ISOMessageResponseAsync");
+        var persistedMessage = responseInvocation.Arguments[0] as SIPS.PostgreSQL.Models.ISOMessage;
+
+        persistedMessage.Should().NotBeNull();
+        persistedMessage!.Status.Should().Be(TransactionStatus.Success);
+
+        var responseXml = Encoding.UTF8.GetString(persistedMessage.Response!);
+        var parsed = PaymentRequestResponseBuilder.Parse(responseXml);
+        parsed.Status.Should().Be("ACSC");
+    }
+
+    [Fact]
     public async Task HandleAsync_RejectsAndPersistsFailed_WhenHttpOkButCoreBankStatusIsEmpty()
     {
         var xml = MakeValidPaymentRequestXml();
