@@ -42,13 +42,21 @@ services:
       - Emv__AcquirerId=${ACQUIRER_ID:?ACQUIRER_ID is required}
       - Emv__FIType=${FI_TYPE:?FI_TYPE is required}
       - Emv__FIName=${FI_NAME:?FI_NAME is required}
-      - ISO20022__Verification=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/cb/verify
-      - ISO20022__Transfer=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/CB/Transfer
-      - ISO20022__Return=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/CB/Return
-      - ISO20022__Status=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/CB/Status
-      - ISO20022__CompletionNotification=${COREBANK_BASE_URL:?COREBANK_BASE_URL is required}/api/CB/CompletionNotification
+      - ISO20022__Verification=${ISO20022_VERIFICATION_URL:?ISO20022_VERIFICATION_URL is required}
+      - ISO20022__PayerBankCode=${PAYER_BANK_CODE:-}
+      - ISO20022__PayerChannel=${PAYER_CHANNEL:-}
+      - ISO20022__Transfer=${ISO20022_TRANSFER_URL:?ISO20022_TRANSFER_URL is required}
+      - ISO20022__Return=${ISO20022_RETURN_URL:?ISO20022_RETURN_URL is required}
+      - ISO20022__Status=${ISO20022_STATUS_URL:?ISO20022_STATUS_URL is required}
+      - ISO20022__CompletionNotification=${ISO20022_COMPLETION_NOTIFICATION_URL:?ISO20022_COMPLETION_NOTIFICATION_URL is required}
       - ISO20022__Key=${Test_CoreBank_API_Key:-123}
       - ISO20022__Secret=${Test_CoreBank_API_Secret:-123}
+      - Core__CallbackAuthEnabled=${CALLBACK_AUTH_ENABLED:-false}
+      - Core__CallbackTokenEndpoint=${CALLBACK_TOKEN_ENDPOINT:-}
+      - Core__CallbackClientId=${CALLBACK_CLIENT_ID:-}
+      - Core__CallbackClientSecret=${CALLBACK_CLIENT_SECRET:-}
+      - Core__CallbackScope=${CALLBACK_SCOPE:-}
+      - Core__CallbackAudience=${CALLBACK_AUDIENCE:-}
       - Core__IncludeCoreBankOnListing=${Core_IncludeCoreBankOnListing:-true}
       - ASPNETCORE_ENVIRONMENT=Development
     ports:

@@ -40,7 +40,9 @@ services:
       - Emv__AcquirerId=${ACQUIRER_ID:-0000}
       - Emv__FIType=${FI_TYPE:-01}
       - Emv__FIName=${FI_NAME:-Reviewer Bank}
-      - ISO20022__Verification=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/cb/verify
+      - ISO20022__Verification=${ISO20022_VERIFICATION_URL:-http://sips-corebank:8080/api/cb/verify}
+      - ISO20022__PayerBankCode=${PAYER_BANK_CODE:-}
+      - ISO20022__PayerChannel=${PAYER_CHANNEL:-}
       # PKI Discovery Settings (Optional / PKI-On mode only)
       - Core__BaseUrl=${SIPS_CORE_BASE_URL:-}
       - Core__PublicKeysRepUrl=${SIPS_CORE_PUBLIC_KEYS_REP_URL:-}
@@ -49,10 +51,16 @@ services:
       - Core__BalanceStatusEndpoint=${SIPS_CORE_BALANCE_STATUS_ENDPOINT:-}
       - Core__Username=${SIPS_CORE_USERNAME:-}
       - Core__Password=${SIPS_CORE_PASSWORD:-}
-      - ISO20022__Transfer=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/CB/Transfer
-      - ISO20022__Return=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/CB/Return
-      - ISO20022__Status=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/CB/Status
-      - ISO20022__CompletionNotification=${COREBANK_BASE_URL:-http://sips-corebank:8080}/api/CB/CompletionNotification
+      - Core__CallbackAuthEnabled=${CALLBACK_AUTH_ENABLED:-false}
+      - Core__CallbackTokenEndpoint=${CALLBACK_TOKEN_ENDPOINT:-}
+      - Core__CallbackClientId=${CALLBACK_CLIENT_ID:-}
+      - Core__CallbackClientSecret=${CALLBACK_CLIENT_SECRET:-}
+      - Core__CallbackScope=${CALLBACK_SCOPE:-}
+      - Core__CallbackAudience=${CALLBACK_AUDIENCE:-}
+      - ISO20022__Transfer=${ISO20022_TRANSFER_URL:-http://sips-corebank:8080/api/CB/Transfer}
+      - ISO20022__Return=${ISO20022_RETURN_URL:-http://sips-corebank:8080/api/CB/Return}
+      - ISO20022__Status=${ISO20022_STATUS_URL:-http://sips-corebank:8080/api/CB/Status}
+      - ISO20022__CompletionNotification=${ISO20022_COMPLETION_NOTIFICATION_URL:-http://sips-corebank:8080/api/CB/CompletionNotification}
       - ASPNETCORE_ENVIRONMENT=Development
     ports:
       - "${SIPS_CONNECT_PORT:-8080}:8080"
