@@ -484,6 +484,40 @@ public class IncomingVerificationHandler_Tests
         captured.ContainsKey("payerChannel").Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("IPS")]
+    [InlineData("RTGS")]
+    public async Task Builds_Mda_Account_Verification_When_Type_Is_Clearing_Type(string clearingType)
+    {
+        JsonObject? captured = null;
+        var req = new PayeeVerificationBuilder.Request
+        {
+            From = "BANK01",
+            To = "P2G",
+            MsgDefIdr = "acmt.023.001.03",
+            BizMsgIdr = "BIZ",
+            MsgId = $"MSG-{clearingType}",
+            CreDt = DateTime.UtcNow,
+            Alias = "33333",
+            Type = clearingType,
+            SIPSRequestId = $"VERIFY-{clearingType}"
+        };
+        var (sut, _, _) = CreateSutWithRequest(
+            () => new Response<JsonObject?>(new JsonObject { ["ok"] = true }) { StatusCode = HttpStatusCode.OK },
+            req,
+            onBodyCaptured: jo => { captured = jo; });
+
+        await sut.HandleAsync("<xml />", CancellationToken.None);
+
+        captured.Should().NotBeNull();
+        captured!["accountNo"]!.GetValue<string>().Should().Be("33333");
+        captured["type"]!.GetValue<string>().Should().Be(clearingType);
+        captured["agent"]!.GetValue<string>().Should().Be("BANK01");
+        captured.ContainsKey("invoiceIdOrUpr").Should().BeFalse();
+        captured.ContainsKey("payerBankCode").Should().BeFalse();
+        captured.ContainsKey("payerChannel").Should().BeFalse();
+    }
+
     [Fact]
     public async Task HandleAsync_WhenDuplicateFollower_ReturnsStoredResponse()
     {
