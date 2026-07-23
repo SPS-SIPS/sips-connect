@@ -543,7 +543,7 @@ public sealed class IncomingVerificationHandler(
             deserializedContent?.Mda,
             deserializedContent?.Name);
         response.Address = deserializedContent?.Address ?? string.Empty;
-        response.Currency = deserializedContent?.Currency ?? string.Empty;
+        response.Currency = FirstNonEmpty(deserializedContent?.Currency, deserializedContent?.PaymentCurrency);
         response.InvoiceId = deserializedContent?.InvoiceId;
         response.Upr = deserializedContent?.Upr;
         response.BillReference = FirstNonEmpty(

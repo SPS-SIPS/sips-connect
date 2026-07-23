@@ -89,7 +89,9 @@
         {
           "InternalField": "Address",
           "UserField": "address",
-          "Type": "string"
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         },
         {
           "InternalField": "IsVerified",
@@ -134,12 +136,16 @@
         {
           "InternalField": "Currency",
           "UserField": "account_currency",
-          "Type": "string"
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         },
         {
           "InternalField": "Currency",
           "UserField": "currency",
-          "Type": "string"
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         },
         {
           "InternalField": "InvoiceId",
@@ -207,12 +213,15 @@
         {
           "InternalField": "Parsed",
           "UserField": "parsed",
-          "Type": "object"
+          "Type": "object",
+          "OmitIfNull": true
         },
         {
           "InternalField": "BankName",
           "UserField": "bankName",
-          "Type": "string"
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         }
       ]
     },
@@ -266,6 +275,11 @@
         {
           "InternalField": "Currency",
           "UserField": "currency",
+          "Type": "string"
+        },
+        {
+          "InternalField": "PaymentCurrency",
+          "UserField": "paymentCurrency",
           "Type": "string"
         },
         {

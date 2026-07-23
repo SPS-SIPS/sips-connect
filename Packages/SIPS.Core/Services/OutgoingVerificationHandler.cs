@@ -174,6 +174,7 @@ public sealed class OutgoingVerificationHandler(
                 Name = name,
                 Address = parsedResponse.Verified ? parsedResponse.Address : null,
                 Currency = parsedResponse.Verified ? parsedResponse.Currency : null,
+                PaymentCurrency = parsedResponse.Verified ? parsedResponse.Currency : null,
                 InvoiceId = parsedResponse.Verified ? parsedResponse.InvoiceId : null,
                 Upr = parsedResponse.Verified ? parsedResponse.Upr : null,
                 BillReference = parsedResponse.Verified ? billReference : null,
