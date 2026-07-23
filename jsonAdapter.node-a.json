@@ -249,7 +249,7 @@
           "Type": "string"
         },
         {
-          "InternalField": "Name",
+          "InternalField": "CreditorName",
           "UserField": "creditorName",
           "Type": "string"
         },

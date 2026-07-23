@@ -73,7 +73,7 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
 
             var response = await _httpClient.SendAsync(message, linkedCts.Token);
             var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
-            var data = JsonSerializer.Deserialize<JsonObject>(content, serializerOptions);
+            var data = TryDeserializeJsonObject(content, completeUrl, response.StatusCode);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -149,6 +149,35 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
         {
             _logger.LogError(ex, "HTTP POST failed: {Url} txId={TxId} corr={CorrelationId}", url, txId ?? "none", corrId ?? "none");
             return Response<string>.Fail(ex.Message, HttpStatusCode.InternalServerError);
+        }
+    }
+
+    private JsonObject? TryDeserializeJsonObject(string content, string url, HttpStatusCode statusCode)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            _logger.LogWarning("HTTP POST response body was empty: {Url} status={StatusCode}", url, (int)statusCode);
+            return new JsonObject
+            {
+                ["message"] = "Empty response body",
+                ["statusCode"] = (int)statusCode
+            };
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<JsonObject>(content, serializerOptions);
+        }
+        catch (JsonException ex)
+        {
+            var preview = content.Length > 512 ? content[..512] : content;
+            _logger.LogWarning(ex, "HTTP POST response body was not valid JSON: {Url} status={StatusCode} body={Body}", url, (int)statusCode, preview);
+            return new JsonObject
+            {
+                ["message"] = "Non-JSON response body",
+                ["statusCode"] = (int)statusCode,
+                ["body"] = preview
+            };
         }
     }
 

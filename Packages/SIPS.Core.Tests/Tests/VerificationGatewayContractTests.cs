@@ -113,7 +113,7 @@ public class VerificationGatewayContractTests
         Assert.Equal("Verified", transformed["Message"]?.GetValue<string>());
         Assert.Equal("401005007403", transformed["AccountNo"]?.GetValue<string>());
         Assert.Equal("ACCT", transformed["AccountType"]?.GetValue<string>());
-        Assert.Equal("Revenue Account", transformed["Name"]?.GetValue<string>());
+        Assert.Equal("Revenue Account", transformed["CreditorName"]?.GetValue<string>());
         Assert.Equal("USD", transformed["Currency"]?.GetValue<string>());
     }
 
