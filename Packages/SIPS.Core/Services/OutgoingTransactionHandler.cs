@@ -1,8 +1,12 @@
 using System.Text;
+using SIPS.Adapter;
 using SIPS.Core.Interfaces;
+using SIPS.Core.Services.Abstractions;
+using SIPS.Core.Services.Callback;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Interfaces;
 using SIPS.ISO20022.Models.DTOs;
+using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Options;
 using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -25,7 +29,10 @@ public sealed class OutgoingTransactionHandler(
     SIPS.Core.Services.Abstractions.ISipsRequestSender sips,
     SIPS.Core.Services.Abstractions.IISOMessageService isoService,
     SIPS.Core.Services.Abstractions.IStatusOrchestrator statusOrchestrator,
-    IOptions<CoreOptions> coreOptions
+    IOptions<CoreOptions> coreOptions,
+    IJsonAdapter? jsonAdapter = null,
+    ICallbackClient? callback = null,
+    ICallbackOrchestrator? callbacks = null
     ) : IOutgoingTransactionHandler
 {
     private readonly ISO20022Options _configuration = options;
@@ -38,6 +45,14 @@ public sealed class OutgoingTransactionHandler(
     private readonly SIPS.Core.Services.Abstractions.IISOMessageService _isoService = isoService;
     private readonly SIPS.Core.Services.Abstractions.IStatusOrchestrator _statusOrchestrator = statusOrchestrator;
     private readonly CoreOptions _core = coreOptions.Value;
+    private readonly IJsonAdapter? _jsonAdapter = jsonAdapter;
+    private readonly ICallbackClient? _callback = callback;
+    private readonly ICallbackOrchestrator? _callbacks = callbacks;
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true
+    };
     public async Task<Response<PaymentResponseDto>> HandleAsync(PaymentRequestDto message, CancellationToken ct)
     {
         using var _totalTrack = SipsMetrics.TrackStep("Outgoing", "Transaction", "Total");
@@ -131,6 +146,7 @@ public sealed class OutgoingTransactionHandler(
             record.AdditionalInfo = rs.AdditionalInfo ?? string.Empty;
 
             await _persistence.ISOMessageResponseAsync(record, updateCt);
+            await TryConfirmOutgoingBillPaymentAsync(message, txId, rs.Status, cid, ct);
 
             // Step 4: Return final status to caller
             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
@@ -150,6 +166,98 @@ public sealed class OutgoingTransactionHandler(
             return Response<PaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
         }
     }
+
+    private async Task TryConfirmOutgoingBillPaymentAsync(PaymentRequestDto message, string txId, string? ipsStatus, string cid, CancellationToken ct)
+    {
+        if (!IsSuccessStatus(ipsStatus) || !IsBillPayment(message))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_configuration.Transfer) || _jsonAdapter is null || _callback is null || _callbacks is null)
+        {
+            _logger.LogWarning("[{CorrelationId}] Outgoing bill payment {TxId} succeeded but Transfer callback is not configured; P2G confirmation was skipped.", cid, txId);
+            return;
+        }
+
+        var headers = new Dictionary<string, string>
+        {
+            { API_Key, _configuration.Key! },
+            { API_Secret, _configuration.Secret! },
+            { "X-Idempotency-Key", txId },
+            { "X-Transaction-Id", txId }
+        };
+
+        var dto = new CBPaymentRequestDto
+        {
+            FromBIC = _configuration.BIC ?? string.Empty,
+            LocalInstrument = message.LocalInstrument ?? string.Empty,
+            CategoryPurpose = message.CategoryPurpose ?? string.Empty,
+            EndToEndId = message.EndToEndId ?? string.Empty,
+            TxId = txId,
+            Amount = message.Amount,
+            Currency = message.Currency ?? string.Empty,
+            DebtorName = message.DebtorName ?? string.Empty,
+            DebtorAccount = message.DebtorAccount ?? string.Empty,
+            DebtorAddress = message.DebtorAddress ?? string.Empty,
+            DebtorAccountType = message.DebtorAccountType ?? string.Empty,
+            DebtorAgentBIC = _configuration.Agent ?? string.Empty,
+            DebtorIssuer = message.DebtorIssuer ?? "C",
+            CreditorName = message.CreditorName ?? string.Empty,
+            CreditorAccount = message.CreditorAccount ?? string.Empty,
+            CreditorAddress = message.CreditorAddress ?? string.Empty,
+            CreditorAccountType = message.CreditorAccountType ?? string.Empty,
+            CreditorAgentBIC = message.CreditorAgentBIC ?? string.Empty,
+            CreditorIssuer = message.CreditorIssuer ?? "C",
+            RemittanceInformation = message.RemittanceInformation ?? string.Empty,
+            Date = DateTime.UtcNow,
+            ToBIC = message.ToBIC ?? string.Empty,
+            SettlementMethod = "CLRG",
+            ChargeBearer = "SLEV",
+            BizMsgIdr = string.Empty,
+            MsgDefIdr = "pacs.008.001.10",
+            ClearingSystem = string.Empty,
+            MsgId = string.Empty
+        };
+        BillReferenceMapper.Apply(dto);
+
+        try
+        {
+            using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            coreBankCts.CancelAfter(TimeSpan.FromSeconds(_core.CoreBankTimeoutSeconds > 0 ? _core.CoreBankTimeoutSeconds : 3));
+
+            var result = await _callbacks.SendJsonAsync(
+                _configuration.Transfer!,
+                headers,
+                dto,
+                CB_PaymentRequest,
+                _jsonAdapter,
+                _correlation,
+                _jsonSerializerOptions,
+                _callback,
+                coreBankCts.Token,
+                cid);
+
+            _logger.LogInformation("[{CorrelationId}] Outgoing bill payment confirmation sent for TxId {TxId}, StatusCode={StatusCode}", cid, txId, result?.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[{CorrelationId}] Failed to confirm outgoing bill payment {TxId} via Transfer callback.", cid, txId);
+        }
+    }
+
+    private static bool IsBillPayment(PaymentRequestDto message)
+    {
+        return !string.IsNullOrWhiteSpace(FirstNonEmpty(message.BillReference, message.Upr, message.InvoiceId)) ||
+               (message.RemittanceInformation?.StartsWith("BILL:", StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private static bool IsSuccessStatus(string? status)
+    {
+        return string.Equals(status, ACSC, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, SUCC, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void NormalizeBillPaymentContract(PaymentRequestDto message)
     {
         if (message.AmountPayable.HasValue)

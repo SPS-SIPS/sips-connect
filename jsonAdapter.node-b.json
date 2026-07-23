@@ -8,9 +8,37 @@
           "Type": "string"
         },
         {
+          "InternalField": "Alias",
+          "UserField": "accountNo",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "Alias",
+          "UserField": "invoiceIdOrUpr",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
           "InternalField": "Type",
           "UserField": "accType",
           "Type": "string"
+        },
+        {
+          "InternalField": "Type",
+          "UserField": "type",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "Type",
+          "UserField": "accountType",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         },
         {
           "InternalField": "ToBIC",

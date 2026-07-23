@@ -88,6 +88,30 @@ public class VerificationGatewayContractTests
     [InlineData("jsonAdapter.json")]
     [InlineData("jsonAdapter.node-a.json")]
     [InlineData("jsonAdapter.node-b.json")]
+    public void VerifyPayee_Request_Accepts_AccountNo_And_Type_Aliases(string adapterFile)
+    {
+        var adapterPath = Path.Combine(_basePath, adapterFile);
+        var jsonContent = File.ReadAllText(adapterPath);
+        var options = JsonSerializer.Deserialize<JsonAdapterOptions>(jsonContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var adapter = new JsonAdapter(options, NullLogger<JsonAdapter>.Instance);
+        var request = new JsonObject
+        {
+            ["accountNo"] = "34179900",
+            ["type"] = "IPS",
+            ["agent"] = "BANK01"
+        };
+
+        var transformed = adapter.Transform(request, "VerificationRequest");
+
+        Assert.Equal("34179900", transformed["Alias"]?.GetValue<string>());
+        Assert.Equal("IPS", transformed["Type"]?.GetValue<string>());
+        Assert.Equal("BANK01", transformed["ToBIC"]?.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("jsonAdapter.json")]
+    [InlineData("jsonAdapter.node-a.json")]
+    [InlineData("jsonAdapter.node-b.json")]
     public void CB_VerificationResponse_Accepts_P2G_Creditor_Response_Shape(string adapterFile)
     {
         var adapterPath = Path.Combine(_basePath, adapterFile);
