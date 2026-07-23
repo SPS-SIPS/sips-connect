@@ -15,6 +15,9 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
     private readonly ILogger<InterfaceHttpClient> _logger = logger;
     private readonly HttpClient _httpClient = httpClient;
     private readonly CoreOptions _core = coreOptions.Value;
+    private readonly SemaphoreSlim _callbackTokenLock = new(1, 1);
+    private string? _cachedCallbackToken;
+    private DateTimeOffset _callbackTokenExpiresAt = DateTimeOffset.MinValue;
     private readonly JsonSerializerOptions serializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -44,6 +47,9 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
             // ensure content-type is correctly set on the content
             requestContent.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            linkedCts.CancelAfter(TimeSpan.FromSeconds(_core.HttpTimeoutSeconds > 0 ? _core.HttpTimeoutSeconds : 15));
+
             if (headers != null)
             {
                 foreach (var header in headers)
@@ -52,8 +58,18 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
                 }
             }
 
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            linkedCts.CancelAfter(TimeSpan.FromSeconds(_core.HttpTimeoutSeconds > 0 ? _core.HttpTimeoutSeconds : 15));
+            if (ShouldAttachCallbackBearer(headers))
+            {
+                var token = await GetCallbackBearerTokenAsync(linkedCts.Token);
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    sw.Stop();
+                    _logger.LogError("HTTP POST auth failed before callback: {Url} durationMs={Duration} corr={CorrelationId}", completeUrl, sw.ElapsedMilliseconds, corrId ?? "none");
+                    return Response<JsonObject?>.Fail("Callback service-account token request failed", HttpStatusCode.Unauthorized);
+                }
+
+                message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
 
             var response = await _httpClient.SendAsync(message, linkedCts.Token);
             var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
@@ -139,5 +155,111 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
     public void AddAuthHeaders(string accessToken)
     {
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+    }
+
+    private bool ShouldAttachCallbackBearer(Dictionary<string, string>? headers)
+    {
+        if (!_core.CallbackAuthEnabled)
+        {
+            return false;
+        }
+
+        return headers == null
+            || !headers.Keys.Any(key => string.Equals(key, "Authorization", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<string?> GetCallbackBearerTokenAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_core.CallbackTokenEndpoint)
+            || string.IsNullOrWhiteSpace(_core.CallbackClientId)
+            || string.IsNullOrWhiteSpace(_core.CallbackClientSecret))
+        {
+            _logger.LogError("Callback service-account auth is enabled but token endpoint/client credentials are incomplete.");
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (!string.IsNullOrWhiteSpace(_cachedCallbackToken)
+            && now < _callbackTokenExpiresAt.AddSeconds(-30))
+        {
+            return _cachedCallbackToken;
+        }
+
+        await _callbackTokenLock.WaitAsync(cancellationToken);
+        try
+        {
+            now = DateTimeOffset.UtcNow;
+            if (!string.IsNullOrWhiteSpace(_cachedCallbackToken)
+                && now < _callbackTokenExpiresAt.AddSeconds(-30))
+            {
+                return _cachedCallbackToken;
+            }
+
+            var form = new Dictionary<string, string>
+            {
+                ["grant_type"] = "client_credentials",
+                ["client_id"] = _core.CallbackClientId,
+                ["client_secret"] = _core.CallbackClientSecret
+            };
+
+            if (!string.IsNullOrWhiteSpace(_core.CallbackScope))
+            {
+                form["scope"] = _core.CallbackScope;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_core.CallbackAudience))
+            {
+                form["audience"] = _core.CallbackAudience;
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, _core.CallbackTokenEndpoint)
+            {
+                Content = new FormUrlEncodedContent(form)
+            };
+
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Callback service-account token request failed with status {StatusCode}: {Content}", response.StatusCode, content);
+                return null;
+            }
+
+            using var document = JsonDocument.Parse(content);
+            if (!document.RootElement.TryGetProperty("access_token", out var accessTokenElement))
+            {
+                _logger.LogError("Callback service-account token response did not include access_token.");
+                return null;
+            }
+
+            var accessToken = accessTokenElement.GetString();
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                _logger.LogError("Callback service-account token response included an empty access_token.");
+                return null;
+            }
+
+            var expiresInSeconds = 300;
+            if (document.RootElement.TryGetProperty("expires_in", out var expiresInElement)
+                && expiresInElement.TryGetInt32(out var parsedExpiresIn)
+                && parsedExpiresIn > 0)
+            {
+                expiresInSeconds = parsedExpiresIn;
+            }
+
+            _cachedCallbackToken = accessToken;
+            _callbackTokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
+            _logger.LogInformation("Callback service-account token acquired for client {ClientId}; expires in {ExpiresIn}s.", _core.CallbackClientId, expiresInSeconds);
+            return _cachedCallbackToken;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Callback service-account token request failed.");
+            return null;
+        }
+        finally
+        {
+            _callbackTokenLock.Release();
+        }
     }
 }

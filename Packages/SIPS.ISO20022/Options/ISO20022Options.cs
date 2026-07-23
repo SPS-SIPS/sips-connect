@@ -9,6 +9,8 @@ public class ISO20022Options
     public string? SIPS { get; set; }
     public string? BIC { get; set; }
     public string? Agent { get; set; }
+    public string? PayerBankCode { get; set; }
+    public string? PayerChannel { get; set; }
     public string? Key { get; set; }
     public string? Secret { get; set; }
 }

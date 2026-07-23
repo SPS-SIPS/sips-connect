@@ -27,5 +27,9 @@ public sealed class PaymentRequestDto
 
 
     public string RemittanceInformation { get; set; } = default!;
+    public decimal? AmountPayable { get; set; }
+    public string? InvoiceId { get; set; }
+    public string? Upr { get; set; }
+    public string? BillReference { get; set; }
     public string? TxId { get; set; }
 }

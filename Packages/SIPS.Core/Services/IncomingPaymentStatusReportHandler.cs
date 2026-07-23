@@ -576,6 +576,7 @@ public sealed class IncomingPaymentStatusReportHandler(
                         ClearingSystem = string.Empty,
                         MsgId = isoMessage.MsgId ?? string.Empty
                     };
+                    BillReferenceMapper.Apply(dto);
 
                     SIPS.ISO20022.Models.DTOs.Response<JsonObject?>? transferResult = null;
                     using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
