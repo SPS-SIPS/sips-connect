@@ -14,11 +14,13 @@ This repository houses the **SIPS Connect** integration gateway—the central co
 
 ## Ownership, Authorship & Licensing Position
 
-This repository is an SPS-owned platform. SIPS Connect was designed, built, deployed, and productionized by Abdulshakur Ahmed Aided as part of the Somali Instant Payment System technology ecosystem.
+This repository is owned by **SOMALI PAYMENT SWITCH (SPS) LTD**.
 
-If SPS formally authorizes open-source release of this repository, the recommended license is **Apache License 2.0**, subject to institutional ownership approval and provenance review. Apache 2.0 is enterprise-friendly, supports commercial and ecosystem adoption, preserves attribution through `NOTICE`, includes an explicit patent grant, limits trademark permission, and provides warranty/liability disclaimers.
+**Technical leadership and implementation:** SIPS Connect was designed, built, deployed, and productionized by Abdulshakur Ahmed Aided ([@hanadderia](https://github.com/hanadderia)) within the Somali Payment Switch institutional context.
 
-Before applying any open-source license, SPS should verify:
+This repository is released under the **Apache License 2.0**. Apache 2.0 is enterprise-friendly, supports commercial and ecosystem adoption, preserves attribution through `NOTICE`, includes an explicit patent grant, limits trademark permission, and provides warranty/liability disclaimers.
+
+Release governance should ensure:
 
 - Written institutional authorization to release the repository.
 - Copyright ownership of employee and contractor contributions.
@@ -26,31 +28,16 @@ Before applying any open-source license, SPS should verify:
 - Licensing rights for ISO 20022 schemas and generated artifacts.
 - Compatibility of third-party dependencies.
 - No credentials, production data, or sensitive repository history.
-- Correct SPS legal entity name for copyright and notice files.
+- Correct SPS legal entity name for copyright and notice files: **SOMALI PAYMENT SWITCH (SPS) LTD**.
 
-Until that review is complete, leaving the repository without an open-source license is safer because default copyright restrictions continue to apply.
+Release files:
 
-Recommended release files:
-
-- `LICENSE` - unmodified Apache License 2.0 text.
+- `LICENSE` - Apache License 2.0 text.
 - `NOTICE` - SPS legal name, copyright years, and attribution.
 - `THIRD_PARTY_NOTICES.md` - third-party components and their licenses.
 - `SECURITY.md` - private vulnerability-reporting process.
 - `CONTRIBUTING.md` - contribution and ownership rules.
 - `CODEOWNERS` - institutional maintainers.
-
-Suggested `NOTICE` foundation:
-
-```text
-SIPS Connect
-Copyright 2024-2026 [Full legal name of SPS]
-
-Developed and maintained as part of the Somali Instant Payment System
-technology ecosystem.
-
-SmartVista and other third-party product names are trademarks of their
-respective owners. No trademark license is granted.
-```
 
 ---
 
