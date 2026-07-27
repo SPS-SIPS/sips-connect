@@ -169,12 +169,17 @@ public class VerificationGatewayContractTests
             Mda = "Ministry of Finance",
             MdaId = "MDA-001",
             MdaCode = "MOF",
+            ServiceCode = "PAYE-2026",
             AmountPayable = 125.50m,
+            Amount = 125.50m,
+            DueDate = "20260731",
+            PayerReference = "TAX-123457",
             CreditorAccount = "401005007403",
             CreditorName = "Treasury MDA",
             CreditorAccountType = "ACCT",
             AmountLocked = true,
-            CreditorLocked = true
+            CreditorLocked = true,
+            RemittanceInformation = "BILL:UPR-123"
         };
 
         var transformed = adapter.Transform(dto, "VerificationResponse");
@@ -184,12 +189,17 @@ public class VerificationGatewayContractTests
         Assert.Equal("Ministry of Finance", transformed["mda"]?.GetValue<string>());
         Assert.Equal("MDA-001", transformed["mdaId"]?.GetValue<string>());
         Assert.Equal("MOF", transformed["mdaCode"]?.GetValue<string>());
+        Assert.Equal("PAYE-2026", transformed["serviceCode"]?.GetValue<string>());
         Assert.Equal(125.50d, transformed["amountPayable"]?.GetValue<double>());
+        Assert.Equal(125.50d, transformed["amount"]?.GetValue<double>());
+        Assert.Equal("20260731", transformed["dueDate"]?.GetValue<string>());
+        Assert.Equal("TAX-123457", transformed["payerReference"]?.GetValue<string>());
         Assert.Equal("401005007403", transformed["creditorAccount"]?.GetValue<string>());
         Assert.Equal("Treasury MDA", transformed["creditorName"]?.GetValue<string>());
         Assert.Equal("ACCT", transformed["creditorAccountType"]?.GetValue<string>());
         Assert.True(transformed["amountLocked"]?.GetValue<bool>());
         Assert.True(transformed["creditorLocked"]?.GetValue<bool>());
+        Assert.Equal("BILL:UPR-123", transformed["remittanceInformation"]?.GetValue<string>());
     }
 
     [Theory]

@@ -127,6 +127,11 @@
           "Type": "bool"
         },
         {
+          "InternalField": "IsP2G",
+          "UserField": "isP2G",
+          "Type": "bool"
+        },
+        {
           "InternalField": "Reason",
           "UserField": "message",
           "Type": "string"
@@ -218,10 +223,44 @@
           "OmitIfEmpty": true
         },
         {
+          "InternalField": "ServiceCode",
+          "UserField": "serviceCode",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
           "InternalField": "AmountPayable",
           "UserField": "amountPayable",
           "Type": "double",
           "OmitIfNull": true
+        },
+        {
+          "InternalField": "Amount",
+          "UserField": "amount",
+          "Type": "double",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "DueDate",
+          "UserField": "dueDate",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "PayerReference",
+          "UserField": "payerReference",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "RemittanceInformation",
+          "UserField": "remittanceInformation",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
         },
         {
           "InternalField": "AmountLocked",
