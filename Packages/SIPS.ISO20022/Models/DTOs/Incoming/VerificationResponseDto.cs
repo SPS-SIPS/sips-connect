@@ -21,6 +21,10 @@ public sealed class VerificationResponseDto
     public string? Currency { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("paymentCurrency")]
     public string? PaymentCurrency { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("isP2G")]
+    public bool IsP2G { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("serviceCode")]
+    public string? ServiceCode { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("invoiceId")]
     public string? InvoiceId { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("upr")]
@@ -35,6 +39,12 @@ public sealed class VerificationResponseDto
     public string? MdaCode { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("amountPayable")]
     public decimal? AmountPayable { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("amount")]
+    public decimal? Amount { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("dueDate")]
+    public string? DueDate { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("payerReference")]
+    public string? PayerReference { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("creditorAccount")]
     public string? CreditorAccount { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("creditorName")]
@@ -45,6 +55,8 @@ public sealed class VerificationResponseDto
     public bool AmountLocked { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("creditorLocked")]
     public bool CreditorLocked { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("remittanceInformation")]
+    public string? RemittanceInformation { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("parsed")]
     public QrCodeData? Parsed { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("bankName")]

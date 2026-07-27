@@ -158,11 +158,33 @@ public sealed class OutgoingVerificationHandler(
             var accountNo = parsedResponse.Verified ? parsedResponse.Id : null;
             var accountType = parsedResponse.Verified ? parsedResponse.Type : null;
             var name = parsedResponse.Verified ? parsedResponse.Name : null;
-            var billReference = FirstNonEmpty(
-                parsedResponse.BillReference,
-                parsedResponse.Upr,
-                parsedResponse.InvoiceId,
-                message.Alias);
+            P2GNameDescriptor? p2g = null;
+            if (parsedResponse.Verified && P2GNameDescriptorParser.TryParse(parsedResponse.Name, out var parsedP2G))
+            {
+                p2g = parsedP2G;
+            }
+
+            var isP2G = p2g is not null;
+            string? p2gBillReference = null;
+            if (isP2G && !TryGetOriginalP2GBillReference(message, out p2gBillReference))
+            {
+                return Response<VerificationResponseDto>.Fail(
+                    "P2G descriptor requires original BILL/INVOICE/UPR lookup input",
+                    System.Net.HttpStatusCode.BadRequest);
+            }
+
+            var creditorName = isP2G
+                ? FirstNonEmpty(parsedResponse.Address, parsedResponse.Name)
+                : name;
+            var paymentCurrency = isP2G ? p2g!.Currency : parsedResponse.Currency;
+            var amountPayable = isP2G ? p2g!.Amount : parsedResponse.AmountPayable;
+            var billReference = isP2G
+                ? p2gBillReference!
+                : FirstNonEmpty(
+                    parsedResponse.BillReference,
+                    parsedResponse.Upr,
+                    parsedResponse.InvoiceId,
+                    message.Alias);
 
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto
             {
@@ -171,22 +193,28 @@ public sealed class OutgoingVerificationHandler(
                 Reason = parsedResponse.Reason ?? string.Empty,
                 AccountNo = accountNo,
                 AccountType = accountType,
-                Name = name,
+                Name = isP2G ? creditorName : name,
                 Address = parsedResponse.Verified ? parsedResponse.Address : null,
-                Currency = parsedResponse.Verified ? parsedResponse.Currency : null,
-                PaymentCurrency = parsedResponse.Verified ? parsedResponse.Currency : null,
-                InvoiceId = parsedResponse.Verified ? parsedResponse.InvoiceId : null,
+                Currency = parsedResponse.Verified ? paymentCurrency : null,
+                PaymentCurrency = parsedResponse.Verified ? paymentCurrency : null,
+                IsP2G = isP2G,
+                InvoiceId = isP2G ? p2g!.InvoiceId : parsedResponse.Verified ? parsedResponse.InvoiceId : null,
                 Upr = parsedResponse.Verified ? parsedResponse.Upr : null,
                 BillReference = parsedResponse.Verified ? billReference : null,
                 Mda = parsedResponse.Verified ? parsedResponse.Mda : null,
                 MdaId = parsedResponse.Verified ? parsedResponse.MdaId : null,
-                MdaCode = parsedResponse.Verified ? parsedResponse.MdaCode : null,
-                AmountPayable = parsedResponse.Verified ? parsedResponse.AmountPayable : null,
+                MdaCode = isP2G ? p2g!.MdaCode : parsedResponse.Verified ? parsedResponse.MdaCode : null,
+                ServiceCode = isP2G ? p2g!.ServiceCode : null,
+                AmountPayable = parsedResponse.Verified ? amountPayable : null,
+                Amount = parsedResponse.Verified ? amountPayable : null,
+                DueDate = isP2G ? p2g!.DueDate.ToString("yyyyMMdd") : null,
+                PayerReference = isP2G ? p2g!.PayerReference : null,
                 CreditorAccount = accountNo,
-                CreditorName = name,
+                CreditorName = creditorName,
                 CreditorAccountType = accountType,
-                AmountLocked = parsedResponse.Verified && parsedResponse.AmountPayable.HasValue,
+                AmountLocked = parsedResponse.Verified && amountPayable.HasValue,
                 CreditorLocked = parsedResponse.Verified && !string.IsNullOrWhiteSpace(accountNo),
+                RemittanceInformation = parsedResponse.Verified && !string.IsNullOrWhiteSpace(billReference) ? $"BILL:{billReference}" : null,
                 Parsed = qrData
             });
         }
@@ -195,6 +223,24 @@ public sealed class OutgoingVerificationHandler(
             _logger.LogError(ex, "[{CorrelationId}] Failed to process the verification request.", cid);
             return Response<VerificationResponseDto>.Fail("Failed to process the request", System.Net.HttpStatusCode.InternalServerError);
         }
+    }
+
+    private static bool IsInvoiceOrUprLookup(string? type) =>
+        string.Equals(type, "BILL", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(type, "INVOICE", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(type, "UPR", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryGetOriginalP2GBillReference(VerificationRequestDto message, out string billReference)
+    {
+        billReference = string.Empty;
+
+        if (!IsInvoiceOrUprLookup(message.Type) || string.IsNullOrWhiteSpace(message.Alias))
+        {
+            return false;
+        }
+
+        billReference = message.Alias;
+        return true;
     }
 
     private static string FirstNonEmpty(params string?[] values)
