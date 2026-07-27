@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Text.Json;
-using System.Xml.Linq;
 using SIPS.ISO20022.Schemas.VResponse;
 using SIPS.ISO20022.Schemas.VRHeader;
 using SIPS.ISO20022.Schemas.VRDocument;
@@ -227,17 +224,6 @@ public static class PayeeVerificationResponseBuilder
                 };
             }
 
-            var billDetails = BuildBillDetailsElement(request);
-            if (billDetails != null)
-            {
-                var supplementaryData = new SupplementaryData1
-                {
-                    PlcAndNm = "SipsConnectBillDetails",
-                    Envlp = new SupplementaryDataEnvelope1()
-                };
-                supplementaryData.Envlp.Untyped.Add(billDetails);
-                document.IdVrfctnRpt.SplmtryData.Add(supplementaryData);
-            }
         }
         else
         {
@@ -277,119 +263,7 @@ public static class PayeeVerificationResponseBuilder
             response.Id = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Acct?.Id?.Othr?.Id ?? "";
             response.Type = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Acct?.Id?.Othr?.SchmeNm?.Prtry ?? "";
             response.Currency = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Acct?.Ccy ?? "";
-            ApplyBillDetails(document, response);
         }
         return response;
-    }
-
-    private static XElement? BuildBillDetailsElement(Request request)
-    {
-        var reference = FirstNonEmpty(request.BillReference, request.Upr, request.InvoiceId, request.Original?.Alias);
-        var payload = new Dictionary<string, object?>();
-
-        AddIfPresent(payload, "invoiceId", request.InvoiceId);
-        AddIfPresent(payload, "upr", request.Upr);
-        AddIfPresent(payload, "billReference", reference);
-        AddIfPresent(payload, "mda", request.Mda);
-        AddIfPresent(payload, "mdaId", request.MdaId);
-        AddIfPresent(payload, "mdaCode", request.MdaCode);
-
-        if (request.AmountPayable.HasValue)
-        {
-            payload["amountPayable"] = request.AmountPayable.Value;
-        }
-
-        AddIfPresent(payload, "currency", request.Currency);
-        AddIfPresent(payload, "creditorAccount", request.Id);
-        AddIfPresent(payload, "creditorName", request.Name);
-        AddIfPresent(payload, "creditorAccountType", request.Type);
-
-        if (payload.Count == 0)
-        {
-            return null;
-        }
-
-        return new XElement(
-            XName.Get("BillDetails", "urn:sips-connect:bill-details:v1"),
-            new XCData(JsonSerializer.Serialize(payload)));
-    }
-
-    private static void ApplyBillDetails(Document document, Request response)
-    {
-        var detailText = document.IdVrfctnRpt?.SplmtryData?
-            .SelectMany(data => data.Envlp?.Any ?? [])
-            .FirstOrDefault(element => string.Equals(element.Name.LocalName, "BillDetails", StringComparison.OrdinalIgnoreCase))
-            ?.Value;
-
-        if (string.IsNullOrWhiteSpace(detailText))
-        {
-            return;
-        }
-
-        try
-        {
-            using var json = JsonDocument.Parse(detailText);
-            var root = json.RootElement;
-            response.InvoiceId = GetString(root, "invoiceId");
-            response.Upr = GetString(root, "upr");
-            response.BillReference = FirstNonEmpty(GetString(root, "billReference"), response.Upr, response.InvoiceId);
-            response.Mda = GetString(root, "mda");
-            response.MdaId = GetString(root, "mdaId");
-            response.MdaCode = GetString(root, "mdaCode");
-            response.AmountPayable = GetDecimal(root, "amountPayable");
-        }
-        catch
-        {
-            // Supplementary data is optional; malformed details should not break ISO parsing.
-        }
-    }
-
-    private static string FirstNonEmpty(params string?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return string.Empty;
-    }
-
-    private static void AddIfPresent(Dictionary<string, object?> payload, string key, string? value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            payload[key] = value;
-        }
-    }
-
-    private static string? GetString(JsonElement root, string propertyName)
-    {
-        return root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
-    }
-
-    private static decimal? GetDecimal(JsonElement root, string propertyName)
-    {
-        if (!root.TryGetProperty(propertyName, out var value))
-        {
-            return null;
-        }
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number))
-        {
-            return number;
-        }
-
-        if (value.ValueKind == JsonValueKind.String
-            && decimal.TryParse(value.GetString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var textNumber))
-        {
-            return textNumber;
-        }
-
-        return null;
     }
 }
