@@ -81,7 +81,9 @@ public class IncomingRecorderTests
     public async Task TryRecordIncomingTransactionAsync_MsgIdConstraint_ReturnsExisting_IsNewFalse()
     {
         // Arrange
+        var transaction = new Transaction { TxId = "TX1", EndToEndId = "E2E1" };
         var entity = new ISOMessage { TxId = "TX1", MsgId = "M1", MessageType = ISOMessageType.TransactionRequest };
+        entity.Transactions.Add(transaction);
         var existing = new ISOMessage { Id = 20, TxId = "TX_OLD", MsgId = "M1", MessageType = ISOMessageType.TransactionRequest };
 
         SetupDbSetToThrowOnSave(CreatePostgresException("23505", "ux_iso_msg_type_msgid"));
@@ -97,6 +99,8 @@ public class IncomingRecorderTests
         result.IsNew.Should().BeFalse();
         // Should have searched by MsgId
         _mockLogger.Invocations.Any(i => i.Arguments.Any(a => a?.ToString()?.Contains("Structural De-duplication trigger (MsgId)") == true)).Should().BeTrue();
+        _mockStorage.Verify(x => x.Detach(transaction), Times.Once);
+        _mockStorage.Verify(x => x.Detach(entity), Times.Once);
     }
 
     private void SetupDbSetToThrowOnSave(PostgresException pgEx)
