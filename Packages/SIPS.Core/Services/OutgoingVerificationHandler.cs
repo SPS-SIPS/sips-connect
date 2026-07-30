@@ -178,13 +178,7 @@ public sealed class OutgoingVerificationHandler(
                 : name;
             var paymentCurrency = isP2G ? p2g!.Currency : parsedResponse.Currency;
             var amountPayable = isP2G ? p2g!.Amount : parsedResponse.AmountPayable;
-            var billReference = isP2G
-                ? p2gBillReference!
-                : FirstNonEmpty(
-                    parsedResponse.BillReference,
-                    parsedResponse.Upr,
-                    parsedResponse.InvoiceId,
-                    message.Alias);
+            var billReference = isP2G ? p2gBillReference! : null;
 
             return Response<VerificationResponseDto>.Success(new VerificationResponseDto
             {
@@ -200,7 +194,7 @@ public sealed class OutgoingVerificationHandler(
                 IsP2G = isP2G,
                 InvoiceId = isP2G ? p2g!.InvoiceId : parsedResponse.Verified ? parsedResponse.InvoiceId : null,
                 Upr = parsedResponse.Verified ? parsedResponse.Upr : null,
-                BillReference = parsedResponse.Verified ? billReference : null,
+                BillReference = parsedResponse.Verified && isP2G ? billReference : null,
                 Mda = parsedResponse.Verified ? parsedResponse.Mda : null,
                 MdaId = parsedResponse.Verified ? parsedResponse.MdaId : null,
                 MdaCode = isP2G ? p2g!.MdaCode : parsedResponse.Verified ? parsedResponse.MdaCode : null,
@@ -214,7 +208,7 @@ public sealed class OutgoingVerificationHandler(
                 CreditorAccountType = accountType,
                 AmountLocked = parsedResponse.Verified && amountPayable.HasValue,
                 CreditorLocked = parsedResponse.Verified && !string.IsNullOrWhiteSpace(accountNo),
-                RemittanceInformation = parsedResponse.Verified && !string.IsNullOrWhiteSpace(billReference) ? $"BILL:{billReference}" : null,
+                RemittanceInformation = parsedResponse.Verified && isP2G && !string.IsNullOrWhiteSpace(billReference) ? $"BILL:{billReference}" : null,
                 Parsed = qrData
             });
         }
