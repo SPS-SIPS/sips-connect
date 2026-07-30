@@ -121,6 +121,85 @@ namespace SIPS.Core.Tests.Verification
         }
 
         [Fact]
+        public async Task HandleAsync_NormalAccount_DoesNotExpose_BillReference_Or_BillRemittance()
+        {
+            var options = new ISO20022Options { BIC = "TESTBIC", SIPS = "http://sips" };
+            var coreOptions = Microsoft.Extensions.Options.Options.Create(new CoreOptions { DbPersistTimeoutSeconds = 10 });
+            var mockSigner = new Mock<INativeSigner>();
+            var mockSignature = new Mock<ISignatureService>();
+            var mockPersistence = new Mock<IPersistenceGateway>();
+            var mockCorrelation = new Mock<ICorrelationService>();
+            var mockSips = new Mock<ISipsRequestSender>();
+            var mockStatus = new Mock<IStatusOrchestrator>();
+            var mockQrCodeParser = new Mock<IQrCodeParserService>();
+
+            mockCorrelation.Setup(c => c.Create(It.IsAny<string?[]>())).Returns("corr-id");
+            mockSigner.Setup(s => s.SignEnvelope(It.IsAny<string>(), It.IsAny<string>())).Returns("signed-xml");
+            mockPersistence.Setup(p => p.RecordISOMessageAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                           .ReturnsAsync(new ISOMessage { TxId = "ORIGINAL_MSG_ID", MsgId = "ORIGINAL_MSG_ID" });
+
+            var response = new SIPS.ISO20022.Helpers.PayeeVerificationResponseBuilder.Request
+            {
+                From = "SIPS",
+                To = "TESTBIC",
+                MsgDefIdr = "acmt.024.001.03",
+                MsgId = "ResMsgId",
+                Verified = true,
+                Reason = "SUCC",
+                Id = "620080034",
+                Type = "MSIS",
+                Name = "Ishat",
+                Currency = "USD",
+                Original = new SIPS.ISO20022.Helpers.PayeeVerificationBuilder.Request
+                {
+                    SIPSRequestId = "FP",
+                    MsgId = "ORIGINAL_MSG_ID",
+                    MsgDefIdr = "acmt.023.001.03",
+                    From = "TESTBIC",
+                    To = "SIPS"
+                }
+            };
+
+            var responseXml = SIPS.ISO20022.Helpers.PayeeVerificationResponseBuilder.Build(response);
+            mockSips.Setup(s => s.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
+                    .ReturnsAsync(Response<string>.Success(responseXml));
+            mockSignature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                         .ReturnsAsync((true, "OK"));
+            mockStatus.Setup(s => s.MapSingleStatus(It.IsAny<string>(), It.IsAny<string>()))
+                      .Returns(TransactionStatus.Success);
+
+            var handler = new OutgoingVerificationHandler(
+                options,
+                NullLogger<OutgoingVerificationHandler>.Instance,
+                mockSigner.Object,
+                mockSignature.Object,
+                mockPersistence.Object,
+                mockCorrelation.Object,
+                mockSips.Object,
+                mockStatus.Object,
+                coreOptions,
+                mockQrCodeParser.Object
+            );
+
+            var result = await handler.HandleAsync(new VerificationRequestDto
+            {
+                Alias = "SO2200160202305005007916",
+                Type = "IBAN",
+                ToBIC = "DESTBIC"
+            }, CancellationToken.None);
+
+            Assert.True(result.IsSuccess);
+            Assert.False(result.Data!.IsP2G);
+            Assert.Equal("620080034", result.Data.CreditorAccount);
+            Assert.Equal("MSIS", result.Data.CreditorAccountType);
+            Assert.Equal("Ishat", result.Data.CreditorName);
+            Assert.Null(result.Data.BillReference);
+            Assert.Null(result.Data.RemittanceInformation);
+            Assert.False(result.Data.AmountLocked);
+            Assert.True(result.Data.CreditorLocked);
+        }
+
+        [Fact]
         public async Task HandleAsync_P2GDescriptor_Uses_OriginalInvoiceOrUpr_For_Remittance()
         {
             var options = new ISO20022Options { BIC = "TESTBIC", SIPS = "http://sips" };
