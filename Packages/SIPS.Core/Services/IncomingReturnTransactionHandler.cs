@@ -256,6 +256,9 @@ public sealed class IncomingReturnTransactionHandler(
                         { API_Key, _callbackLinks.Key! },
                         { API_Secret, _callbackLinks.Secret! }
                     };
+                headers["X-Idempotency-Key"] = request.ReturnId;
+                headers["X-Return-Id"] = request.ReturnId;
+                headers["X-Transaction-Id"] = request.OrgnlTxId;
 
                 // [FIX 2]: Scoped timeout matching pacs.008 handler pattern
                 using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -278,7 +281,10 @@ public sealed class IncomingReturnTransactionHandler(
                     );
                 }
 
-                if (result?.Data != null)
+                if (result?.IsSuccess == true &&
+                    result.StatusCode >= System.Net.HttpStatusCode.OK &&
+                    result.StatusCode < System.Net.HttpStatusCode.MultipleChoices &&
+                    result.Data != null)
                 {
                     var cbResult = ParseCallbackResult(result.Data, originalMessage);
                     if (cbResult != null && IsCoreBankSuccess(cbResult.Status))

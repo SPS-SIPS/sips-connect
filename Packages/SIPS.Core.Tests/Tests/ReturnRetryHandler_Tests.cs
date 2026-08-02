@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Net;
 using System.Net.Http;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -35,7 +34,8 @@ public class ReturnRetryHandler_Tests
             Func<Response<JsonObject?>>? httpResultFactory = null,
             CBPaymentStatusResponseDto? cbResponse = null,
             CBCompletionNotificationResponse? completionResponse = null,
-            bool includeCoreBankOnListing = false)
+            bool includeCoreBankOnListing = false,
+            bool retryClaimed = true)
     {
         var options = new ISO20022Options
         {
@@ -119,6 +119,8 @@ public class ReturnRetryHandler_Tests
                 .ReturnsAsync(defaultIsoMessage);
         recorder.Setup(r => r.ISOMessageResponseAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((ISOMessage m, CancellationToken _) => m);
+        recorder.Setup(r => r.TryClaimCoreBankRetryAsync(It.IsAny<int>(), It.IsAny<uint>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(retryClaimed);
 
         // Setup status orchestrator mock
         var statusOrch = new Mock<IStatusOrchestrator>();
@@ -160,10 +162,7 @@ public class ReturnRetryHandler_Tests
     {
         // Arrange
         var (sut, recorder, _, _, _) = CreateSut(
-            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = "ACSC" })
-            {
-                StatusCode = HttpStatusCode.OK
-            });
+            httpResultFactory: () => Response<JsonObject?>.Success(new JsonObject { ["status"] = "ACSC" }));
 
         // Act
         var result = await sut.RetryReturnAsync("TX123", CancellationToken.None);
@@ -198,10 +197,7 @@ public class ReturnRetryHandler_Tests
         };
 
         var (sut, recorder, http, adapter, _) = CreateSut(
-            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = ACSC })
-            {
-                StatusCode = HttpStatusCode.OK
-            },
+            httpResultFactory: () => Response<JsonObject?>.Success(new JsonObject { ["status"] = ACSC }),
             cbResponse: paymentResponse,
             completionResponse: completionResponse,
             includeCoreBankOnListing: true);
@@ -234,10 +230,7 @@ public class ReturnRetryHandler_Tests
         };
 
         var (sut, recorder, _, _, _) = CreateSut(
-            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = "RJCT" })
-            {
-                StatusCode = HttpStatusCode.OK
-            },
+            httpResultFactory: () => Response<JsonObject?>.Success(new JsonObject { ["status"] = "RJCT" }),
             cbResponse: cbResponse);
 
         // Act
@@ -251,7 +244,7 @@ public class ReturnRetryHandler_Tests
 
         // Verify round was incremented
         recorder.Verify(r => r.ISOMessageResponseAsync(
-            It.Is<ISOMessage>(m => m.Status == TransactionStatus.ReadyForReturn && m.Round == 2),
+            It.Is<ISOMessage>(m => m.Status == TransactionStatus.ReadyForReturn && m.CoreBankRetryCount == 1),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -319,7 +312,8 @@ public class ReturnRetryHandler_Tests
         {
             TxId = "TX123",
             Status = TransactionStatus.ReadyForReturn,
-            Round = 3, // Already at max retries
+            Round = 7, // SAF polling is independent from CoreBank retry limits
+            CoreBankRetryCount = 2,
             ReturnId = "RET123",
             Transactions = new List<Transaction>
             {
@@ -337,7 +331,7 @@ public class ReturnRetryHandler_Tests
         result.Success.Should().BeFalse();
         result.Message.Should().Contain("Maximum retry attempts (2) reached");
         result.Status.Should().Be("ReadyForReturn");
-        result.AdditionalInfo.Should().Contain("Current round: 3");
+        result.AdditionalInfo.Should().Contain("CoreBank retry attempts: 2");
 
         // Verify CoreBank was NOT called
         http.Verify(h => h.Send(
@@ -348,7 +342,7 @@ public class ReturnRetryHandler_Tests
     }
 
     [Fact]
-    public async Task RetryReturnAsync_IncrementsRound_OnFailedRetry()
+    public async Task RetryReturnAsync_IncrementsCoreBankRetryCount_OnFailedRetry()
     {
         // Arrange
         var isoMessage = new ISOMessage
@@ -371,10 +365,7 @@ public class ReturnRetryHandler_Tests
 
         var (sut, recorder, _, _, _) = CreateSut(
             isoMessage: isoMessage,
-            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = "RJCT" })
-            {
-                StatusCode = HttpStatusCode.OK
-            },
+            httpResultFactory: () => Response<JsonObject?>.Success(new JsonObject { ["status"] = "RJCT" }),
             cbResponse: cbResponse);
 
         // Act
@@ -382,12 +373,12 @@ public class ReturnRetryHandler_Tests
 
         // Assert
         recorder.Verify(r => r.ISOMessageResponseAsync(
-            It.Is<ISOMessage>(m => m.Round == 2), // Round should be incremented
+            It.Is<ISOMessage>(m => m.Round == 1 && m.CoreBankRetryCount == 1),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task RetryReturnAsync_DoesNotIncrementRound_OnSuccessfulRetry()
+    public async Task RetryReturnAsync_DoesNotChangeSafRound_OnSuccessfulRetry()
     {
         // Arrange
         var isoMessage = new ISOMessage
@@ -404,10 +395,7 @@ public class ReturnRetryHandler_Tests
 
         var (sut, recorder, _, _, _) = CreateSut(
             isoMessage: isoMessage,
-            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = "ACSC" })
-            {
-                StatusCode = HttpStatusCode.OK
-            });
+            httpResultFactory: () => Response<JsonObject?>.Success(new JsonObject { ["status"] = "ACSC" }));
 
         // Act
         var result = await sut.RetryReturnAsync("TX123", CancellationToken.None);
@@ -415,7 +403,7 @@ public class ReturnRetryHandler_Tests
         // Assert
         result.Success.Should().BeTrue();
         recorder.Verify(r => r.ISOMessageResponseAsync(
-            It.Is<ISOMessage>(m => m.Round == 2), // Round should NOT be incremented
+            It.Is<ISOMessage>(m => m.Round == 2 && m.CoreBankRetryCount == 1),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -476,12 +464,9 @@ public class ReturnRetryHandler_Tests
             }
         };
 
-        var (sut, _, http, _, _) = CreateSut(
+        var (sut, _, http, adapter, _) = CreateSut(
             isoMessage: isoMessage,
-            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = "ACSC" })
-            {
-                StatusCode = HttpStatusCode.OK
-            });
+            httpResultFactory: () => Response<JsonObject?>.Success(new JsonObject { ["status"] = "ACSC" }));
 
         var result = await sut.RetryReturnAsync("TX123", CancellationToken.None);
 
@@ -489,7 +474,9 @@ public class ReturnRetryHandler_Tests
         result.Status.Should().Be("Success");
         http.Verify(h => h.Send(
             "https://example.test/transfer",
-            It.IsAny<Dictionary<string, string>>(),
+            It.Is<Dictionary<string, string>>(headers =>
+                headers["X-Idempotency-Key"] == "TX123" &&
+                headers.ContainsKey("X-Retry-Id")),
             It.IsAny<StringContent>(),
             It.IsAny<CancellationToken>()), Times.Once);
         http.Verify(h => h.Send(
@@ -497,6 +484,9 @@ public class ReturnRetryHandler_Tests
             It.IsAny<Dictionary<string, string>>(),
             It.IsAny<StringContent>(),
             It.IsAny<CancellationToken>()), Times.Never);
+        adapter.Verify(a => a.Transform(
+            It.Is<object>(dto => dto.GetType() == typeof(CBPaymentRequestDto) && ((CBPaymentRequestDto)dto).TxId == "TX123"),
+            CB_PaymentRequest), Times.Once);
     }
 
     [Fact]
@@ -517,10 +507,7 @@ public class ReturnRetryHandler_Tests
 
         var (sut, _, http, _, _) = CreateSut(
             isoMessage: isoMessage,
-            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = "ACSC" })
-            {
-                StatusCode = HttpStatusCode.OK
-            });
+            httpResultFactory: () => Response<JsonObject?>.Success(new JsonObject { ["status"] = "ACSC" }));
 
         // Act
         await sut.RetryReturnAsync("TX123", CancellationToken.None);
@@ -528,8 +515,43 @@ public class ReturnRetryHandler_Tests
         // Assert - Verify CoreBank was called
         http.Verify(h => h.Send(
             "https://example.test/return",
+            It.Is<Dictionary<string, string>>(headers => headers["X-Idempotency-Key"] == "RET456"),
+            It.IsAny<StringContent>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RetryReturnAsync_PreventsConcurrentCoreBankRetry_WhenClaimFails()
+    {
+        var (sut, _, http, _, _) = CreateSut(retryClaimed: false);
+
+        var result = await sut.RetryReturnAsync("TX123", CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be("RetryConflict");
+        result.Reason.Should().Be("Concurrent retry prevented");
+        http.Verify(h => h.Send(
+            It.IsAny<string>(),
             It.IsAny<Dictionary<string, string>>(),
             It.IsAny<StringContent>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RetryReturnAsync_DoesNotAcceptAcscBody_WhenHttpRequestFailed()
+    {
+        var (sut, recorder, _, _, _) = CreateSut(
+            httpResultFactory: () => Response<JsonObject?>.Fail(
+                "Gateway failure",
+                System.Net.HttpStatusCode.BadGateway,
+                new JsonObject { ["status"] = ACSC }));
+
+        var result = await sut.RetryReturnAsync("TX123", CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be("ReadyForReturn");
+        recorder.Verify(r => r.ISOMessageResponseAsync(
+            It.Is<ISOMessage>(m => m.Status == TransactionStatus.ReadyForReturn && m.CoreBankRetryCount == 1),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

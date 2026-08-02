@@ -80,7 +80,10 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             TxId = isoMessage.TxId,
             UETR = isoMessage.UETR,
             EndToEndId = isoMessage.EndToEndId,
-            CoreBankResponse = isoMessage.CoreBankResponse // [FIX]: Ensure CoreBankResponse is included in snapshot so merge logic sees it
+            CoreBankResponse = isoMessage.CoreBankResponse,
+            ReturnId = isoMessage.ReturnId,
+            Round = isoMessage.Round,
+            CoreBankRetryCount = isoMessage.CoreBankRetryCount
         };
         // debug: log statuses to help unit-test diagnosis
         _logger.LogDebug("[ISOMessageService] PersistResponseAsync original.Status={OriginalStatus} snapshot.Status={SnapshotStatus}", isoMessage.Status, snapshot.Status);
@@ -300,7 +303,12 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             MsgDefIdr = isoMessage.MsgDefIdr,
             MsgId = isoMessage.MsgId,
             TxId = isoMessage.TxId,
-            EndToEndId = isoMessage.EndToEndId
+            UETR = isoMessage.UETR,
+            EndToEndId = isoMessage.EndToEndId,
+            CoreBankResponse = isoMessage.CoreBankResponse,
+            ReturnId = isoMessage.ReturnId,
+            Round = isoMessage.Round,
+            CoreBankRetryCount = isoMessage.CoreBankRetryCount
         };
         await _persistence.ISOMessageResponseAsync(snapshot, ct);
         sw.Stop();
@@ -451,7 +459,12 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             MsgDefIdr = isoMessage.MsgDefIdr,
             MsgId = isoMessage.MsgId,
             TxId = isoMessage.TxId,
-            EndToEndId = isoMessage.EndToEndId
+            UETR = isoMessage.UETR,
+            EndToEndId = isoMessage.EndToEndId,
+            CoreBankResponse = isoMessage.CoreBankResponse,
+            ReturnId = isoMessage.ReturnId,
+            Round = isoMessage.Round,
+            CoreBankRetryCount = isoMessage.CoreBankRetryCount
         };
         await _persistence.ISOMessageResponseAsync(snapshot, ct);
         sw.Stop();
@@ -461,12 +474,14 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
     public async Task MarkForCheckStatusAsync(
         ISOMessage isoMessage,
         string reason,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool incrementRound = true)
     {
         var sw = Stopwatch.StartNew();
         isoMessage.Status = TransactionStatus.CheckStatus;
         isoMessage.Reason = reason;
-        isoMessage.Round += 1; // Increment retry counter
+        if (incrementRound)
+            isoMessage.Round += 1;
         await _persistence.ISOMessageResponseAsync(isoMessage, ct);
         sw.Stop();
         _logger.LogInformation("DB persist MarkForCheckStatusAsync txId={TxId} round={Round} durationMs={Duration}",

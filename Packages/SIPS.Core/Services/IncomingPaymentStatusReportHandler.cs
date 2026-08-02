@@ -689,7 +689,12 @@ public sealed class IncomingPaymentStatusReportHandler(
              }
         }
 
-        var crResponse = (result != null && result.Data != null) ? ParseCallbackResult(result.Data, coreBankResponseKind) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
+        var callbackSucceeded = result?.IsSuccess == true &&
+            result.StatusCode >= System.Net.HttpStatusCode.OK &&
+            result.StatusCode < System.Net.HttpStatusCode.MultipleChoices;
+        var crResponse = (callbackSucceeded && result?.Data != null)
+            ? ParseCallbackResult(result.Data, coreBankResponseKind)
+            : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };
         _logger.LogDebug("[IncomingPaymentStatusReportHandler] crResponse.Status={Status} TxId={TxId}", crResponse?.Status, crResponse?.TxId);
 
         // Use StatusOrchestrator to map IPS + CoreBank statuses to final status.
@@ -821,7 +826,7 @@ public sealed class IncomingPaymentStatusReportHandler(
             { API_Secret, _callbackLinks.Secret! }
         };
 
-        var idem = transaction?.TxId;
+        var idem = !string.IsNullOrWhiteSpace(isoMessage.ReturnId) ? isoMessage.ReturnId : transaction?.TxId;
         if (!string.IsNullOrWhiteSpace(idem))
             headers["X-Idempotency-Key"] = idem!;
         if (!string.IsNullOrWhiteSpace(transaction?.TxId))
@@ -929,6 +934,17 @@ public sealed class IncomingPaymentStatusReportHandler(
         }
 
         _logger.LogInformation("[{CorrelationId}] Forwarded return to CoreBank for TxId {TxId}, StatusCode={StatusCode}", cid, transaction?.TxId, result.StatusCode);
+
+        if (!result.IsSuccess || result.StatusCode < System.Net.HttpStatusCode.OK || result.StatusCode >= System.Net.HttpStatusCode.MultipleChoices)
+        {
+            isoMessage.Status = TransactionStatus.ReadyForReturn;
+            isoMessage.Reason = "CoreBank return callback failed";
+            isoMessage.AdditionalInfo = $"CoreBank returned HTTP {(int)result.StatusCode}; manual intervention required.";
+            response.Status = ACSC;
+            response.Reason = isoMessage.Reason;
+            response.AdditionalInfo = isoMessage.AdditionalInfo;
+            return response;
+        }
 
         // Parse CoreBank response
         var cbResponse = result.Data != null ? ParseCallbackResult(result.Data, coreBankResponseKind) : new PaymentResponseDto { Status = string.Empty, TxId = string.Empty };

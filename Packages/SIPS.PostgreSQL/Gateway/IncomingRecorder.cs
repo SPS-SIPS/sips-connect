@@ -289,6 +289,7 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         var targetReturnId = message.ReturnId;
         var targetReturnDedupKey = message.ReturnDedupKey;
         var targetRound = message.Round;
+        var targetCoreBankRetryCount = message.CoreBankRetryCount;
         var targetPacs002Role = message.Pacs002Role;
 
         await _storage.Entry(entity).ReloadAsync(ct);
@@ -298,6 +299,7 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
         entity.Reason = targetReason;
         entity.AdditionalInfo = targetAdditionalInfo;
         entity.Round = targetRound;
+        entity.CoreBankRetryCount = targetCoreBankRetryCount;
         entity.Pacs002Role = targetPacs002Role;
         
         if (targetTxId != null) entity.TxId = targetTxId;
@@ -437,6 +439,25 @@ WHERE id = @id
 
         return await _storage.Database.ExecuteSqlRawAsync(sql, [pEvent, pId, pXmin], ct);
     }
+
+    public async Task<bool> TryClaimCoreBankRetryAsync(int isoMessageId, uint xmin, int maxRetries, CancellationToken ct)
+    {
+        const string sql = @"
+UPDATE isomessages
+SET status = 'CheckStatus',
+    corebankretrycount = corebankretrycount + 1
+WHERE id = @id
+  AND xmin::text::bigint = @expected_xmin
+  AND status = 'ReadyForReturn'
+  AND corebankretrycount < @max_retries;";
+
+        var pId = new NpgsqlParameter("id", isoMessageId);
+        var pXmin = new NpgsqlParameter("expected_xmin", (long)xmin);
+        var pMaxRetries = new NpgsqlParameter("max_retries", maxRetries);
+        var affected = await _storage.Database.ExecuteSqlRawAsync(sql, [pId, pXmin, pMaxRetries], ct);
+        return affected == 1;
+    }
+
     public async Task<int> SaveChangesAsync(CancellationToken ct)
     {
         return await _storage.SaveChangesAsync(ct);

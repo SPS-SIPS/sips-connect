@@ -13,6 +13,7 @@ public class ISOMessage
     public string BizMsgIdr { get; set; } = string.Empty;
     public string MsgDefIdr { get; set; } = string.Empty;
     public int Round { get; set; } = 1;
+    public int CoreBankRetryCount { get; set; }
     public string? TxId { get; set; }
     public string? UETR { get; set; }
     public string? EndToEndId { get; set; }
