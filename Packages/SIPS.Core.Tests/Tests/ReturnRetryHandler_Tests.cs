@@ -39,6 +39,7 @@ public class ReturnRetryHandler_Tests
     {
         var options = new ISO20022Options
         {
+            Transfer = "https://example.test/transfer",
             Return = "https://example.test/return",
             CompletionNotification = "https://example.test/completion",
             Key = "test-key",
@@ -461,7 +462,7 @@ public class ReturnRetryHandler_Tests
     }
 
     [Fact]
-    public async Task RetryReturnAsync_ReturnsError_AndSkipsCoreBank_WhenReturnIdMissing()
+    public async Task RetryReturnAsync_RetriesPaymentTransfer_WhenReturnIdMissing()
     {
         var isoMessage = new ISOMessage
         {
@@ -475,15 +476,24 @@ public class ReturnRetryHandler_Tests
             }
         };
 
-        var (sut, _, http, _, _) = CreateSut(isoMessage: isoMessage);
+        var (sut, _, http, _, _) = CreateSut(
+            isoMessage: isoMessage,
+            httpResultFactory: () => new Response<JsonObject?>(new JsonObject { ["status"] = "ACSC" })
+            {
+                StatusCode = HttpStatusCode.OK
+            });
 
         var result = await sut.RetryReturnAsync("TX123", CancellationToken.None);
 
-        result.Success.Should().BeFalse();
-        result.Message.Should().Be("Return identifiers are missing");
-        result.Reason.Should().Be("Missing return identifiers");
+        result.Success.Should().BeTrue();
+        result.Status.Should().Be("Success");
         http.Verify(h => h.Send(
-            It.IsAny<string>(),
+            "https://example.test/transfer",
+            It.IsAny<Dictionary<string, string>>(),
+            It.IsAny<StringContent>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+        http.Verify(h => h.Send(
+            "https://example.test/return",
             It.IsAny<Dictionary<string, string>>(),
             It.IsAny<StringContent>(),
             It.IsAny<CancellationToken>()), Times.Never);
