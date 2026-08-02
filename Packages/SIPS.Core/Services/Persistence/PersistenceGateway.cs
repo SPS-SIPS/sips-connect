@@ -23,6 +23,8 @@ public interface IPersistenceGateway
     Task<(ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy)> TryRecordIncomingVerificationAsync(ISOMessage entity, CancellationToken ct);
     Task<List<ISOMessage>> GetISOMessagesByStatusAsync(TransactionStatus status, CancellationToken ct);
     Task<int> AppendAuditLedgerEventAsync(int isoMessageId, object ledgerEvent, uint xmin, CancellationToken ct);
+    Task<bool> TryClaimCoreBankRetryAsync(int isoMessageId, uint xmin, int maxRetries, CancellationToken ct)
+        => Task.FromResult(false);
     Task<List<ISOMessage>> GetISOMessagesByUETRAndTypeAsync(string uetr, ISOMessageType type, CancellationToken ct);
     Task<List<ISOMessage>> GetISOMessagesByOriginalTxIdAndTypeAsync(string orgnlTxId, ISOMessageType type, CancellationToken ct);
     Task<Transaction?> GetTransactionByTxIdAsync(string txId, CancellationToken ct);
@@ -73,6 +75,9 @@ public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceG
 
     public Task<int> AppendAuditLedgerEventAsync(int isoMessageId, object ledgerEvent, uint xmin, CancellationToken ct)
         => _record.AppendAuditLedgerEventAsync(isoMessageId, ledgerEvent, xmin, ct);
+
+    public Task<bool> TryClaimCoreBankRetryAsync(int isoMessageId, uint xmin, int maxRetries, CancellationToken ct)
+        => _record.TryClaimCoreBankRetryAsync(isoMessageId, xmin, maxRetries, ct);
 
     public Task<List<ISOMessage>> GetISOMessagesByUETRAndTypeAsync(string uetr, ISOMessageType type, CancellationToken ct)
         => _record.GetISOMessagesByUETRAndTypeAsync(uetr, type, ct);

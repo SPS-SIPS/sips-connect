@@ -95,7 +95,8 @@ public interface IISOMessageService
     Task MarkForCheckStatusAsync(
         ISOMessage isoMessage,
         string reason,
-        CancellationToken ct);
+        CancellationToken ct,
+        bool incrementRound = true);
 
     /// <summary>
     /// Finalizes an ISOMessage that has exceeded max SAF retries.

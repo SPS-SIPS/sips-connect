@@ -20,5 +20,6 @@ public interface IIncomingRecorder
     Task<(ISOMessage? Message, bool IsNew)> TryRecordIncomingReturnAsync(ISOMessage entity, CancellationToken ct);
     Task<(ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy)> TryRecordIncomingVerificationAsync(ISOMessage entity, CancellationToken ct);
     Task<int> AppendAuditLedgerEventAsync(int isoMessageId, object ledgerEvent, uint xmin, CancellationToken ct);
+    Task<bool> TryClaimCoreBankRetryAsync(int isoMessageId, uint xmin, int maxRetries, CancellationToken ct);
     Task<int> SaveChangesAsync(CancellationToken ct);
 }

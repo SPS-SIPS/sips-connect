@@ -99,6 +99,20 @@ public class GatewayController(
         }
 
         var response = await _returnRetryHandler.RetryReturnAsync(id, ct);
-        return GenerateAdminMessage(new Response<ReturnRetryResult>(response), _jsonAdapter, PaymentResponse);
+        if (response.Success)
+            return GenerateAdminMessage(Response<ReturnRetryResult>.Success(response), _jsonAdapter, PaymentResponse);
+
+        var statusCode = response.Status switch
+        {
+            "NotFound" => StatusCodes.Status404NotFound,
+            "CallbackFailed" or "Error" => StatusCodes.Status502BadGateway,
+            _ when response.Message.Equals("CoreBank retry failed", StringComparison.OrdinalIgnoreCase) => StatusCodes.Status502BadGateway,
+            "RetryConflict" => StatusCodes.Status409Conflict,
+            "NoTransactionDetails" => StatusCodes.Status422UnprocessableEntity,
+            _ when response.Message.Contains("not configured", StringComparison.OrdinalIgnoreCase) => StatusCodes.Status503ServiceUnavailable,
+            _ when response.Reason?.StartsWith("Missing", StringComparison.OrdinalIgnoreCase) == true => StatusCodes.Status422UnprocessableEntity,
+            _ => StatusCodes.Status409Conflict
+        };
+        return StatusCode(statusCode, response);
     }
 }

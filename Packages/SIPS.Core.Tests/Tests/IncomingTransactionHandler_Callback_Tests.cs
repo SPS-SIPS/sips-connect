@@ -160,7 +160,7 @@ public class IncomingTransactionHandler_Callback_Tests
     }
 
     [Fact]
-    public async Task HandleAsync_Accepts_WhenCoreBankReturnsAcsc()
+    public async Task HandleAsync_PersistsPending_WhenCoreBankAcceptsBeforeIpsConfirmation()
     {
         var xml = MakeValidPaymentRequestXml();
         var coreBankResponse = new CBPaymentStatusResponseDto
@@ -184,7 +184,8 @@ public class IncomingTransactionHandler_Callback_Tests
         var persistedMessage = responseInvocation.Arguments[0] as SIPS.PostgreSQL.Models.ISOMessage;
 
         persistedMessage.Should().NotBeNull();
-        persistedMessage!.Status.Should().Be(TransactionStatus.Success);
+        persistedMessage!.Status.Should().Be(TransactionStatus.Pending,
+            "CoreBank acceptance is provisional until the IPS pacs.002 confirmation arrives");
 
         var responseXml = Encoding.UTF8.GetString(persistedMessage.Response!);
         var parsed = PaymentRequestResponseBuilder.Parse(responseXml);
