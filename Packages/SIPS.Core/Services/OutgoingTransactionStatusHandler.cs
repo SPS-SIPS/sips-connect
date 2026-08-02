@@ -141,7 +141,7 @@ public sealed class OutgoingTransactionStatusHandler(
             {
                 _logger.LogError("[{CorrelationId}] Failed to parse IPS status response: {message}", cid, responseMessage?.Data ?? "");
                 using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-                await _isoService.MarkForCheckStatusAsync(isoMessage, "Failed to parse IPS status response", updateCts.Token);
+                await _isoService.MarkForCheckStatusAsync(isoMessage, "Failed to parse IPS status response", updateCts.Token, incrementRound: false);
 
                 // Return PDNG for SAF - will retry on next run
                 return Response<PaymentResponseDto>.Success(new PaymentResponseDto
@@ -187,7 +187,8 @@ public sealed class OutgoingTransactionStatusHandler(
                             await _isoService.MarkForCheckStatusAsync(
                                  isoMessage,
                                  $"CoreBank callback failed - will retry notification. Final status: {rs.Status}",
-                                 ct);
+                                 ct,
+                                 incrementRound: false);
                             
                             return Response<PaymentResponseDto>.Success(new PaymentResponseDto
                             {
@@ -216,7 +217,8 @@ public sealed class OutgoingTransactionStatusHandler(
                                 await _isoService.MarkForCheckStatusAsync(
                                      isoMessage,
                                      "CoreBank transfer failed after SAF status resolution",
-                                     ct);
+                                     ct,
+                                     incrementRound: false);
                                 
                                 return Response<PaymentResponseDto>.Success(new PaymentResponseDto
                                 {
@@ -251,7 +253,8 @@ public sealed class OutgoingTransactionStatusHandler(
                         await _isoService.MarkForCheckStatusAsync(
                              isoMessage,
                              $"CoreBank callback failed - will retry notification. Final status: {rs.Status}",
-                             ct);
+                             ct,
+                             incrementRound: false);
                         
                         return Response<PaymentResponseDto>.Success(new PaymentResponseDto
                         {
@@ -263,6 +266,23 @@ public sealed class OutgoingTransactionStatusHandler(
                         });
                     }
                 }
+            }
+
+            if (isTransferRequest && !isReturnScenario &&
+                (finalStatus == TransactionStatus.Success || finalStatus == TransactionStatus.Failed))
+            {
+                var callbackAlreadyAppliedStatus = isoMessage.Status == finalStatus;
+                isoMessage.Status = finalStatus;
+                if (!callbackAlreadyAppliedStatus)
+                {
+                    isoMessage.Reason = rs.Reason ?? (finalStatus == TransactionStatus.Success
+                        ? "Transaction status resolved successfully"
+                        : "Transaction rejected by IPS");
+                    isoMessage.AdditionalInfo = rs.AdditionalInfo ?? string.Empty;
+                }
+
+                using var finalPersistCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+                await _persistence.ISOMessageResponseAsync(isoMessage, finalPersistCts.Token);
             }
 
             // If this was a ReadyForReturn payment (incoming return scenario) and status is now confirmed,
@@ -365,7 +385,8 @@ public sealed class OutgoingTransactionStatusHandler(
             await _isoService.MarkForCheckStatusAsync(
                 isoMessage,
                 $"IPS status request timeout/connection error: {statusDescription}",
-                localDbCts.Token);
+                localDbCts.Token,
+                incrementRound: false);
             return Response<PaymentResponseDto>.Fail(
                 "Request to IPS timed out or connection error - transaction marked for retry",
                 responseMessage?.StatusCode ?? System.Net.HttpStatusCode.InternalServerError);
@@ -407,7 +428,8 @@ public sealed class OutgoingTransactionStatusHandler(
             await _isoService.MarkForCheckStatusAsync(
                 isoMessage,
                 "Failed to verify IPS signature on status response",
-                localDbCts.Token);
+                localDbCts.Token,
+                incrementRound: false);
             
             // Return PDNG instead of FAIL - request reached IPS, but status response signature is suspect.
             // SAF will retry the status inquiry on the next run.
@@ -486,7 +508,7 @@ public sealed class OutgoingTransactionStatusHandler(
                 { API_Secret, _configuration.Secret! }
             };
 
-            var idem = isoMessage.TxId;
+            var idem = !string.IsNullOrWhiteSpace(isoMessage.ReturnId) ? isoMessage.ReturnId : isoMessage.TxId;
             if (!string.IsNullOrWhiteSpace(idem))
                 headers["X-Idempotency-Key"] = idem!;
             if (!string.IsNullOrWhiteSpace(isoMessage.TxId))
@@ -576,6 +598,12 @@ public sealed class OutgoingTransactionStatusHandler(
 
             _logger.LogInformation("[{CorrelationId}] CoreBank return callback completed for TxId {TxId}, StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
             isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
+
+            if (!result.IsSuccess || result.StatusCode < System.Net.HttpStatusCode.OK || result.StatusCode >= System.Net.HttpStatusCode.MultipleChoices)
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank return callback failed at HTTP level for TxId {TxId}. StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
+                return false;
+            }
 
             if (result.Data == null)
             {
@@ -803,6 +831,12 @@ public sealed class OutgoingTransactionStatusHandler(
 
             _logger.LogInformation("[{CorrelationId}] CoreBank transfer callback completed for TxId {TxId}, StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
             isoMessage.CoreBankResponse = JsonSerializer.Serialize(result, _jsonSerializerOptions);
+
+            if (!result.IsSuccess || result.StatusCode < System.Net.HttpStatusCode.OK || result.StatusCode >= System.Net.HttpStatusCode.MultipleChoices)
+            {
+                _logger.LogWarning("[{CorrelationId}] CoreBank transfer callback failed at HTTP level for TxId {TxId}. StatusCode={StatusCode}", cid, isoMessage.TxId, result.StatusCode);
+                return false;
+            }
 
             if (result.Data == null)
             {

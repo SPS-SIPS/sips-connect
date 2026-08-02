@@ -44,6 +44,10 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("corebankresponse");
 
+                    b.Property<int>("CoreBankRetryCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("corebankretrycount");
+
                     b.Property<DateTimeOffset>("Date")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date");

@@ -32,17 +32,23 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
 
         var bic = options.BIC;
 
-        // SAF only processes messages with CheckStatus that haven't exceeded max retries
-        // Exclude terminal statuses (Success, Failed, ReadyForReturn) to prevent reprocessing completed transactions
+        // Process unresolved status checks and only the ReadyForReturn records that
+        // represent an actual return awaiting confirmation. ReadyForReturn payments
+        // without a ReturnId are terminal for SAF and require operator action.
         var query = storage.ISOMessages
             .Where(x
                 => (x.Status == TransactionStatus.CheckStatus && (x.FromBIC == bic || x.ToBIC == bic)) ||
-                   (x.Status == TransactionStatus.ReadyForReturn)
+                   (x.Status == TransactionStatus.ReadyForReturn && x.ReturnId != null && x.ReturnId != "")
                 )
-            .Where(x => x.Round < options.SAFMaxRetries)
             .AsQueryable();
 
-        var count = await query.CountAsync(cancellationToken);
+        // Snapshot IDs before processing. Paging a query whose rows leave the result
+        // set as their status changes would otherwise skip later pages.
+        var candidateIds = await query
+            .OrderByDescending(x => x.Date)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var count = candidateIds.Count;
         var pages = (int)Math.Ceiling((decimal)count / options.SAFPage);
 
         _logger.LogInformation("SAF Job found {count} transactions to process in {pages} pages...", count, pages);
@@ -50,13 +56,13 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
         for (var i = 0; i < pages; i++)
         {
             var skip = i * options.SAFPage;
+            var pageIds = candidateIds.Skip(skip).Take(options.SAFPage).ToList();
 
-            var transactions = await query
+            var transactions = await storage.ISOMessages
+                .Where(x => pageIds.Contains(x.Id))
                 .Include(x => x.Transactions)
                 .Include(x => x.Statuses)
                 .OrderByDescending(x => x.Date)
-                .Skip(skip)
-                .Take(options.SAFPage)
                 .ToListAsync(cancellationToken);
 
             foreach (var transaction in transactions)
@@ -74,12 +80,20 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
                 // Check if this transaction has exceeded max retries
                 if (transaction.Round >= options.SAFMaxRetries)
                 {
-                    _logger.LogWarning("SAF Job: Transaction {txId} exceeded max retries ({maxRetries}). Finalizing as Failed.",
-                        transaction.TxId, options.SAFMaxRetries);
-                    await isoService.FinalizeAfterMaxRetriesAsync(
-                        transaction,
-                        "No response from IPS after max SAF retries",
-                        cancellationToken);
+                    if (transaction.Status == TransactionStatus.CheckStatus)
+                    {
+                        _logger.LogWarning("SAF Job: Transaction {txId} exceeded max retries ({maxRetries}). Finalizing as Failed.",
+                            transaction.TxId, options.SAFMaxRetries);
+                        await isoService.FinalizeAfterMaxRetriesAsync(
+                            transaction,
+                            "No response from IPS after max SAF retries",
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("SAF Job: Return {returnId} for transaction {txId} exhausted status retries. Leaving ReadyForReturn for manual intervention.",
+                            transaction.ReturnId, transaction.TxId);
+                    }
                     continue;
                 }
 
