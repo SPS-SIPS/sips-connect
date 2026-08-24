@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -28,7 +29,8 @@ public class IncomingTransactionHandlerTests
         Mock<INativeVerifier>? verifierMock = null,
         Mock<IInterfaceHttpClient>? httpClientMock = null,
         Mock<ISignatureService>? signatureMock = null,
-        Mock<IPaymentRequestParser>? parserMock = null
+        Mock<IPaymentRequestParser>? parserMock = null,
+        Mock<INativeSigner>? signerOverride = null
     )
     {
         var options = new ISO20022Options
@@ -39,9 +41,12 @@ public class IncomingTransactionHandlerTests
         };
 
         var logger = Mock.Of<ILogger<IncomingTransactionHandler>>();
-        var signerMock = new Mock<INativeSigner>();
-        signerMock.Setup(s => s.SignEnvelope(It.IsAny<string>(), It.IsAny<string>()))
-                  .Returns((string message, string _) => message);
+        var signerMock = signerOverride ?? new Mock<INativeSigner>();
+        if (signerOverride == null)
+        {
+            signerMock.Setup(s => s.SignEnvelope(It.IsAny<string>(), It.IsAny<string>()))
+                      .Returns((string message, string _) => message);
+        }
         var signer = signerMock.Object;
         var jsonAdapter = Mock.Of<IJsonAdapter>();
         var recorderMock = new Mock<SIPS.PostgreSQL.Interfaces.IIncomingRecorder>();
@@ -110,5 +115,22 @@ public class IncomingTransactionHandlerTests
         // Assert
         result.Should().NotBeNullOrWhiteSpace();
         result.Should().Contain("Failed to verify signature or parse ISO20022 message.");
+    }
+
+    [Fact]
+    public async Task HandleAsync_DoesNotReturnUnsignedXml_WhenSigningFails()
+    {
+        var signature = new Mock<ISignatureService>();
+        signature.Setup(s => s.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((false, "bad-signature"));
+        var signer = new Mock<INativeSigner>();
+        signer.Setup(s => s.SignEnvelope(It.IsAny<string>(), It.IsAny<string>()))
+            .Throws(new InvalidOperationException("signing failed"));
+        var sut = CreateSut(signatureMock: signature, signerOverride: signer);
+
+        var act = () => sut.HandleAsync("<xml>payload</xml>", CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("signing failed");
     }
 }

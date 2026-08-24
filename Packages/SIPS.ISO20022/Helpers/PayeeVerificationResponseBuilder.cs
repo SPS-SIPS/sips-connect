@@ -95,9 +95,9 @@ public static class PayeeVerificationResponseBuilder
                                 }
                             }
                         },
-                        BizMsgIdr = Transformers.GenerateId(request.Original.To),
+                        BizMsgIdr = IsoText.Max35Identifier(request.Original.BizMsgIdr, request.Original.From),
                         MsgDefIdr = request.Original.MsgDefIdr,
-                        CreDt = DateTime.UtcNow
+                        CreDt = request.Original.CreDt
                     }
             ]
         };
@@ -114,6 +114,14 @@ public static class PayeeVerificationResponseBuilder
     if (string.IsNullOrWhiteSpace(request.From)) request.From = request.Original.From;
     if (string.IsNullOrWhiteSpace(request.To)) request.To = request.Original.To;
     if (request.CreDt == default) request.CreDt = DateTime.UtcNow;
+
+        IsoResponseGuard.RequireOriginalCorrelation(
+            request.Original.From,
+            request.Original.To,
+            request.Original.BizMsgIdr,
+            request.Original.MsgDefIdr,
+            request.Original.MsgId,
+            request.Original.CreDt);
 
         var appHdr = AppHeader(request, messageType);
 
@@ -244,14 +252,18 @@ public static class PayeeVerificationResponseBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
+        var appHeader = envelope.AppHdr ?? throw new InvalidOperationException("The response AppHdr is required.");
+        if (!string.Equals(appHeader.MsgDefIdr, SupportedMessageTypes.VerificationResponse.Id, StringComparison.Ordinal))
+            throw new InvalidOperationException("The AppHdr message definition does not match an acmt.024 response.");
 
         Request response = new()
         {
-            From = document.IdVrfctnRpt?.Assgnmt?.Assgnr?.Agt?.FinInstnId?.Othr?.Id ?? "",
-            To = document.IdVrfctnRpt?.Assgnmt?.Assgne?.Agt?.FinInstnId?.Othr?.Id ?? "",
-            MsgDefIdr = envelope.AppHdr.MsgDefIdr,
+            From = appHeader.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            To = appHeader.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            BizMsgIdr = appHeader.BizMsgIdr,
+            MsgDefIdr = appHeader.MsgDefIdr,
             MsgId = document.IdVrfctnRpt?.OrgnlAssgnmt?.MsgId ?? "",
-            CreDt = document.IdVrfctnRpt?.Assgnmt?.CreDtTm ?? DateTime.UtcNow,
+            CreDt = appHeader.CreDt,
             Verified = document.IdVrfctnRpt?.Rpt?[0]?.Vrfctn ?? false,
             Reason = document.IdVrfctnRpt?.Rpt?[0]?.Rsn?.Prtry ?? "",
             VerificationId = document.IdVrfctnRpt?.Rpt?[0]?.OrgnlId ?? ""

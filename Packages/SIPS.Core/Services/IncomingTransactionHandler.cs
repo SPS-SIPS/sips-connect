@@ -21,6 +21,7 @@ using SIPS.PostgreSQL.Enums;
 using System.Text.Json.Nodes;
 using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Models.DTOs.CB;
+using SIPS.ISO20022.Enums;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 using static SIPS.Core.Constants;
@@ -225,7 +226,16 @@ public sealed class IncomingTransactionHandler(
                     path = "ReplayStored";
                     _logger.LogInformation("[{CorrelationId}] [METRIC:ISO_PATH=ReplayStored] Structural de-duplication: Replaying stored response for TxId {TxId}. Status={Status}", cid, request.TxId, record.Status);
                     var storedResponse = System.Text.Encoding.UTF8.GetString(record.Response);
-                    return FinalizeResponse(storedResponse, cid, sw, path);
+                    if (StoredResponseMatchesRequest(storedResponse, request))
+                        return FinalizeResponse(storedResponse, cid, sw, path);
+
+                    path = "InvalidStoredResponse";
+                    _logger.LogError("[{CorrelationId}] Refusing to replay a stored response whose correlation fields do not match TxId {TxId}.", cid, request.TxId);
+                    var invalidStoredResponse = AdminMessageBuilder.Generate(
+                        AdminRejectReasonCodes.TechnicalError,
+                        "Stored response failed correlation validation.",
+                        request.MsgId);
+                    return FinalizeResponse(invalidStoredResponse, cid, sw, path);
                 }
 
                 // [FOLLOWER WAIT LOGIC]: If Pending or CheckStatus, wait briefly then re-check
@@ -243,7 +253,16 @@ public sealed class IncomingTransactionHandler(
                         path = "ReplayAfterWait";
                         _logger.LogInformation("[{CorrelationId}] [METRIC:ISO_PATH=ReplayAfterWait] Owner completed. Replaying stored response for TxId {TxId}.", cid, request.TxId);
                         var storedResponse = System.Text.Encoding.UTF8.GetString(refreshed.Response);
-                        return FinalizeResponse(storedResponse, cid, sw, path);
+                        if (StoredResponseMatchesRequest(storedResponse, request))
+                            return FinalizeResponse(storedResponse, cid, sw, path);
+
+                        path = "InvalidStoredResponse";
+                        _logger.LogError("[{CorrelationId}] Refusing to replay a newly stored response whose correlation fields do not match TxId {TxId}.", cid, request.TxId);
+                        var invalidStoredResponse = AdminMessageBuilder.Generate(
+                            AdminRejectReasonCodes.TechnicalError,
+                            "Stored response failed correlation validation.",
+                            request.MsgId);
+                        return FinalizeResponse(invalidStoredResponse, cid, sw, path);
                     }
                     
                     // Still pending after wait → return admi.002 (duplicate in-process)
@@ -353,7 +372,9 @@ public sealed class IncomingTransactionHandler(
                             if (IsCoreBankSuccess(cbResponse.Status))
                             {
                                 _logger.LogInformation("[{CorrelationId}] CoreBank returned success status {Status} for transaction {TxId}. Proceeding with ACSC.", cid, cbResponse.Status, request.TxId);
-                                response.AcceptanceDate = cbResponse.AcceptanceDate;
+                                response.AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(cbResponse.AcceptanceDate, request.CreDt);
+                                if (cbResponse.AcceptanceDate != null && response.AcceptanceDate == null)
+                                    _logger.LogWarning("[{CorrelationId}] Ignoring impossible CoreBank acceptance timestamp {AcceptanceDate} for TxId {TxId}.", cid, cbResponse.AcceptanceDate, request.TxId);
                             }
                             else if (string.Equals(cbResponse.Status?.Trim(), RJCT, StringComparison.OrdinalIgnoreCase))
                             {
@@ -504,8 +525,54 @@ public sealed class IncomingTransactionHandler(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[{CorrelationId}] [METRIC:ISO_SIGNING_FAILED] Failed to sign ISO response. Returning unsigned body for SLA compliance.", cid);
-            return isoBody; // Signing-safe fallback: return unsigned body instead of crashing
+            _logger.LogError(ex, "[{CorrelationId}] [METRIC:ISO_SIGNING_FAILED] Failed to sign ISO response. The request will fail rather than return unauthenticated XML.", cid);
+            throw;
+        }
+    }
+
+    private static bool StoredResponseMatchesRequest(string responseXml, PaymentRequestBuilder.Request request)
+    {
+        try
+        {
+            var document = System.Xml.Linq.XDocument.Parse(responseXml);
+            var related = document.Descendants().FirstOrDefault(e => e.Name.LocalName == "Rltd");
+            if (related == null) return false;
+
+            static string? Value(System.Xml.Linq.XElement parent, string name) =>
+                parent.Descendants().FirstOrDefault(e => e.Name.LocalName == name)?.Value;
+            static string? PartyValue(System.Xml.Linq.XElement parent, string partyName) =>
+                parent.Elements().FirstOrDefault(e => e.Name.LocalName == partyName)?
+                    .Descendants().FirstOrDefault(e => e.Name.LocalName == "Id")?.Value;
+            static bool SameInstant(string? serialized, DateTime expected)
+            {
+                if (!DateTimeOffset.TryParse(serialized, out var actual)) return false;
+                var expectedUtc = expected.Kind switch
+                {
+                    DateTimeKind.Utc => expected,
+                    DateTimeKind.Local => expected.ToUniversalTime(),
+                    _ => DateTime.SpecifyKind(expected, DateTimeKind.Utc)
+                };
+                return actual.UtcDateTime == expectedUtc;
+            }
+
+            var originalInfo = document.Descendants().FirstOrDefault(e => e.Name.LocalName == "OrgnlGrpInf");
+            var appHeader = document.Descendants().FirstOrDefault(e => e.Name.LocalName == "AppHdr");
+            return appHeader != null
+                && string.Equals(appHeader.Elements().FirstOrDefault(e => e.Name.LocalName == "MsgDefIdr")?.Value, SupportedMessageTypes.CreditTransferResponse.Id, StringComparison.Ordinal)
+                && string.Equals(PartyValue(related, "Fr"), request.From, StringComparison.Ordinal)
+                && string.Equals(PartyValue(related, "To"), request.To, StringComparison.Ordinal)
+                && string.Equals(Value(related, "BizMsgIdr"), request.BizMsgIdr, StringComparison.Ordinal)
+                && string.Equals(Value(related, "MsgDefIdr"), request.MsgDefIdr, StringComparison.Ordinal)
+                && SameInstant(Value(related, "CreDt"), request.CreDt)
+                && originalInfo != null
+                && string.Equals(Value(originalInfo, "OrgnlMsgId"), request.MsgId, StringComparison.Ordinal)
+                && string.Equals(Value(originalInfo, "OrgnlMsgNmId"), request.MsgDefIdr, StringComparison.Ordinal)
+                && SameInstant(Value(originalInfo, "OrgnlCreDtTm"), request.CreDt)
+                && string.Equals(Value(document.Root!, "OrgnlTxId"), request.TxId, StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
         }
     }
 

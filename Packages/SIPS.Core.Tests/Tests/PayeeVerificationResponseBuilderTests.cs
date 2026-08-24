@@ -22,6 +22,7 @@ public class PayeeVerificationResponseBuilderTests
                 From = "BANK01",
                 To = "P2G",
                 MsgId = "MSG-1",
+                BizMsgIdr = "BIZ-1",
                 SIPSRequestId = "VERIFY-1",
                 Alias = "INV-123",
                 Type = "BILL",

@@ -61,7 +61,7 @@ public static class PaymentStatusRequestResponseBuilder
                     }
                 }
             },
-            BizMsgIdr = IsoText.Max35Identifier(model.BizMsgIdr, model.From),
+            BizMsgIdr = Transformers.GenerateId(model.From),
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
             // Rltd references the IMMEDIATE PARENT message we received (switch-generated pacs.002 CN)
@@ -112,13 +112,22 @@ public static class PaymentStatusRequestResponseBuilder
         var messageType = SupportedMessageTypes.CreditTransferResponse;
 
     // Ensure original message parts have safe defaults to satisfy schema minLength constraints
-    if (request.Original == null) request.Original = new PaymentRequestBuilder.Request();
-    Defaults.EnsureOriginalDefaults(request.Original);
+        var original = request.Original ??= new PaymentRequestBuilder.Request();
+        Defaults.EnsureOriginalDefaults(original);
         if (string.IsNullOrWhiteSpace(request.From)) request.From = request.Original?.To ?? "FROM";
         if (string.IsNullOrWhiteSpace(request.To)) request.To = request.Original?.From ?? "TO";
         if (request.CreDt == default) request.CreDt = DateTime.UtcNow;
 
         var appHdr = AppHeader(request, messageType);
+        IsoResponseGuard.RequireOriginalCorrelation(
+            original.From,
+            original.To,
+            original.BizMsgIdr,
+            original.MsgDefIdr,
+            original.MsgId,
+            original.CreDt);
+        request.AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(
+            request.AcceptanceDate);
         var isReject = request.Status == "RJCT";
 
         // Build StsRsnInf only if Reason or AdditionalInfo is not null, not empty, and not whitespace
@@ -159,7 +168,7 @@ public static class PaymentStatusRequestResponseBuilder
                 GrpHdr = new GroupHeader101
                 {
                     MsgId = Transformers.GenerateId(request.From),
-                    CreDtTm = request.CreDt,
+                    CreDtTm = DateTime.UtcNow,
                     InstgAgt = new Schemas.PSRDocument.BranchAndFinancialInstitutionIdentification6
                     {
                         FinInstnId = new Schemas.PSRDocument.FinancialInstitutionIdentification18
@@ -259,12 +268,14 @@ public static class PaymentStatusRequestResponseBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
+        if (!string.Equals(envelope.AppHdr?.MsgDefIdr, SupportedMessageTypes.CreditTransferResponse.Id, StringComparison.Ordinal))
+            throw new InvalidOperationException("The AppHdr message definition does not match a pacs.002 response.");
         var rsp = new Response();
         // Current Message Information
         rsp.MsgId = document.FIToFIPmtStsRpt.GrpHdr?.MsgId ?? "";
-        rsp.CreDt = document.FIToFIPmtStsRpt.GrpHdr?.CreDtTm ?? DateTime.UtcNow;
-        rsp.From = document.FIToFIPmtStsRpt.GrpHdr?.InstgAgt?.FinInstnId?.Othr?.Id ?? "";
-        rsp.To = document.FIToFIPmtStsRpt.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "";
+        rsp.CreDt = envelope.AppHdr?.CreDt ?? DateTime.UtcNow;
+        rsp.From = envelope.AppHdr?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "";
+        rsp.To = envelope.AppHdr?.To?.FIId?.FinInstnId?.Othr?.Id ?? "";
         rsp.BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "";
         rsp.MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "";
         rsp.AcceptanceDate = document.FIToFIPmtStsRpt.TxInfAndSts[0].AccptncDtTm;

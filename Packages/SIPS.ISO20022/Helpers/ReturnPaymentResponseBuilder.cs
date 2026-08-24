@@ -52,7 +52,7 @@ public static class ReturnPaymentResponseBuilder
                     }
                 }
             },
-            BizMsgIdr = IsoText.Max35Identifier(model.BizMsgIdr, model.From),
+            BizMsgIdr = Transformers.GenerateId(model.From),
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
             Rltd = [
@@ -105,6 +105,16 @@ public static class ReturnPaymentResponseBuilder
         if (request.CreDt == default) request.CreDt = DateTime.UtcNow;
 
         var appHdr = AppHeader(request, messageType);
+        IsoResponseGuard.RequireOriginalCorrelation(
+            request.Original.From,
+            request.Original.To,
+            request.Original.BizMsgIdr,
+            request.Original.MsgDefIdr,
+            request.Original.MsgId,
+            request.Original.CreDt);
+        request.AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(
+            request.AcceptanceDate,
+            request.Original.CreDt);
 
         var document = new Document
         {
@@ -113,7 +123,7 @@ public static class ReturnPaymentResponseBuilder
                 GrpHdr = new GroupHeader101
                 {
                     MsgId = Transformers.GenerateId(request.From),
-                    CreDtTm = request.CreDt,
+                    CreDtTm = DateTime.UtcNow,
                     InstgAgt = new Schemas.RPRDocument.BranchAndFinancialInstitutionIdentification6
                     {
                         FinInstnId = new Schemas.RPRDocument.FinancialInstitutionIdentification18
@@ -138,7 +148,7 @@ public static class ReturnPaymentResponseBuilder
                 TxInfAndSts = [
                     new PaymentTransaction130 {
                         OrgnlGrpInf = new OriginalGroupInformation29 {
-                            OrgnlMsgId = IsoText.Max35Identifier(request.Original.BizMsgIdr, request.Original.From),
+                            OrgnlMsgId = IsoText.Max35Identifier(request.Original.MsgId, request.Original.From),
                             OrgnlMsgNmId = request.Original.MsgDefIdr,
                             OrgnlCreDtTm = request.Original.CreDt
                         },
@@ -202,15 +212,17 @@ public static class ReturnPaymentResponseBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
+        if (!string.Equals(envelope.AppHdr?.MsgDefIdr, SupportedMessageTypes.CreditTransferResponse.Id, StringComparison.Ordinal))
+            throw new InvalidOperationException("The AppHdr message definition does not match a pacs.002 response.");
         var rsp = new Response
         {
             BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "",
             MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",
-            CreDt = document.FIToFIPmtStsRpt.GrpHdr?.CreDtTm ?? DateTime.UtcNow,
+            CreDt = envelope.AppHdr?.CreDt ?? DateTime.UtcNow,
             // GrdHeader Information
             MsgId = document.FIToFIPmtStsRpt.GrpHdr?.MsgId ?? "",
-            From = document.FIToFIPmtStsRpt.GrpHdr?.InstgAgt?.FinInstnId?.Othr?.Id ?? "",
-            To = document.FIToFIPmtStsRpt.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "",
+            From = envelope.AppHdr?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            To = envelope.AppHdr?.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
             Status = document.FIToFIPmtStsRpt.TxInfAndSts[0].TxSts ?? "RJCT",
             Reason = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?.Select(x => x.Rsn?.Prtry)?.FirstOrDefault(),
             AdditionalInfo = document.FIToFIPmtStsRpt.TxInfAndSts[0].StsRsnInf?
@@ -222,9 +234,12 @@ public static class ReturnPaymentResponseBuilder
             // Original Message Information
             Original = new()
             {
-                MsgId = document.FIToFIPmtStsRpt?.OrgnlGrpInfAndSts[0]?.OrgnlMsgId ?? "",
-                BizMsgIdr = document.FIToFIPmtStsRpt?.OrgnlGrpInfAndSts[0]?.OrgnlMsgNmId ?? "",
-                CreDt = document.FIToFIPmtStsRpt?.OrgnlGrpInfAndSts[0]?.OrgnlCreDtTm ?? DateTime.UtcNow,
+                From = envelope.AppHdr?.Rltd?.FirstOrDefault()?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
+                To = envelope.AppHdr?.Rltd?.FirstOrDefault()?.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
+                BizMsgIdr = envelope.AppHdr?.Rltd?.FirstOrDefault()?.BizMsgIdr ?? "",
+                MsgId = document.FIToFIPmtStsRpt?.TxInfAndSts[0]?.OrgnlGrpInf?.OrgnlMsgId ?? "",
+                MsgDefIdr = document.FIToFIPmtStsRpt?.TxInfAndSts[0]?.OrgnlGrpInf?.OrgnlMsgNmId ?? "",
+                CreDt = document.FIToFIPmtStsRpt?.TxInfAndSts[0]?.OrgnlGrpInf?.OrgnlCreDtTm ?? DateTime.UtcNow,
                 OriginalEndToEnd = document.FIToFIPmtStsRpt?.TxInfAndSts[0].OrgnlEndToEndId ?? "",
                 OrgnlTxId = document.FIToFIPmtStsRpt?.TxInfAndSts[0].OrgnlTxId ?? "",
                 OriginalAmount = document.FIToFIPmtStsRpt?.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.TypedValue ?? 0,
