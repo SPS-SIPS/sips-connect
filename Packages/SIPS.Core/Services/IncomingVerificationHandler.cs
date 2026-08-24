@@ -480,8 +480,8 @@ public sealed class IncomingVerificationHandler(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[{CorrelationId}] [METRIC:ISO_SIGNING_FAILED] Failed to sign ISO response. Returning unsigned body for SLA compliance.", cid);
-            return isoBody; // Signing-safe fallback
+            _logger.LogError(ex, "[{CorrelationId}] [METRIC:ISO_SIGNING_FAILED] Failed to sign ISO response. The request will fail rather than return unauthenticated XML.", cid);
+            throw;
         }
     }
 

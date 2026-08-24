@@ -713,11 +713,15 @@ public sealed class IncomingPaymentStatusReportHandler(
         // This prevents default 0001-01-01 values.
         if (crResponse != null && crResponse.AcceptanceDate != default)
         {
-            response.AcceptanceDate = crResponse.AcceptanceDate;
+            response.AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(
+                crResponse.AcceptanceDate,
+                isoMessage.Date.UtcDateTime);
         }
         else if (request.AcceptanceDate != default)
         {
-            response.AcceptanceDate = request.AcceptanceDate;
+            response.AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(
+                request.AcceptanceDate,
+                isoMessage.Date.UtcDateTime);
         }
 
         // Apply mapped status to parent ISOMessage

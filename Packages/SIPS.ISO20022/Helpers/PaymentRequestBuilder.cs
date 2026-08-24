@@ -237,13 +237,18 @@ public static class PaymentRequestBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
+        var appHeader = envelope.AppHdr ?? throw new InvalidOperationException("The request AppHdr is required.");
+        if (!string.Equals(appHeader.MsgDefIdr, SupportedMessageTypes.CreditTransferRequest.Id, StringComparison.Ordinal))
+            throw new InvalidOperationException("The AppHdr message definition does not match a pacs.008 request.");
         var request = new Request
         {
-            From = document.FIToFICstmrCdtTrf.GrpHdr.InstgAgt.FinInstnId.Othr.Id,
-            To = document.FIToFICstmrCdtTrf.GrpHdr.InstdAgt.FinInstnId.Othr.Id,
-            BizMsgIdr = envelope.AppHdr.BizMsgIdr,
-            MsgDefIdr = envelope.AppHdr.MsgDefIdr,
-            CreDt = envelope.AppHdr.CreDt,
+            // Response routing and Rltd correlation must mirror the immediate
+            // parent AppHdr, not document-level settlement agents.
+            From = appHeader.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            To = appHeader.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            BizMsgIdr = appHeader.BizMsgIdr,
+            MsgDefIdr = appHeader.MsgDefIdr,
+            CreDt = appHeader.CreDt,
             MsgId = document.FIToFICstmrCdtTrf.GrpHdr.MsgId,
             SettlementMethod = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf?.SttlmMtd ?? SettlementMethod1Code.CLRG,
             ClearingSystem = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf?.ClrSys?.Prtry ?? string.Empty,

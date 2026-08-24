@@ -70,19 +70,19 @@ public static class Transformers
 
     public static string GetMessageType(string coreBankingResponse)
     {
-        // Assuming the message type is indicated by a specific tag in the XML, e.g., <MsgType>
-        var startTag = "<header:MsgDefIdr>";
-        var endTag = "</header:MsgDefIdr>";
-
-        var startIndex = coreBankingResponse.IndexOf(startTag) + startTag.Length;
-        var endIndex = coreBankingResponse.IndexOf(endTag);
-
-        if (startIndex >= 0 && endIndex > startIndex)
+        try
         {
-            return coreBankingResponse[startIndex..endIndex];
+            var document = XDocument.Parse(coreBankingResponse);
+            var appHeader = document.Descendants()
+                .FirstOrDefault(element => element.Name.LocalName == "AppHdr");
+            return appHeader?.Elements()
+                .FirstOrDefault(element => element.Name.LocalName == "MsgDefIdr")
+                ?.Value ?? string.Empty;
         }
-
-        return string.Empty; // Return empty if message type is not found
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     public static string? GetCallBackEndpoint(string MsgDefIdr, ISO20022Options links)

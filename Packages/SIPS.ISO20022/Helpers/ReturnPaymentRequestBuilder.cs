@@ -166,16 +166,18 @@ public static class ReturnPaymentRequestBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
+        if (!string.Equals(envelope.AppHdr?.MsgDefIdr, SupportedMessageTypes.CreditTransferReturnRequest.Id, StringComparison.Ordinal))
+            throw new InvalidOperationException("The AppHdr message definition does not match a pacs.004 request.");
 
         return new Request
         {
             MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",
             BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "",
-            From = document.PmtRtr?.GrpHdr?.InstgAgt?.FinInstnId?.Othr.Id ?? "",
-            To = document.PmtRtr?.GrpHdr?.InstdAgt?.FinInstnId?.Othr.Id ?? "",
+            From = envelope.AppHdr?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            To = envelope.AppHdr?.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
 
             MsgId = document.PmtRtr?.GrpHdr?.MsgId ?? "",
-            CreDt = document.PmtRtr?.GrpHdr?.CreDtTm ?? DateTime.UtcNow,
+            CreDt = envelope.AppHdr?.CreDt ?? DateTime.UtcNow,
             NumberOfTransactions = int.Parse(document?.PmtRtr?.GrpHdr?.NbOfTxs ?? "0"),
             SettlementMethod = document?.PmtRtr?.GrpHdr?.SttlmInf?.SttlmMtd ?? SettlementMethod1Code.CLRG,
             ClearingSystem = document?.PmtRtr?.GrpHdr?.SttlmInf?.ClrSys?.Prtry ?? "FP",

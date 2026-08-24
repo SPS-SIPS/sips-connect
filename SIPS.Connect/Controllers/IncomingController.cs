@@ -3,7 +3,7 @@ using SIPS.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 namespace SIPS.Connect.Controllers;
 [ApiController]
-[Produces("application/json")]
+[Produces("application/xml")]
 [Route("api/v1/[controller]")]
 public class IncomingController(IIncoming isoService) : ControllerBase
 {

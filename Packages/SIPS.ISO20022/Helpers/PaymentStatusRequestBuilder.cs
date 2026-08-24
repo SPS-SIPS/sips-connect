@@ -111,13 +111,15 @@ public static class PaymentStatusRequestBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
+        if (!string.Equals(envelope.AppHdr?.MsgDefIdr, SupportedMessageTypes.CreditTransferStatusRequest.Id, StringComparison.Ordinal))
+            throw new InvalidOperationException("The AppHdr message definition does not match a pacs.028 request.");
 
         return new Request
         {
-            From = document.FIToFIPmtStsReq.GrpHdr?.InstgAgt?.FinInstnId?.Othr?.Id ?? "",
-            To = document.FIToFIPmtStsReq.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "",
+            From = envelope.AppHdr?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            To = envelope.AppHdr?.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
             MsgId = document.FIToFIPmtStsReq?.GrpHdr?.MsgId ?? "",
-            CreDt = document.FIToFIPmtStsReq?.GrpHdr?.CreDtTm ?? DateTime.UtcNow,
+            CreDt = envelope.AppHdr?.CreDt ?? DateTime.UtcNow,
             MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",
             BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "",
             OriginalEndToEnd = document?.FIToFIPmtStsReq?.TxInf.FirstOrDefault()?.OrgnlEndToEndId ?? "",

@@ -27,9 +27,6 @@ public static class Defaults
     public static void EnsureReturnDefaults(ReturnPaymentRequestBuilder.Request? original)
     {
         if (original == null) return;
-        if (string.IsNullOrWhiteSpace(original.From)) original.From = "NA";
-        if (string.IsNullOrWhiteSpace(original.To)) original.To = "NA";
-        if (original.CreDt == default) original.CreDt = DateTime.UtcNow;
         if (original.NumberOfTransactions <= 0) original.NumberOfTransactions = 1;
         if (string.IsNullOrWhiteSpace(original.OriginalEndToEnd))
             original.OriginalEndToEnd = string.IsNullOrWhiteSpace(original.OrgnlTxId) ? "E2E" : original.OrgnlTxId;
@@ -41,9 +38,6 @@ public static class Defaults
     public static void EnsureVerificationDefaults(PayeeVerificationBuilder.Request? req)
     {
         if (req == null) return;
-        if (string.IsNullOrWhiteSpace(req.From)) req.From = "NA";
-        if (string.IsNullOrWhiteSpace(req.To)) req.To = "NA";
-        if (req.CreDt == default) req.CreDt = DateTime.UtcNow;
         if (string.IsNullOrWhiteSpace(req.Alias)) req.Alias = "NA";
         if (string.IsNullOrWhiteSpace(req.Type)) req.Type = "NA";
         // SIPSRequestId may be null for some tests; leave as-is
