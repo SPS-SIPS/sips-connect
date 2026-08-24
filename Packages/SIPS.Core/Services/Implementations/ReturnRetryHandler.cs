@@ -10,6 +10,7 @@ using SIPS.Core.Services.Callback;
 using SIPS.Core.Services.Correlation;
 using SIPS.Core.Services.Persistence;
 using SIPS.ISO20022.Interfaces;
+using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Options;
@@ -411,7 +412,9 @@ public sealed class ReturnRetryHandler(
                 Reason = isoMessage.Reason,
                 AdditionalInfo = isoMessage.AdditionalInfo,
                 EndToEndId = cbResponse?.EndToEndId,
-                AcceptanceDate = cbResponse?.AcceptanceDate
+                AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(
+                    cbResponse?.AcceptanceDate,
+                    isoMessage.Date.UtcDateTime)
             };
         }
         catch (Exception ex)

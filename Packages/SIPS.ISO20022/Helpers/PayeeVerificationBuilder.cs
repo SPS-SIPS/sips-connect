@@ -127,16 +127,18 @@ public static class PayeeVerificationBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
+        if (!string.Equals(envelope.AppHdr?.MsgDefIdr, SupportedMessageTypes.VerificationRequest.Id, StringComparison.Ordinal))
+            throw new InvalidOperationException("The AppHdr message definition does not match an acmt.023 request.");
 
         return new Request
         {
-            From = document.IdVrfctnReq?.Assgnmt?.Assgnr?.Agt?.FinInstnId?.Othr?.Id ?? "",
-            To = document.IdVrfctnReq?.Assgnmt?.Assgne?.Agt?.FinInstnId?.Othr?.Id ?? "",
+            From = envelope.AppHdr?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            To = envelope.AppHdr?.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
             SIPSRequestId = document.IdVrfctnReq?.Vrfctn[0]?.Id ?? "",
             Alias = document.IdVrfctnReq?.Vrfctn[0]?.PtyAndAcctId?.Acct?.Id?.Othr?.Id ?? "",
             Type = document.IdVrfctnReq?.Vrfctn[0]?.PtyAndAcctId?.Acct?.Id?.Othr?.SchmeNm?.Prtry ?? "",
             MsgId = document.IdVrfctnReq?.Assgnmt?.MsgId ?? "",
-            CreDt = document.IdVrfctnReq?.Assgnmt?.CreDtTm ?? DateTime.UtcNow,
+            CreDt = envelope.AppHdr?.CreDt ?? DateTime.UtcNow,
             MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",
             BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "",
         };

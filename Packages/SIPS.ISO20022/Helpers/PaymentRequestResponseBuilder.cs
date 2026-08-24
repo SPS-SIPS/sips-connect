@@ -61,7 +61,9 @@ public static class PaymentRequestResponseBuilder
                     }
                 }
             },
-            BizMsgIdr = IsoText.Max35Identifier(model.BizMsgIdr, model.From),
+            // A response is a new business message. The inbound BizMsgIdr is
+            // preserved only in Rltd below.
+            BizMsgIdr = Transformers.GenerateId(model.From),
             MsgDefIdr = type.Id,
             CreDt = DateTime.UtcNow,
             // Rltd references the IMMEDIATE PARENT message we received (switch-forwarded pacs.008)
@@ -120,6 +122,9 @@ public static class PaymentRequestResponseBuilder
         var appHdr = AppHeader(request, messageType);
 
         var orig = request.Original ?? new PaymentRequestBuilder.Request();
+        IsoResponseGuard.RequireOriginalCorrelation(
+            orig.From, orig.To, orig.BizMsgIdr, orig.MsgDefIdr, orig.MsgId, orig.CreDt);
+        request.AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(request.AcceptanceDate, orig.CreDt);
 
         var document = new Document
         {
@@ -220,12 +225,14 @@ public static class PaymentRequestResponseBuilder
     {
         var envelope = FPEnvelope.Parse(content);
         var document = envelope.Document;
+        if (!string.Equals(envelope.AppHdr?.MsgDefIdr, SupportedMessageTypes.CreditTransferResponse.Id, StringComparison.Ordinal))
+            throw new InvalidOperationException("The AppHdr message definition does not match a pacs.002 response.");
         var rsp = new Response();
         // Current Message Information
         rsp.MsgId = document.FIToFIPmtStsRpt.GrpHdr?.MsgId ?? "";
-        rsp.CreDt = document.FIToFIPmtStsRpt.GrpHdr?.CreDtTm ?? DateTime.UtcNow;
-        rsp.From = document.FIToFIPmtStsRpt.GrpHdr?.InstgAgt?.FinInstnId?.Othr?.Id ?? "";
-        rsp.To = document.FIToFIPmtStsRpt.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "";
+        rsp.CreDt = envelope.AppHdr?.CreDt ?? DateTime.UtcNow;
+        rsp.From = envelope.AppHdr?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "";
+        rsp.To = envelope.AppHdr?.To?.FIId?.FinInstnId?.Othr?.Id ?? "";
         rsp.BizMsgIdr = envelope.AppHdr?.BizMsgIdr ?? "";
         rsp.MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "";
         rsp.AcceptanceDate = document.FIToFIPmtStsRpt.TxInfAndSts[0].AccptncDtTm;

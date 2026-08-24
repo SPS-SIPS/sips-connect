@@ -216,15 +216,12 @@ public sealed class IncomingTransactionStatusHandler(
         response.Status = deserializedContent.Status ?? RJCT;
         response.Reason = deserializedContent.Reason ?? string.Empty;
         response.AdditionalInfo = deserializedContent.AdditionalInfo ?? string.Empty;
-        response.AcceptanceDate = deserializedContent.AcceptanceDate;
+        response.AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(
+            deserializedContent.AcceptanceDate);
         response.TxId = deserializedContent.TxId ?? string.Empty;
-        response.Original.From = deserializedContent.FromBIC ?? string.Empty;
-        response.Original.To = deserializedContent.ToBIC ?? string.Empty;
-        response.Original.BizMsgIdr = deserializedContent.BizMsgIdr ?? string.Empty;
-        response.Original.MsgId = deserializedContent.MsgId ?? string.Empty;
+        // Correlation fields on response.Original describe the verified inbound
+        // ISO message. A CoreBank callback is not authoritative for them.
         response.Original.ClearingSystem = deserializedContent.ClearingSystem ?? string.Empty;
-        response.Original.MsgDefIdr = deserializedContent.MsgDefIdr ?? string.Empty;
-        response.Original.CreDt = deserializedContent.Date;
         response.Original.LocalInstrument = deserializedContent.LocalInstrument ?? string.Empty;
         response.Original.CategoryPurpose = deserializedContent.CategoryPurpose ?? string.Empty;
         response.Original.EndToEndId = deserializedContent.EndToEndId ?? string.Empty;

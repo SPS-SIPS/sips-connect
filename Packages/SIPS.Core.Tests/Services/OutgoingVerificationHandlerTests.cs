@@ -70,7 +70,9 @@ namespace SIPS.Core.Tests.Verification
                 {
                     SIPSRequestId = "FP",
                     MsgId = "ORIGINAL_MSG_ID", // Match trackingRecord.MsgId
+                    BizMsgIdr = "ORIGINAL_BIZ_MSG_ID",
                     MsgDefIdr = "acmt.023.001.03",
+                    CreDt = DateTime.UtcNow,
                     From = "TESTBIC",
                     To = "SIPS"
                 }
@@ -154,7 +156,9 @@ namespace SIPS.Core.Tests.Verification
                 {
                     SIPSRequestId = "FP",
                     MsgId = "ORIGINAL_MSG_ID",
+                    BizMsgIdr = "ORIGINAL_BIZ_MSG_ID",
                     MsgDefIdr = "acmt.023.001.03",
+                    CreDt = DateTime.UtcNow,
                     From = "TESTBIC",
                     To = "SIPS"
                 }
@@ -234,7 +238,9 @@ namespace SIPS.Core.Tests.Verification
                 {
                     SIPSRequestId = "FP",
                     MsgId = "ORIGINAL_MSG_ID",
+                    BizMsgIdr = "ORIGINAL_BIZ_MSG_ID",
                     MsgDefIdr = "acmt.023.001.03",
+                    CreDt = DateTime.UtcNow,
                     From = "TESTBIC",
                     To = "SIPS"
                 }
@@ -312,7 +318,9 @@ namespace SIPS.Core.Tests.Verification
                 {
                     SIPSRequestId = "FP",
                     MsgId = "ORIGINAL_MSG_ID",
+                    BizMsgIdr = "ORIGINAL_BIZ_MSG_ID",
                     MsgDefIdr = "acmt.023.001.03",
+                    CreDt = DateTime.UtcNow,
                     From = "TESTBIC",
                     To = "SIPS"
                 }

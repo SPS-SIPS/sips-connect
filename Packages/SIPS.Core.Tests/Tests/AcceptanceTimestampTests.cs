@@ -36,6 +36,7 @@ public class AcceptanceTimestampTests
             AcceptanceDate = new DateTime(2026, 06, 11, 12, 30, 19, 750, DateTimeKind.Utc),
             Original = CreateOriginalRequest()
         };
+        response.Original.CreDt = new DateTime(2026, 06, 11, 12, 30, 18, 100, DateTimeKind.Utc);
 
         var xml = PaymentRequestResponseBuilder.Build(response);
 
@@ -106,13 +107,15 @@ public class AcceptanceTimestampTests
             Original = CreateOriginalReturnRequest()
         };
 
+        var beforeBuild = DateTime.UtcNow;
         var xml = ReturnPaymentResponseBuilder.Build(response);
+        var afterBuild = DateTime.UtcNow;
         var parser = new PaymentStatusReportParser();
 
         parser.TryParse(xml, out var parsed).Should().BeTrue();
         xml.Should().NotContain("AccptncDtTm");
         parsed.Should().NotBeNull();
-        parsed!.CreDt.Should().Be(messageCreatedAt);
+        parsed!.CreDt.Should().BeOnOrAfter(beforeBuild).And.BeOnOrBefore(afterBuild);
         parsed.AcceptanceDate.Should().BeNull();
     }
 
