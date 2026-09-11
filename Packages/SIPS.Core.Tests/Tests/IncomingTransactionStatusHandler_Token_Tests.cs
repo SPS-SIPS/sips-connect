@@ -98,6 +98,7 @@ public sealed class IncomingTransactionStatusHandler_Token_Tests
         public string SignEnvelope(string xml, string referenceId) => xml;
         public Task<(bool ok, string? verbose)> VerifyAsync(string xml, CancellationToken ct) => Task.FromResult<(bool, string?)>((true, null));
         public Task<(bool result, VerboseResult verbose)> VerifySignature(string xml, bool isDetached, CancellationToken ct) => Task.FromResult((true, new VerboseResult()));
+        public Task<SignatureVerificationResult> VerifyWithProvenance(string xml, CancellationToken ct) => Task.FromResult(new SignatureVerificationResult(true, new VerboseResult(), new("TEST","TEST","TEST","TEST","TEST","1","00",true,"SPS.XADES.BES.001@1.0.0","pacs.028.001.05","SPS.PAYMENT.001","00",DateTimeOffset.UtcNow)));
         public JsonObject Transform(JsonObject json, string mappingName) => json;
         public JsonObject Transform<T>(T localObject, string mappingName) => new JsonObject();
         public T ToObject<T>(JsonObject json) => default!;
@@ -131,7 +132,7 @@ public sealed class IncomingTransactionStatusHandler_Token_Tests
         using var userCts = new CancellationTokenSource();
         userCts.Cancel();
 
-        var _ = await handler.HandleAsync("<xml/>", userCts.Token);
+        var _ = await handler.HandleAsync(WpSipsTestEnvelope.Valid(), userCts.Token);
 
         Assert.NotNull(persistence.LastToken);
         Assert.False(persistence.LastToken!.Value.IsCancellationRequested);

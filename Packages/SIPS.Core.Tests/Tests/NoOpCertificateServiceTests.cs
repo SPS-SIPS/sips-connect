@@ -70,10 +70,7 @@ public class NoOpCertificateServiceTests
         var inputMessage = "<Message>Hello</Message>";
 
         // Act
-        var result = signer.SignEnvelope(inputMessage);
-
-        // Assert
-        Assert.Equal(inputMessage, result);
+        Assert.Throws<InvalidOperationException>(() => signer.SignEnvelope(inputMessage));
     }
 
     [Fact]
@@ -110,7 +107,7 @@ public class NoOpCertificateServiceTests
         var (result, verbose) = await verifier.VerifySignature(inputMessage, false, default);
 
         // Assert
-        Assert.True(result);
+        Assert.False(result);
         Assert.Equal("Not Verified", verbose.SignatureStatus);
     }
 
@@ -131,6 +128,6 @@ public class NoOpCertificateServiceTests
         Assert.Throws<InvalidOperationException>(() => service.AsymmetricKey);
         Assert.Throws<InvalidOperationException>(() => service.Certificate);
         Assert.Throws<InvalidOperationException>(() => service.GetCertificatePem());
-        Assert.Throws<InvalidOperationException>(() => service.GetSignatureElement("a", "b", "c", "d"));
+        Assert.Throws<InvalidOperationException>(() => service.GetSignatureElement("a", "b", "business-layer", "c", "d"));
     }
 }

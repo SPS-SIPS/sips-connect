@@ -32,6 +32,6 @@ public class Incoming : IIncoming
         {
             return await handler(isoMessage, ct);
         }
-        return AdminMessage.Generate("Unsupported message type.");
+        return SipsReject.Create(isoMessage, AdminRejectReasonCodes.InvalidXml, "Unsupported message type.");
     }
 }

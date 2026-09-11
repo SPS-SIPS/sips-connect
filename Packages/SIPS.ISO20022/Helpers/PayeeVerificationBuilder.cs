@@ -10,6 +10,7 @@ public static class PayeeVerificationBuilder
     {
         public string From { get; set; } = default!;
         public string To { get; set; } = default!;
+        public string TargetBic { get; set; } = string.Empty;
         public string MsgDefIdr { get; set; } = default!;
         public string BizMsgIdr { get; set; } = default!;
         public DateTime CreDt { get; set; }
@@ -134,6 +135,7 @@ public static class PayeeVerificationBuilder
         {
             From = envelope.AppHdr?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
             To = envelope.AppHdr?.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            TargetBic = document.IdVrfctnReq?.Assgnmt?.Assgne?.Agt?.FinInstnId?.Othr?.Id ?? "",
             SIPSRequestId = document.IdVrfctnReq?.Vrfctn[0]?.Id ?? "",
             Alias = document.IdVrfctnReq?.Vrfctn[0]?.PtyAndAcctId?.Acct?.Id?.Othr?.Id ?? "",
             Type = document.IdVrfctnReq?.Vrfctn[0]?.PtyAndAcctId?.Acct?.Id?.Othr?.SchmeNm?.Prtry ?? "",

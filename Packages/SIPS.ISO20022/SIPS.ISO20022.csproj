@@ -4,13 +4,20 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PackageId>SIPS.ISO20022</PackageId>
-    <Version>1.1.7</Version>
+    <PackageId>Sps.Sips.Iso20022</PackageId>
+    <Version>1.0.0</Version>
     <Authors>Abdulshakur Ahmed</Authors>
-    <Product>SIPS ISO20022</Product>
-    <Description>SIPS ISO20022</Description>
+    <Product>SPS SIPS ISO 20022</Product>
+    <Title>SPS SIPS ISO 20022</Title>
+    <Description>Qualified ISO 20022, Business Application Header, schema validation, and WP-SIPS-01 protocol models for the SPS SIPS boundary.</Description>
+    <PackageTags>ISO20022;SIPS;SPS;BAH;payments</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>LGPL-2.0-only</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,5 +30,9 @@
       <Pack>true</Pack>
       <PackagePath>README.md</PackagePath>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Schemas/*.xsd" />
   </ItemGroup>
 </Project>

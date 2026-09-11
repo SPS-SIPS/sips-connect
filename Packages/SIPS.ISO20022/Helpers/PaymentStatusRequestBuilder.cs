@@ -10,6 +10,7 @@ public static class PaymentStatusRequestBuilder
     {
         public string From { get; set; } = default!;
         public string To { get; set; } = default!;
+        public string TargetBic { get; set; } = string.Empty;
         public string MsgDefIdr { get; set; } = default!;
         public string BizMsgIdr { get; set; } = default!;
         public DateTime CreDt { get; set; }
@@ -118,6 +119,7 @@ public static class PaymentStatusRequestBuilder
         {
             From = envelope.AppHdr?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
             To = envelope.AppHdr?.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            TargetBic = document.FIToFIPmtStsReq?.GrpHdr?.InstdAgt?.FinInstnId?.Othr?.Id ?? "",
             MsgId = document.FIToFIPmtStsReq?.GrpHdr?.MsgId ?? "",
             CreDt = envelope.AppHdr?.CreDt ?? DateTime.UtcNow,
             MsgDefIdr = envelope.AppHdr?.MsgDefIdr ?? "",

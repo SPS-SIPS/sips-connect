@@ -124,10 +124,7 @@ public sealed class IncomingVerificationHandler(
             {
                 path = "ParseFail";
                 // [PROTOCOL COMPLIANCE]: Use admi.002 for protocol-level rejection
-                var err = AdminMessageBuilder.Generate(
-                    SIPS.ISO20022.Helpers.AdminRejectReasonCodes.InvalidXML, 
-                    "Failed to verify the signature or parse the message.", 
-                    request?.SIPSRequestId);
+                var err = SipsReject.Create(message, AdminRejectReasonCodes.InvalidXml, "Failed to verify the signature or parse the message.");
                 return _signer.SignEnvelope(err);
             }
 
@@ -136,15 +133,12 @@ public sealed class IncomingVerificationHandler(
             {
                 path = "MissingMsgId";
                 // [PROTOCOL COMPLIANCE]: Mandatory field missing -> admi.002
-                var err = AdminMessageBuilder.Generate(
-                    SIPS.ISO20022.Helpers.AdminRejectReasonCodes.MandatoryElementMissing,
-                    "MsgId is mandatory for VerificationRequest sovereignty.", 
-                    request.SIPSRequestId);
+                var err = SipsReject.Create(message, AdminRejectReasonCodes.MandatoryElementMissing, "MsgId is mandatory for VerificationRequest sovereignty.");
                 return _signer.SignEnvelope(err);
             }
             
             // Step 3: Record incoming message (INSERT-First)
-            (ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string duplicateBy) recordResult;
+            (ISOMessage record, SIPS.PostgreSQL.Enums.DedupOutcome outcome, string? duplicateBy) recordResult;
             using (SipsMetrics.TrackStep("Incoming", "Verification", "DbSave"))
             {
                 recordResult = await _isoService.TryRecordIncomingVerificationAsync(
@@ -252,10 +246,7 @@ public sealed class IncomingVerificationHandler(
                      }, gct);
 
                      // [PROTOCOL COMPLIANCE]: admi.002 for Duplicate Pending (not acmt.024)
-                     var pendingErr = AdminMessageBuilder.Generate(
-                        SIPS.ISO20022.Helpers.AdminRejectReasonCodes.DuplicateMessageInProcess,
-                        "Duplicate message processing in progress. Please retry later.", 
-                        request.SIPSRequestId);
+                     var pendingErr = SipsReject.Create(message, AdminRejectReasonCodes.DuplicateMessageInProcess, "Duplicate message processing in progress. Please retry later.");
                      return _signer.SignEnvelope(pendingErr);
                 }
             }
@@ -266,11 +257,11 @@ public sealed class IncomingVerificationHandler(
             // Step 4: Prepare internal response state
             response = new PayeeVerificationResponseBuilder.Request
             {
-                Original = request,
-                VerificationId = request.SIPSRequestId ?? string.Empty,
-                From = request.To,
-                To = request.From,
-                Type = request.Type
+                Original = request ?? new PayeeVerificationBuilder.Request(),
+                VerificationId = request?.SIPSRequestId ?? string.Empty,
+                From = request?.To ?? string.Empty,
+                To = request?.From ?? string.Empty,
+                Type = request?.Type ?? string.Empty
             };
 
             // Step 5: Send callback and parse result via orchestrator
@@ -278,8 +269,8 @@ public sealed class IncomingVerificationHandler(
                 { API_Key, _callbackLinks.Key! },
                 { API_Secret, _callbackLinks.Secret! }
             };
-            if (!string.IsNullOrWhiteSpace(request.SIPSRequestId))
-                headers["X-Idempotency-Key"] = request.SIPSRequestId!;
+            if (!string.IsNullOrWhiteSpace(request!.SIPSRequestId))
+                headers["X-Idempotency-Key"] = request.SIPSRequestId;
             // Normalize alias and type prior to CoreBank matching
             var normalizedAlias = request.Alias ?? string.Empty;
             var requestedType = request.Type;
@@ -410,7 +401,7 @@ public sealed class IncomingVerificationHandler(
             
             response ??= new PayeeVerificationResponseBuilder.Request
             {
-                Original = request,
+                Original = request ?? new PayeeVerificationBuilder.Request(),
                 VerificationId = request?.SIPSRequestId ?? string.Empty,
                 From = request?.To ?? string.Empty,
                 To = request?.From ?? string.Empty,
@@ -459,10 +450,7 @@ public sealed class IncomingVerificationHandler(
             _logger.LogError(ex, "[{CorrelationId}] Failed to verify payee for ReqId={ReqId}. Path={Path}. Returning signed ISO response for SLA compliance.", cid, request?.SIPSRequestId, path);
             
             // [PROTOCOL COMPLIANCE]: Technical/Emergency error -> admi.002
-            var err = AdminMessageBuilder.Generate(
-                SIPS.ISO20022.Helpers.AdminRejectReasonCodes.TechnicalError,
-                "Internal Error during verification processing.", 
-                request?.SIPSRequestId);
+            var err = SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Internal Error during verification processing.");
             return _signer.SignEnvelope(err);
         }
     }

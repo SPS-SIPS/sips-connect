@@ -124,12 +124,12 @@ public sealed class IncomingTransactionStatusHandler(
         }
 
         if (!isValid || request == null)
-            return AdminMessage.Generate("Failed to verify the signature or parse the message.");
+            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.SignatureInvalid, "Failed to verify the signature or parse the message."));
 
         if (string.IsNullOrWhiteSpace(request.OrgnlTxId))
         {
             _logger.LogWarning("[{CorrelationId}] pacs.028 rejected: Mandatory OrgnlTxId is missing", cid);
-            return AdminMessage.Generate("Mandatory TxId is missing.");
+            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.MandatoryElementMissing, "Mandatory TxId is missing."));
         }
 
         // Step 2: Retrieve ISO message by TxId (with transactions for richer context)
@@ -139,7 +139,7 @@ public sealed class IncomingTransactionStatusHandler(
             _logger.LogWarning("[{CorrelationId}] Status request for non-existent transaction {TxId}", cid, request.OrgnlTxId);
             using var dbCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(10));
             await CreateISOMessage(request, message, dbCts.Token);
-            return AdminMessage.Generate("Failed to get the Message.");
+            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Failed to get the Message."));
         }
 
         // Step 3: Record the incoming status message
