@@ -42,7 +42,7 @@ public class IncomingTransactionStatusHandlerTests
         };
 
         var logger = Mock.Of<ILogger<IncomingTransactionStatusHandler>>();
-        var signer = Mock.Of<INativeSigner>();
+        var signerMock = new Mock<INativeSigner>(); signerMock.Setup(x=>x.SignEnvelope(It.IsAny<string>(),It.IsAny<string>())).Returns((string xml,string _)=>xml); var signer = signerMock.Object;
         var jsonAdapter = Mock.Of<IJsonAdapter>();
         var recorder = (recorderMock ?? new Mock<IIncomingRecorder>()).Object;
 
@@ -77,7 +77,7 @@ public class IncomingTransactionStatusHandlerTests
         var sut = CreateSut(signatureMock: signature);
 
         // Act
-        var result = await sut.HandleAsync("<xml>payload</xml>", CancellationToken.None);
+        var result = await sut.HandleAsync(WpSipsTestEnvelope.Valid(), CancellationToken.None);
 
         // Assert
         result.Should().NotBeNullOrWhiteSpace();
@@ -97,7 +97,7 @@ public class IncomingTransactionStatusHandlerTests
         var sut = CreateSut(signatureMock: signature, parserMock: parser);
 
         // Act
-        var result = await sut.HandleAsync("not-a-valid-iso20022-message", CancellationToken.None);
+        var result = await sut.HandleAsync(WpSipsTestEnvelope.Valid(), CancellationToken.None);
 
         // Assert
         result.Should().NotBeNullOrWhiteSpace();
@@ -130,7 +130,7 @@ public class IncomingTransactionStatusHandlerTests
         var sut = CreateSut(signatureMock: signature, parserMock: parser, recorderMock: recorder);
 
         // Act
-        var result = await sut.HandleAsync("<xml>payload</xml>", CancellationToken.None);
+        var result = await sut.HandleAsync(WpSipsTestEnvelope.Valid(), CancellationToken.None);
 
         // Assert
         result.Should().Contain("Mandatory TxId is missing");
@@ -171,7 +171,7 @@ public class IncomingTransactionStatusHandlerTests
         var sut = CreateSut(signatureMock: signature, parserMock: parser, recorderMock: recorder);
 
         // Act
-        var result = await sut.HandleAsync("<xml>payload</xml>", CancellationToken.None);
+        var result = await sut.HandleAsync(WpSipsTestEnvelope.Valid(), CancellationToken.None);
 
         // Assert
         result.Should().Contain("Failed to get the Message");

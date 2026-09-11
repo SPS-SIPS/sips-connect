@@ -80,6 +80,15 @@ public static class XmlSecurityHelpers
 
     public static bool CheckTransactionOwnerAgainstCertificate(XmlDocument envelope, string certificateOwner)
     {
+        const string headerNs = "urn:iso:std:iso:20022:tech:xsd:head.001.001.03";
+        var appHeader = envelope.GetElementsByTagName("AppHdr", headerNs).Cast<XmlElement>().SingleOrDefault()
+            ?? throw new InvalidOperationException("A unique AppHdr is required.");
+        var from = appHeader.ChildNodes.Cast<XmlNode>().OfType<XmlElement>().SingleOrDefault(x => x.LocalName == "Fr" && x.NamespaceURI == headerNs)
+            ?? throw new InvalidOperationException("A unique top-level BAH From is required.");
+        var fromId = from.GetElementsByTagName("Id", headerNs).Cast<XmlElement>().SingleOrDefault()
+            ?? throw new InvalidOperationException("A unique BAH From identifier is required.");
+        if (!StringComparer.Ordinal.Equals(fromId.InnerText.Trim(), certificateOwner.Trim())) return false;
+
         var ns = new XmlNamespaceManager(envelope.NameTable);
         ns.AddNamespace("document", GetDocumentNamespace(envelope, "document"));
         var messageType = ns.LookupNamespace("document") ?? throw new InvalidOperationException("Namespace 'document' not found.");
@@ -108,7 +117,12 @@ public static class XmlSecurityHelpers
             return assgne.InnerText.Trim() == certificateOwner;
         }
 
-        return true;
+        if (messageType is "urn:iso:std:iso:20022:tech:xsd:admi.009.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.010.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.002.001.01" or "urn:iso:std:iso:20022:tech:xsd:pacs.028.001.05" or "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.11")
+        {
+            return true;
+        }
+
+        return false;
     }
 
 

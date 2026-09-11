@@ -5,6 +5,7 @@ namespace SIPS.ISO20022.Helpers;
 
 public static class PaymentRequestBuilder
 {
+    public sealed record PapssCorridorData(string SenderCountry, string ReceiverCountry, string SenderCurrency, string ReceiverCurrency);
     public class Request : IMessage
     {
         public string From { get; set; } = default!;
@@ -28,6 +29,7 @@ public static class PaymentRequestBuilder
         public Person Debtor { get; set; } = new Person();
         public Person Creditor { get; set; } = new Person();
         public string? Ustrd { get; set; }
+        public PapssCorridorData? PapssCorridor { get; set; }
     }
 
     private static AppHdr AppHeader(string from, string to, SupportedMessageTypes type, string bizMsgIdr)
@@ -230,6 +232,8 @@ public static class PaymentRequestBuilder
             Document = document
         };
         var result = Transformers.GeneratePrefixedXml(envelope.Untyped, docNS: messageType.GroupId);
+        if (request.PapssCorridor is { } corridor)
+            result = AddPapssCorridor(result, corridor);
 
         return (result, bizMsgIdr, messageType.Id, msgId);
     }
@@ -255,7 +259,7 @@ public static class PaymentRequestBuilder
             LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.LclInstrm?.Prtry ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.LclInstrm?.Prtry ?? string.Empty,
             CategoryPurpose = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.CtgyPurp?.Prtry ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.CtgyPurp?.Prtry ?? string.Empty,
             TxId = document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtId?.TxId ?? string.Empty,
-            UETR = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.UETR,
+            UETR = document.FIToFICstmrCdtTrf.CdtTrfTxInf![0].PmtId.UETR,
             EndToEndId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.EndToEndId,
             Amount = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.TypedValue,
             Currency = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.Ccy,
@@ -281,6 +285,39 @@ public static class PaymentRequestBuilder
             Ustrd = string.Join(" ", document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].RmtInf.Ustrd)
         };
 
+        request.PapssCorridor = ReadPapssCorridor(content, request);
+
         return request;
+    }
+
+    private const string PapssCorridorNamespace = "urn:sps:papss:corridor:001";
+
+    private static string AddPapssCorridor(string xml, PapssCorridorData corridor)
+    {
+        var x = System.Xml.Linq.XDocument.Parse(xml, System.Xml.Linq.LoadOptions.PreserveWhitespace);
+        var tx = x.Descendants().Single(e => e.Name.LocalName == "CdtTrfTxInf");
+        System.Xml.Linq.XNamespace iso = SupportedMessageTypes.CreditTransferRequest.GroupId;
+        System.Xml.Linq.XNamespace papss = PapssCorridorNamespace;
+        tx.Add(new System.Xml.Linq.XElement(iso + "SplmtryData",
+            new System.Xml.Linq.XElement(iso + "PlcAndNm", "/Document/FIToFICstmrCdtTrf/CdtTrfTxInf/SplmtryData"),
+            new System.Xml.Linq.XElement(iso + "Envlp", new System.Xml.Linq.XElement(papss + "PapssCorridor",
+                new System.Xml.Linq.XElement(papss + "SenderCountry", corridor.SenderCountry),
+                new System.Xml.Linq.XElement(papss + "ReceiverCountry", corridor.ReceiverCountry),
+                new System.Xml.Linq.XElement(papss + "SenderCurrency", corridor.SenderCurrency),
+                new System.Xml.Linq.XElement(papss + "ReceiverCurrency", corridor.ReceiverCurrency)))));
+        return x.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+    }
+
+    private static PapssCorridorData? ReadPapssCorridor(string xml, Request request)
+    {
+        var x = System.Xml.Linq.XDocument.Parse(xml);
+        System.Xml.Linq.XNamespace papss = PapssCorridorNamespace;
+        var c = x.Descendants(papss + "PapssCorridor").SingleOrDefault();
+        if (c is null) return null;
+        string Value(string name) => c.Element(papss + name)?.Value ?? throw new InvalidOperationException($"PAPSS corridor {name} is required.");
+        var result = new PapssCorridorData(Value("SenderCountry"), Value("ReceiverCountry"), Value("SenderCurrency"), Value("ReceiverCurrency"));
+        if (!string.Equals(request.Currency, result.SenderCurrency, StringComparison.Ordinal))
+            throw new InvalidOperationException("PAPSS corridor sender currency contradicts the instructed amount currency.");
+        return result;
     }
 }

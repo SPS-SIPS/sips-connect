@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns="urn:sps:papss:fx:001:request"
+  targetNamespace="urn:sps:papss:fx:001:request" elementFormDefault="qualified">
+  <xs:simpleType name="CountryCode"><xs:restriction base="xs:string"><xs:pattern value="[A-Z]{2}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="CurrencyCode"><xs:restriction base="xs:string"><xs:pattern value="[A-Z]{3}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="Text35"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="35"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PositiveAmount"><xs:restriction base="xs:decimal"><xs:minExclusive value="0"/><xs:totalDigits value="18"/><xs:fractionDigits value="8"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="InvoiceCurrencyCode"><xs:restriction base="xs:string"><xs:enumeration value="USD"/><xs:enumeration value="CURR"/></xs:restriction></xs:simpleType>
+  <xs:element name="FxRateRequest">
+    <xs:complexType><xs:sequence>
+      <xs:element name="SenderCountry" type="CountryCode"/>
+      <xs:element name="ReceiverCountry" type="CountryCode"/>
+      <xs:element name="SenderCurrency" type="CurrencyCode"/>
+      <xs:element name="ReceiverCurrency" type="CurrencyCode"/>
+      <xs:element name="ReceiverBank" type="Text35"/>
+      <xs:element name="LocalInstrument" type="Text35"/>
+      <xs:element name="Amount" type="PositiveAmount"/>
+      <xs:element name="IsInvoice" type="xs:boolean"/>
+      <xs:element name="InvoiceCurrency" type="InvoiceCurrencyCode" minOccurs="0"/>
+    </xs:sequence></xs:complexType>
+  </xs:element>
+</xs:schema>

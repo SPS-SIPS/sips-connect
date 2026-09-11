@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="unqualified">
+  <xs:element name="BusinessLayer">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="urn:iso:std:iso:20022:tech:xsd:head.001.001.03" processContents="lax"/>
+        <xs:any namespace="##other" processContents="lax"/>
+      </xs:sequence>
+      <xs:attribute name="Id" type="xs:ID" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

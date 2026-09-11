@@ -22,6 +22,9 @@ public static class Transformers
         if (appHdr != null)
         {
             appHdr.Name = headerNamespace + "AppHdr"; // Update the element name with the prefixed namespace
+            var businessMessageId = appHdr.Element(headerNamespace + "BizMsgIdr")?.Value;
+            if (string.IsNullOrWhiteSpace(businessMessageId)) throw new InvalidOperationException("BizMsgIdr is required before rendering an identified BusinessLayer.");
+            envelopeElement.SetAttributeValue("Id", "BL-" + businessMessageId);
         }
 
         var document = envelopeElement.Element("{urn:iso:std:iso:20022:tech:xsd:acmt.023.001.02}Document");

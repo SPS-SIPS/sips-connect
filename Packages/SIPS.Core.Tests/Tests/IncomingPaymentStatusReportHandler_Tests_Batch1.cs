@@ -123,7 +123,7 @@ public class IncomingPaymentStatusReportHandler_Tests
         {
             // Create proper FPEnvelope format that PaymentRequestResponseBuilder.Parse expects
             var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            var msgId = $"MSG-{txId}-{DateTime.UtcNow.Ticks}";
+            var msgId = $"MSG-{txId}";
 
             return $@"<FPEnvelope
   xmlns:header=""urn:iso:std:iso:20022:tech:xsd:head.001.001.03""

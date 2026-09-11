@@ -153,14 +153,15 @@ public sealed class CertificateService : ICertificateService
 
         return certificate;
     }
-    public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string signingTime, string algorithm)
+    public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string businessLayerId, string signingTime, string algorithm)
     {
         keyInfoId = "_" + keyInfoId;
         signedPropsId = "_" + signedPropsId;
         var x509IssuerName = _configuration.BaseDN ?? throw new ArgumentNullException("XadesConfig.BaseDN is required in appSettings.json");
         var x509SerialNumber = Certificate!.SerialNumber.ToString();
 
-        XDocument signatureDoc = XmlSignatureGenerator.GenerateSignatureXml(keyInfoId, signedPropsId, x509IssuerName, x509SerialNumber, signingTime, algorithm);
+        var certificateDigest = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(Certificate.GetEncoded()));
+        XDocument signatureDoc = XmlSignatureGenerator.GenerateSignatureXml(keyInfoId, signedPropsId, businessLayerId, certificateDigest, x509IssuerName, x509SerialNumber, signingTime, algorithm);
 
         XmlDocument signatureElement = new()
         {
@@ -199,32 +200,30 @@ public sealed class CertificateService : ICertificateService
     {
         try
         {
-            // If self-signed, verify with its own public key
-            if (certificate.IssuerDN.Equivalent(certificate.SubjectDN))
+            certificate.CheckValidity();
+            if (certificate.GetPublicKey() is not Org.BouncyCastle.Crypto.Parameters.RsaKeyParameters rsa || rsa.Modulus.BitLength < 2048) return (false, "Signing key must be RSA with at least 2048 bits.");
+            var usage = certificate.GetKeyUsage();
+            if (usage is null || usage.Length == 0 || !usage[0]) return (false, "Leaf certificate must assert digitalSignature key usage.");
+            if (certificate.IssuerDN.Equivalent(certificate.SubjectDN)) return (false, "A self-signed message certificate is not accepted as a leaf.");
+            var current = certificate; var visited = new HashSet<string>(StringComparer.Ordinal);
+            while (true)
             {
-                certificate.Verify(certificate.GetPublicKey());
-                certificate.CheckValidity();
-                return (true, "");
-            }
-
-            var possibleIssuers = Chain.Where(c => c.SubjectDN.Equivalent(certificate.IssuerDN)).ToList();
-            if (possibleIssuers.Count == 0)
-                return (false, $"Issuer not found in the chain for IssuerDN: {certificate.IssuerDN}");
-
-            foreach (var issuer in possibleIssuers)
-            {
-                try
+                if (!visited.Add(current.SerialNumber + "|" + current.IssuerDN)) return (false, "Certificate chain cycle detected.");
+                var issuer = Chain.SingleOrDefault(c => c.SubjectDN.Equivalent(current.IssuerDN));
+                if (issuer is null) return (false, $"Issuer not found in configured SPS chain: {current.IssuerDN}");
+                issuer.CheckValidity();
+                if (issuer.GetBasicConstraints() < 0) return (false, "Issuer is not a CA certificate.");
+                var issuerUsage = issuer.GetKeyUsage();
+                if (issuerUsage is null || issuerUsage.Length <= 5 || !issuerUsage[5]) return (false, "Issuer must assert keyCertSign usage.");
+                current.Verify(issuer.GetPublicKey());
+                if (issuer.IssuerDN.Equivalent(issuer.SubjectDN))
                 {
-                    certificate.Verify(issuer.GetPublicKey());
-                    certificate.CheckValidity();
+                    issuer.Verify(issuer.GetPublicKey());
+                    if (!ReferenceEquals(issuer, Chain[^1]) && !issuer.Equals(Chain[^1])) return (false, "Chain did not terminate at configured SPS root.");
                     return (true, "");
                 }
-                catch
-                {
-                    continue;
-                }
+                current = issuer;
             }
-            return (false, "No matching issuer's public key could verify the certificate signature.");
         }
         catch (InvalidKeyException ex) { return (false, ex.Message); }
         catch (SignatureException ex) { return (false, ex.Message); }

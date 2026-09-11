@@ -85,7 +85,7 @@ public class IncomingTransactionHandlerConcurrencyTests
     [Fact]
     public async Task HandleAsync_Owner_IsNewTrue_ProcessesTransaction()
     {
-        string rawXml = "<xml>msg</xml>";
+        string rawXml = WpSipsTestEnvelope.Valid();
         var request = new PaymentRequestBuilder.Request { TxId = "TX1", MsgId = "M1" };
         
         _inbound.Setup(x => x.VerifyAndParseAsync(rawXml, It.IsAny<Func<string, (bool, PaymentRequestBuilder.Request?)>>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
@@ -108,7 +108,7 @@ public class IncomingTransactionHandlerConcurrencyTests
     [Fact]
     public async Task HandleAsync_Follower_IsNewFalse_Pending_WaitsAndReplays()
     {
-        string rawXml = "<xml>msg</xml>";
+        string rawXml = WpSipsTestEnvelope.Valid();
         var request = new PaymentRequestBuilder.Request { TxId = "TX1", MsgId = "M1" };
         
         _inbound.Setup(x => x.VerifyAndParseAsync(rawXml, It.IsAny<Func<string, (bool, PaymentRequestBuilder.Request?)>>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
@@ -134,7 +134,7 @@ public class IncomingTransactionHandlerConcurrencyTests
     [Fact]
     public async Task HandleAsync_Follower_IsNewFalse_AlreadyCompleted_ReplaysImmediately()
     {
-        string rawXml = "<xml>msg</xml>";
+        string rawXml = WpSipsTestEnvelope.Valid();
         var request = new PaymentRequestBuilder.Request { TxId = "TX1", MsgId = "M1" };
         
         _inbound.Setup(x => x.VerifyAndParseAsync(rawXml, It.IsAny<Func<string, (bool, PaymentRequestBuilder.Request?)>>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
@@ -153,7 +153,7 @@ public class IncomingTransactionHandlerConcurrencyTests
     [Fact]
     public async Task HandleAsync_InternalPersistenceFailure_ReturnsPaymentRejection_NotCriticalAdmin()
     {
-        const string rawXml = "<xml>msg</xml>";
+        string rawXml = WpSipsTestEnvelope.Valid();
         const string longCoreBankReason = "This service is temporarily unavailable.";
         var request = ValidPaymentRequest();
         var record = new ISOMessage { Id = 42, TxId = request.TxId, Status = TransactionStatus.Pending };

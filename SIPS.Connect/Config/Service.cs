@@ -15,6 +15,10 @@ using SIPS.Core.Options;
 using SIPS.Core.Services;
 using SIPS.ISO20022.Options;
 using SIPS.XMLDsig.Xades.Options;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using SIPS.Adapter;
+using SIPS.Core.Services.Callback;
 
 namespace SIPS.Connect.Config;
 public static class DI
@@ -27,6 +31,13 @@ public static class DI
             configuration.GetSection("Endpoints").Bind(options.Endpoints);
             var dateFormats = configuration.GetSection("DateFormats").Get<string[]>();
                 options.DateFormats = dateFormats ?? new[] { "yyyy-MM-dd" };
+            return options;
+        });
+        services.AddSingleton(sp =>
+        {
+            var options = new PapssFacingOptions();
+            configuration.GetSection(PapssFacingOptions.SectionName).Bind(options);
+            ValidatePapssFacing(options, configuration);
             return options;
         });
 
@@ -42,7 +53,7 @@ public static class DI
             {
                 ConfigurationDecryptor.DecryptOptions(options, dataProtectionProvider, logger);
             }
-            
+
             return options;
         });
 
@@ -65,6 +76,16 @@ public static class DI
             {
                 ConfigurationDecryptor.DecryptOptions(options, dataProtectionProvider, logger);
             }
+
+            var papssEnabled = configuration.GetValue<bool>("PapssFacing:Enabled");
+            if (papssEnabled && options.WithoutPKI)
+                throw new InvalidOperationException("PAPSS cannot start with Xades:WithoutPKI enabled.");
+            if (papssEnabled && (!StringComparer.Ordinal.Equals(options.DefaultSignatureMethod, "SHA256withRSA") ||
+                options.Algorithms is not { Length: 1 } ||
+                !StringComparer.Ordinal.Equals(options.Algorithms[0], "SHA256withRSA")))
+                throw new InvalidOperationException("The WP-SIPS signing profile is fixed to SHA256withRSA.");
+            if (papssEnabled && options.VerificationWindowMinutes != 100)
+                throw new InvalidOperationException("The WP-SIPS verification window is fixed to 100 minutes.");
             
             return options;
         });
@@ -364,8 +385,55 @@ public static class DI
         // Register Balance Monitoring Service
         services.AddScoped<IBalanceMonitoringService, BalanceMonitoringService>();
 
+        // Shared schema-backed WP-SIPS information-service client.
+        services.AddScoped<SipsInformationProtocolClient>();
+        services.AddSingleton<IParticipantOperationRouter, ParticipantOperationRouter>();
+        services.AddSingleton<IPapssHealthState, PapssHealthState>();
+        services.AddScoped<IPapssCallbackGuard, PapssCallbackGuard>();
+        services.AddSingleton<IParticipantCallbackContext, ParticipantCallbackContext>();
+        services.AddHttpClient<IPapssFacingSipsClient, PapssFacingSipsClient>();
+
         services.AddSingleton<ILogService, LogService>();
         
         services.AddCore(configuration);
+        services.RemoveAll<IJsonAdapter>();
+        services.AddSingleton<JsonAdapter>();
+        services.AddSingleton<IJsonAdapter, ParticipantCallbackJsonAdapter>();
+        services.RemoveAll<ICallbackClient>();
+        services.AddSingleton<CallbackClient>();
+        services.AddSingleton<ICallbackClient, ParticipantCallbackClient>();
+    }
+
+    private static void ValidatePapssFacing(PapssFacingOptions options, IConfiguration configuration)
+    {
+        if (!options.Enabled) return;
+        if (!Uri.TryCreate(options.IsoIngressUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+            throw new InvalidOperationException("PapssFacing:IsoIngressUrl must be an absolute HTTP(S) URI when PAPSS is enabled.");
+        if (!string.Equals(uri.AbsolutePath.TrimEnd('/'), "/sips/messages", StringComparison.Ordinal))
+            throw new InvalidOperationException("PapssFacing:IsoIngressUrl must target the common /sips/messages ingress.");
+        if (uri.Scheme != Uri.UriSchemeHttps && !uri.IsLoopback)
+            throw new InvalidOperationException("PapssFacing:IsoIngressUrl must use HTTPS except for loopback test environments.");
+        if (options.AllowedHosts.Length == 0 || !options.AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("PapssFacing:IsoIngressUrl host must be explicitly allowed.");
+        if (string.IsNullOrWhiteSpace(options.Environment) || string.IsNullOrWhiteSpace(options.RemoteWpSipsIdentity) || string.IsNullOrWhiteSpace(options.SecurityProfile))
+            throw new InvalidOperationException("PapssFacing responder identity, environment and security profile are required when PAPSS is enabled.");
+        if (options.RequestTimeoutSeconds is < 1 or > 120 || options.MaximumResponseBytes is < 1024 or > 10_000_000)
+            throw new InvalidOperationException("PapssFacing timeout or response-size limit is invalid.");
+        if (options.AllowedLocalInstruments.Length == 0)
+            throw new InvalidOperationException("PapssFacing requires an explicit allowed-local-instrument list when enabled.");
+        if (options.AllowedCorridors.Length == 0 || options.ReadinessStaleSeconds is < 10 or > 86400)
+            throw new InvalidOperationException("PapssFacing requires explicit corridors and a valid readiness staleness interval when enabled.");
+        foreach (var (principal, participant) in options.Participants)
+        {
+            if (!participant.Enabled) continue;
+            if (string.IsNullOrWhiteSpace(principal) || string.IsNullOrWhiteSpace(participant.Bic))
+                throw new InvalidOperationException("Each enabled PAPSS participant requires a principal key and BIC.");
+            if (options.Participants.Where(x => x.Value.Enabled).Count(x => string.Equals(x.Value.Bic, participant.Bic, StringComparison.OrdinalIgnoreCase)) != 1)
+                throw new InvalidOperationException("Each enabled PAPSS participant BIC must be unique.");
+            if (string.IsNullOrWhiteSpace(participant.CallbackMappingProfile) || !configuration.GetSection("Endpoints").GetChildren().Any(x => x.Key.StartsWith(participant.CallbackMappingProfile + ".", StringComparison.Ordinal)))
+                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' requires a configured callback mapping profile.");
+            if (!Uri.TryCreate(participant.CallbackUrl, UriKind.Absolute, out var callbackUri) || callbackUri.Scheme != Uri.UriSchemeHttps)
+                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' requires an HTTPS callback URL.");
+        }
     }
 }

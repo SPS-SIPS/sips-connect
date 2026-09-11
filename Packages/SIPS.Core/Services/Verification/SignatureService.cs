@@ -17,7 +17,7 @@ public sealed class SignatureService(INativeVerifier verifier, ILogger<Signature
 
     public async Task<(bool ok, string? verbose)> VerifyAsync(string message, CancellationToken ct)
     {
-        var (result, verbose) = await _verifier.VerifySignature(message, false, ct);
+        var (result, verbose) = await _verifier.VerifySignature(message, true, ct);
         if (!result)
         {
             _logger.LogError("Signature verification failed: {Verbose}", verbose);

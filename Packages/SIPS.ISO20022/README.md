@@ -1,4 +1,4 @@
-# SIPS ISO 20022
+# SPS SIPS ISO 20022
 
 The SIPS ISO 20022 package provides a set of classes for working with ISO 20022 messages.
 
@@ -18,5 +18,8 @@ To install the package, follow these steps:
 1. Add the package to your project.
 
 ```bash
-dotnet add package SIPS.ISO20022
+dotnet add package Sps.Sips.Iso20022 --version 1.0.0
 ```
+
+Version 1.x includes the qualified WP-SIPS-01 ISO schemas and profiles. It does
+not define PAPSS trust, transport, credential, or authorization policy.

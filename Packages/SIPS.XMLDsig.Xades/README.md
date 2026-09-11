@@ -1,4 +1,4 @@
-# SIPS XMLDsig Xades
+# SPS SIPS XML Security and XAdES
 
 This package provides XML Digital Signature (XMLDSig) and XML Advanced Electronic Signatures (XAdES) for SIPS.
 
@@ -18,7 +18,7 @@ To install the package, follow these steps:
 1. Add the package to your project.
 
 ```bash
-dotnet add package SIPS.XMLDsig.Xades
+dotnet add package Sps.Sips.XmlSecurity.Xades --version 1.0.0
 ```
 
 2. Add the following configuration to your `appsettings.json` file:
@@ -30,12 +30,7 @@ dotnet add package SIPS.XMLDsig.Xades
     "PrivateKeyPath": "",
     "PrivateKeyPassphrase": "", // Use only if the private key is encrypted with a passphrase
     "ChainPath": "",
-    "Algorithms": [
-      "SHA1withRSA",
-      "SHA256withRSA",
-      "SHA384withRSA",
-      "SHA512withRSA"
-    ],
+    "Algorithms": ["SHA256withRSA"],
     "VerificationWindowMinutes": 100,
     "BIC": "",
     "WithoutPKI": false,
@@ -49,3 +44,7 @@ dotnet add package SIPS.XMLDsig.Xades
 ```csharp
 services.AddXades();
 ```
+
+This package implements the qualified SPS-side WP-SIPS-01 trust profile. PAPSS
+consumers must not reuse SPS trust anchors, ownership rules, or profile policy;
+only mechanics proven compatible with authoritative PAPSS material are reusable.

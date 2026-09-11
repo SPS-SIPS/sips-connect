@@ -177,10 +177,7 @@ public sealed class IncomingTransactionHandler(
             {
                 path = "ParseFail";
                 // [PROTOCOL]: admi.002 for technical/protocol errors (SmartVista spec)
-                var err = AdminMessageBuilder.Generate(
-                    AdminRejectReasonCodes.InvalidXML,
-                    "Failed to verify signature or parse ISO20022 message.",
-                    request?.MsgId);
+                var err = SipsReject.Create(message, AdminRejectReasonCodes.InvalidXml, "Failed to verify signature or parse ISO20022 message.");
                 return FinalizeResponse(err, cid, sw, path);
             }
 
@@ -190,10 +187,7 @@ public sealed class IncomingTransactionHandler(
                 path = "MissingTxId";
                 _logger.LogWarning("[{CorrelationId}] [METRIC:ISO_PATH=MissingTxId] Rejecting message with missing TxId. MsgId={MsgId}", cid, request.MsgId);
                 // [PROTOCOL]: admi.002 for mandatory element missing (SmartVista spec)
-                var err = AdminMessageBuilder.Generate(
-                    AdminRejectReasonCodes.MandatoryElementMissing,
-                    "Transaction ID (TxId) is mandatory for de-duplication.",
-                    request.MsgId);
+                var err = SipsReject.Create(message, AdminRejectReasonCodes.MandatoryElementMissing, "Transaction ID (TxId) is mandatory for de-duplication.");
                 return FinalizeResponse(err, cid, sw, path);
             }
 
@@ -211,10 +205,7 @@ public sealed class IncomingTransactionHandler(
                 path = "DbInsertFailed";
                 _logger.LogError("[{CorrelationId}] Failed to insert or retrieve ISOMessage for TxId {TxId}. Rejecting for safety.", cid, request.TxId);
                 // [PROTOCOL]: admi.002 for infrastructure/persistence failure (SmartVista spec)
-                var err = AdminMessageBuilder.Generate(
-                    AdminRejectReasonCodes.TechnicalError,
-                    "Infrastructure failure: unable to record transaction.",
-                    request.MsgId);
+                var err = SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Infrastructure failure: unable to record transaction.");
                 return FinalizeResponse(err, cid, sw, path);
             }
 
@@ -231,10 +222,7 @@ public sealed class IncomingTransactionHandler(
 
                     path = "InvalidStoredResponse";
                     _logger.LogError("[{CorrelationId}] Refusing to replay a stored response whose correlation fields do not match TxId {TxId}.", cid, request.TxId);
-                    var invalidStoredResponse = AdminMessageBuilder.Generate(
-                        AdminRejectReasonCodes.TechnicalError,
-                        "Stored response failed correlation validation.",
-                        request.MsgId);
+                    var invalidStoredResponse = SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Stored response failed correlation validation.");
                     return FinalizeResponse(invalidStoredResponse, cid, sw, path);
                 }
 
@@ -258,10 +246,7 @@ public sealed class IncomingTransactionHandler(
 
                         path = "InvalidStoredResponse";
                         _logger.LogError("[{CorrelationId}] Refusing to replay a newly stored response whose correlation fields do not match TxId {TxId}.", cid, request.TxId);
-                        var invalidStoredResponse = AdminMessageBuilder.Generate(
-                            AdminRejectReasonCodes.TechnicalError,
-                            "Stored response failed correlation validation.",
-                            request.MsgId);
+                        var invalidStoredResponse = SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Stored response failed correlation validation.");
                         return FinalizeResponse(invalidStoredResponse, cid, sw, path);
                     }
                     
@@ -282,10 +267,7 @@ public sealed class IncomingTransactionHandler(
                     await _isoService.AppendAuditLedgerEventAsync(record.Id, ev, gct);
                     
                     // [PROTOCOL]: admi.002 for duplicate message in-process (SmartVista spec)
-                    var err = AdminMessageBuilder.Generate(
-                        AdminRejectReasonCodes.DuplicateMessageInProcess,
-                        "Duplicate transaction is being processed by another request.",
-                        request.MsgId);
+                    var err = SipsReject.Create(message, AdminRejectReasonCodes.DuplicateMessageInProcess, "Duplicate transaction is being processed by another request.");
                     return FinalizeResponse(err, cid, sw, path);
                 }
             }
@@ -504,10 +486,7 @@ public sealed class IncomingTransactionHandler(
             path = "EmergencyCatch";
             _logger.LogCritical(ex, "[{CorrelationId}] [METRIC:ISO_EMERGENCY_PATH] Catastrophic failure for TxId {TxId}. Path={Path}", cid, request?.TxId, path);
             // [PROTOCOL]: admi.002 for catastrophic technical failure (SmartVista spec)
-            var err = AdminMessageBuilder.Generate(
-                AdminRejectReasonCodes.TechnicalError,
-                "Critical failure during processing.",
-                request?.MsgId);
+            var err = SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Critical failure during processing.");
             return FinalizeResponse(err, cid, sw, path);
         }
     }

@@ -3,6 +3,7 @@ using Prometheus;
 using Microsoft.AspNetCore.RateLimiting;
 using static SIPS.Connect.Config.DI;
 using static SIPS.Connect.Extensions.InitializerExtensions;
+using SIPS.Connect.Filters;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration
@@ -22,7 +23,7 @@ builder.Host.UseSerilog((context, configuration) =>
         .Enrich.FromLogContext();
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<ParticipantRailExceptionFilter>());
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDistributedMemoryCache();

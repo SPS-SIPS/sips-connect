@@ -2,6 +2,11 @@ namespace SIPS.ISO20022.Models.DTOs;
 
 public sealed class PaymentRequestDto
 {
+    public string? Rail { get; set; }
+    public string? SenderCountry { get; set; }
+    public string? ReceiverCountry { get; set; }
+    public string? SenderCurrency { get; set; }
+    public string? ReceiverCurrency { get; set; }
     public string ToBIC { get; set; } = default!;
     public string LocalInstrument { get; set; } = default!;
     public string CategoryPurpose { get; set; } = default!;
