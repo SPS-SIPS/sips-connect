@@ -3,6 +3,13 @@
     "VerificationRequest": {
       "FieldMappings": [
         {
+          "InternalField": "Rail",
+          "UserField": "rail",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
           "InternalField": "Alias",
           "UserField": "accNo",
           "Type": "string"
@@ -413,6 +420,33 @@
     },
     "PaymentRequest": {
       "FieldMappings": [
+        {
+          "InternalField": "Rail",
+          "UserField": "rail",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "SenderCountry",
+          "UserField": "papss.senderCountry",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ReceiverCountry",
+          "UserField": "papss.receiverCountry",
+          "Type": "string"
+        },
+        {
+          "InternalField": "SenderCurrency",
+          "UserField": "papss.senderCurrency",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ReceiverCurrency",
+          "UserField": "papss.receiverCurrency",
+          "Type": "string"
+        },
         {
           "InternalField": "ToBIC",
           "UserField": "agent",
@@ -964,6 +998,13 @@
     "StatusRequest": {
       "FieldMappings": [
         {
+          "InternalField": "Rail",
+          "UserField": "rail",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
           "InternalField": "EndToEnd",
           "UserField": "endToEnd",
           "Type": "string"
@@ -1046,6 +1087,28 @@
     "ReturnRequest": {
       "FieldMappings": [
         {
+          "InternalField": "Rail",
+          "UserField": "rail",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "ToBIC",
+          "UserField": "toBIC",
+          "Type": "string"
+        },
+        {
+          "InternalField": "OriginalAmount",
+          "UserField": "originalAmount",
+          "Type": "double"
+        },
+        {
+          "InternalField": "OriginalCurrency",
+          "UserField": "originalCurrency",
+          "Type": "string"
+        },
+        {
           "InternalField": "OriginalTxId",
           "UserField": "txId",
           "Type": "string"
@@ -1070,6 +1133,64 @@
           "UserField": "returnId",
           "Type": "string"
         }
+      ]
+    },
+    "ReadinessRequest": {
+      "FieldMappings": [
+        { "InternalField": "Rail", "UserField": "rail", "Type": "string" },
+        { "InternalField": "PapssId", "UserField": "papssId", "Type": "string", "OmitIfNull": true },
+        { "InternalField": "Bic", "UserField": "bic", "Type": "string", "OmitIfNull": true }
+      ]
+    },
+    "ReadinessResponse": {
+      "FieldMappings": [
+        { "InternalField": "Observation", "UserField": "observation", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "Error", "UserField": "error", "Type": "object", "OmitIfNull": true }
+      ]
+    },
+    "ParticipantDiscoveryRequest": {
+      "FieldMappings": [
+        { "InternalField": "Rail", "UserField": "rail", "Type": "string" },
+        { "InternalField": "Online", "UserField": "online", "Type": "bool", "OmitIfNull": true },
+        { "InternalField": "Type", "UserField": "type", "Type": "string", "OmitIfNull": true },
+        { "InternalField": "Bic", "UserField": "bic", "Type": "string", "OmitIfNull": true },
+        { "InternalField": "PapssId", "UserField": "papssId", "Type": "string", "OmitIfNull": true }
+      ]
+    },
+    "ParticipantDiscoveryResponse": {
+      "FieldMappings": [
+        { "InternalField": "Participants", "UserField": "participants", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "Error", "UserField": "error", "Type": "object", "OmitIfNull": true }
+      ]
+    },
+    "FxRequest": {
+      "FieldMappings": [
+        { "InternalField": "Rail", "UserField": "rail", "Type": "string" },
+        { "InternalField": "SenderCountry", "UserField": "senderCountry", "Type": "string" },
+        { "InternalField": "ReceiverCountry", "UserField": "receiverCountry", "Type": "string" },
+        { "InternalField": "SenderCurrency", "UserField": "senderCurrency", "Type": "string" },
+        { "InternalField": "ReceiverCurrency", "UserField": "receiverCurrency", "Type": "string" },
+        { "InternalField": "ReceiverBank", "UserField": "receiverBank", "Type": "string" },
+        { "InternalField": "LocalInstrument", "UserField": "localInstrument", "Type": "string" },
+        { "InternalField": "Amount", "UserField": "amount", "Type": "double" },
+        { "InternalField": "IsInvoice", "UserField": "isInvoice", "Type": "bool" },
+        { "InternalField": "InvoiceCurrency", "UserField": "invoiceCurrency", "Type": "string", "OmitIfNull": true }
+      ]
+    },
+    "FxResponse": {
+      "FieldMappings": [
+        { "InternalField": "Rates", "UserField": "rates", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "SenderAmount", "UserField": "senderAmount", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "ReceiverAmount", "UserField": "receiverAmount", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "InvoiceAmount", "UserField": "invoiceAmount", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "Error", "UserField": "error", "Type": "object", "OmitIfNull": true }
+      ]
+    },
+    "PapssAdmissionResponse": {
+      "FieldMappings": [
+        { "InternalField": "RequestMessageId", "UserField": "requestMessageId", "Type": "string" },
+        { "InternalField": "Code", "UserField": "code", "Type": "string" },
+        { "InternalField": "DurablyAdmitted", "UserField": "durablyAdmitted", "Type": "bool" }
       ]
     },
     "CB_CompletionNotification": {

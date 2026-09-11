@@ -29,6 +29,6 @@ public sealed class NoOpCertificateService : ICertificateService
 
     public string GetCertificatePem() => throw new InvalidOperationException(ErrorMessage);
 
-    public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string signingTime, string algorithm) 
+    public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string businessLayerId, string signingTime, string algorithm)
         => throw new InvalidOperationException(ErrorMessage);
 }

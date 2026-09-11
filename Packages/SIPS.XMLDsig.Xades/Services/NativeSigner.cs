@@ -7,33 +7,37 @@ using static SIPS.XMLDsig.Xades.Helpers.XmlSecurityHelpers;
 using SIPS.XMLDsig.Xades.Options;
 using System.Security.Cryptography.Xml;
 namespace SIPS.XMLDsig.Xades.Services;
-public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, ICertificateService cs) : INativeSigner
+public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, ICertificateService cs, TimeProvider? timeProvider = null) : INativeSigner
 {
     private readonly ILogger<NativeSigner> _logger = logger;
     private readonly ICertificateService _cs = cs;
     private readonly XadesOptions _configuration = options;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     public string SignEnvelope(string message, string algorithmX = "SHA256withRSA")
     {
         if (_configuration.WithoutPKI)
         {
-            return message;
+            throw new InvalidOperationException("Signing is forbidden when PKI is disabled.");
         }
         if (!VerifyIfAlgorithmIsSupported(_configuration.DefaultSignatureMethod))
         {
             _logger.LogError("The provided algorithm is not supported.");
             throw new InvalidOperationException("The provided algorithm is not supported.");
         }
+        XmlDocument envelope = GetAsXmlDocument(message);
+        var businessLayerId = envelope.DocumentElement?.GetAttribute("Id");
+        if (string.IsNullOrWhiteSpace(businessLayerId))
+            throw new InvalidOperationException("BusinessLayer must have an explicit Id before signing.");
         XmlDocument signatureTemplate = _cs.GetSignatureElement(
              Guid.NewGuid().ToString(),
              Guid.NewGuid().ToString(),
-            DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+             businessLayerId,
+            _timeProvider.GetUtcNow().UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ"),
             algorithm: _configuration.DefaultSignatureMethod
             );
 
         XmlElement? signatureElement = signatureTemplate.GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl)[0] as XmlElement
             ?? throw new InvalidOperationException("Signature element not found.");
-
-        XmlDocument envelope = GetAsXmlDocument(message);
 
         // if (!CheckIfTheMessageAllowed(envelope, BIC: _configuration.BIC, isSigningType: true))
         // {
@@ -50,7 +54,8 @@ public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, IC
         // create the document signature element
         XmlElement documentSgntr = envelope.CreateElement("document", "Sgntr", "urn:iso:std:iso:20022:tech:xsd:head.001.001.03");
         // Add the signature to the AppHdr
-        appHeader.AppendChild(documentSgntr);
+        var related = appHeader.ChildNodes.Cast<XmlNode>().OfType<XmlElement>().SingleOrDefault(x => x.LocalName == "Rltd" && x.NamespaceURI == "urn:iso:std:iso:20022:tech:xsd:head.001.001.03");
+        if (related is null) appHeader.AppendChild(documentSgntr); else appHeader.InsertBefore(documentSgntr, related);
         // AttachCertificatePem(signatureElement!, ns);
         // Update References
         UpdateReferences(signatureElement!, envelope);
@@ -77,24 +82,15 @@ public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, IC
             if (uri.StartsWith("#"))
             {
                 string id = uri[1..];
-                XmlElement elementToDigest = (XmlElement?)signatureElement.SelectSingleNode($"//*[@Id='{id}']", ns)
+                XmlElement elementToDigest = (XmlElement?)signatureElement.OwnerDocument?.SelectSingleNode($"//*[@Id='{id}']", ns)
+                    ?? (XmlElement?)signatureElement.SelectSingleNode($"//*[@Id='{id}']", ns)
+                    ?? (XmlElement?)envelope.SelectSingleNode($"//*[@Id='{id}']", ns)
                     ?? throw new InvalidOperationException($"Element with Id '{id}' not found.");
                 // Canonicalize the element and compute the digest
                 byte[] digest = ComputeDigest(elementToDigest);
 
                 // Update the DigestValue
                 XmlElement? digestValueElement = reference.GetElementsByTagName("DigestValue", SignedXml.XmlDsigNamespaceUrl)[0] as XmlElement ?? throw new InvalidOperationException("DigestValue element not found.");
-                digestValueElement.InnerText = Convert.ToBase64String(digest);
-            }
-            else if (uri == "")
-            {
-                // Canonicalize the entire document and compute the digest
-                var anonymousDataObjectNode = (XmlElement?)envelope.SelectSingleNode("//document:Document", ns) ?? throw new InvalidOperationException("document:Document not found.");
-                byte[] digest = ComputeDigest(anonymousDataObjectNode);
-
-                // Update the DigestValue
-                XmlElement? digestValueElement = reference.GetElementsByTagName("DigestValue", SignedXml.XmlDsigNamespaceUrl)[0] as XmlElement
-                    ?? throw new InvalidOperationException("DigestValue element not found.");
                 digestValueElement.InnerText = Convert.ToBase64String(digest);
             }
             else
@@ -126,7 +122,7 @@ public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, IC
         XmlDocument doc = new();
         doc.AppendChild(doc.ImportNode(element, true));
 
-        XmlDsigC14NTransform transform = new();
+        XmlDsigExcC14NTransform transform = new();
         transform.LoadInput(doc);
         using Stream stream = (Stream)transform.GetOutput(typeof(Stream));
         using StreamReader reader = new(stream);
@@ -150,7 +146,7 @@ public class NativeSigner(XadesOptions options, ILogger<NativeSigner> logger, IC
         XmlDocument doc = new();
         doc.AppendChild(doc.ImportNode(element, true));
         // Canonicalize the element
-        XmlDsigC14NTransform transform = new();
+        XmlDsigExcC14NTransform transform = new();
         transform.LoadInput(doc);
 
         using MemoryStream ms = new();

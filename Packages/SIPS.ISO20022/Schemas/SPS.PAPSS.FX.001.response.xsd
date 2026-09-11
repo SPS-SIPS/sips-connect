@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns="urn:sps:papss:fx:001:response"
+  targetNamespace="urn:sps:papss:fx:001:response" elementFormDefault="qualified">
+  <xs:simpleType name="CurrencyCode"><xs:restriction base="xs:string"><xs:pattern value="[A-Z]{3}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="Text35"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="35"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="Text350"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="350"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="NonNegativeDecimal"><xs:restriction base="xs:decimal"><xs:minInclusive value="0"/><xs:totalDigits value="24"/><xs:fractionDigits value="12"/></xs:restriction></xs:simpleType>
+  <xs:complexType name="Rate"><xs:simpleContent><xs:extension base="NonNegativeDecimal"><xs:attribute name="type" type="Text35" use="required"/><xs:attribute name="updateTime" type="xs:dateTime"/></xs:extension></xs:simpleContent></xs:complexType>
+  <xs:complexType name="Amount"><xs:simpleContent><xs:extension base="NonNegativeDecimal"><xs:attribute name="Ccy" type="CurrencyCode" use="required"/></xs:extension></xs:simpleContent></xs:complexType>
+  <xs:complexType name="Error"><xs:sequence><xs:element name="Code" type="Text35"/><xs:element name="Description" type="Text350" minOccurs="0"/></xs:sequence><xs:attribute name="authority" use="required"><xs:simpleType><xs:restriction base="xs:string"><xs:enumeration value="PAPSS"/><xs:enumeration value="SPS"/></xs:restriction></xs:simpleType></xs:attribute></xs:complexType>
+  <xs:element name="FxRateResponse"><xs:complexType><xs:choice>
+    <xs:sequence>
+      <xs:element name="Rate" type="Rate" maxOccurs="unbounded"/>
+      <xs:element name="SenderAmount" type="Amount"/>
+      <xs:element name="ExchangeAmount" type="Amount"/>
+      <xs:element name="ReceiverAmount" type="Amount"/>
+      <xs:element name="NationalFeeAmount" type="Amount" minOccurs="0"/>
+      <xs:element name="FeeAmount" type="Amount" minOccurs="0"/>
+    </xs:sequence>
+    <xs:element name="Error" type="Error"/>
+  </xs:choice></xs:complexType></xs:element>
+</xs:schema>

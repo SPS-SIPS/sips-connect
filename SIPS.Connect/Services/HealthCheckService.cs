@@ -1,4 +1,5 @@
 using SIPS.Connect.Models;
+using SIPS.Connect.Config;
 using SIPS.Core.Options;
 using SIPS.XMLDsig.Xades.Options;
 using System.Diagnostics;
@@ -19,6 +20,8 @@ public class HealthCheckService : IHealthCheckService
     private readonly XadesOptions _xadesConfig;
     private readonly IBalanceMonitoringService _balanceMonitoringService;
     private readonly ILogger<HealthCheckService> _logger;
+    private readonly PapssFacingOptions _papss;
+    private readonly IPapssHealthState _papssHealth;
 
     public HealthCheckService(
         IHttpClientFactory httpClientFactory,
@@ -26,7 +29,9 @@ public class HealthCheckService : IHealthCheckService
         CoreOptions coreConfig,
         XadesOptions xadesConfig,
         IBalanceMonitoringService balanceMonitoringService,
-        ILogger<HealthCheckService> logger)
+        ILogger<HealthCheckService> logger,
+        PapssFacingOptions papss,
+        IPapssHealthState papssHealth)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
@@ -34,6 +39,8 @@ public class HealthCheckService : IHealthCheckService
         _xadesConfig = xadesConfig;
         _balanceMonitoringService = balanceMonitoringService;
         _logger = logger;
+        _papss = papss;
+        _papssHealth = papssHealth;
     }
 
     public async Task<HealthCheckResponse> CheckHealthAsync(CancellationToken cancellationToken = default)
@@ -45,7 +52,8 @@ public class HealthCheckService : IHealthCheckService
             CheckCorebankAsync(cancellationToken),
 
             // 2. Check Database Availability
-            CheckDatabaseAsync(cancellationToken)
+            CheckDatabaseAsync(cancellationToken),
+            Task.FromResult(CheckPapss())
         };
 
         // Determine if we are in Reviewer (PKI-Off) mode
@@ -130,6 +138,29 @@ public class HealthCheckService : IHealthCheckService
         }
 
         return response;
+    }
+
+    private ComponentHealth CheckPapss()
+    {
+        if (!_papss.Enabled) return new()
+        {
+            Name = "papss", Status = "ok", EndpointStatus = "disabled",
+            HttpResult = "Disabled; no PAPSS dependency access attempted", LastChecked = DateTime.UtcNow
+        };
+        var signingReady = !_xadesConfig.WithoutPKI && File.Exists(_xadesConfig.CertificatePath) && File.Exists(_xadesConfig.PrivateKeyPath);
+        var configured = Uri.TryCreate(_papss.IsoIngressUrl, UriKind.Absolute, out var uri) &&
+            string.Equals(uri.AbsolutePath.TrimEnd('/'), "/sips/messages", StringComparison.Ordinal) &&
+            (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback) && _papss.AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase) && _papss.Participants.Values.Any(x => x.Enabled) && signingReady;
+        var lastSuccess = _papssHealth.LastSuccessfulObservation;
+        var lastFailure = _papssHealth.LastFailure;
+        var fresh = lastSuccess is { } success && DateTimeOffset.UtcNow - success <= TimeSpan.FromSeconds(_papss.ReadinessStaleSeconds) && (lastFailure is null || success > lastFailure);
+        return new()
+        {
+            Name = "papss", Status = configured && fresh ? "ok" : "degraded", EndpointStatus = !configured ? "invalid-configuration" : fresh ? "ready" : "unobserved-or-stale",
+            HttpResult = lastSuccess is { } last ? $"Last authenticated correlated response: {last:O}" : "No authenticated correlated response observed",
+            LastChecked = DateTime.UtcNow,
+            ErrorMessage = !configured ? "PAPSS ingress, allowlist, participant, signing credential, or trust configuration is incomplete" : fresh ? null : _papssHealth.LastFailureReason ?? "No fresh PAPSS readiness observation"
+        };
     }
 
     private async Task<ComponentHealth> CheckCorebankAsync(CancellationToken cancellationToken)
@@ -510,4 +541,3 @@ public class HealthCheckService : IHealthCheckService
     }
 
 }
-

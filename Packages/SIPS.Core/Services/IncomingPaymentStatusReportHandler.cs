@@ -155,7 +155,7 @@ public sealed class IncomingPaymentStatusReportHandler(
                 if (request == null)
                 {
                     _logger.LogWarning("[{CorrelationId}] Failed to verify signature or parse TxId from message: {Message}", cid, message);
-                    return AdminMessage.Generate("Failed to verify signature or parse TxId.");
+                    return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.SignatureInvalid, "Failed to verify signature or parse TxId."));
                 }
             }
 
@@ -169,7 +169,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         if (string.IsNullOrWhiteSpace(request.TxId))
         {
             _logger.LogWarning("[{CorrelationId}] pacs.002 rejected: Mandatory TxId (OrgnlTxId) is missing", cid);
-            return AdminMessage.Generate("Mandatory TxId is missing.");
+            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.MandatoryElementMissing, "Mandatory TxId is missing."));
         }
 
         var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(request.TxId, ct);
@@ -181,7 +181,7 @@ public sealed class IncomingPaymentStatusReportHandler(
         {
             await RecordOrphanStatusReportAsync(request, message, ct);
             _logger.LogInformation("[{CorrelationId}] Status report received before parent transaction was found. TxId={TxId}", cid, request.TxId);
-            return AdminMessage.Generate("Referenced transaction was not found.");
+            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Referenced transaction was not found."));
         }
 
         // Step 3: Record the incoming status report under parent ISOMessage
@@ -237,19 +237,19 @@ public sealed class IncomingPaymentStatusReportHandler(
         if (transaction.Amount != request.Original?.Amount)
         {
             await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Amount", "Invalid Amount", "Invalid Amount", dbCt);
-            return AdminMessage.Generate("Invalid Transaction Amount!");
+            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Invalid Transaction Amount!"));
         }
 
         if (transaction.Currency != request.Original?.Currency)
         {
             await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Currency", "Invalid Currency", "Invalid Currency", dbCt);
-            return AdminMessage.Generate("Invalid Transaction Currency!");
+            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Invalid Transaction Currency!"));
         }
 
         if ((transaction.DebtorAccount != request.Original?.Debtor?.Account) || (transaction.CreditorAccount != request.Original?.Creditor?.Account))
         {
             await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Debtor or Creditor", "Invalid Debtor or Creditor", "Invalid Debtor or Creditor", dbCt);
-            return AdminMessage.Generate("Invalid Transaction Accounts");
+            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Invalid Transaction Accounts"));
         }
 
         // Step 4: Prepare response object (reuse PaymentStatus request response builder)

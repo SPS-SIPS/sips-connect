@@ -90,7 +90,7 @@ public class IncomingTransactionHandlerTests
         var sut = CreateSut(signatureMock: signature);
 
         // Act
-        var result = await sut.HandleAsync("<xml>payload</xml>", CancellationToken.None);
+        var result = await sut.HandleAsync(WpSipsTestEnvelope.Valid(), CancellationToken.None);
 
         // Assert
         result.Should().NotBeNullOrWhiteSpace();
@@ -110,7 +110,7 @@ public class IncomingTransactionHandlerTests
         var sut = CreateSut(signatureMock: signature, parserMock: parser);
 
         // Act
-        var result = await sut.HandleAsync("not-a-valid-iso20022-message", CancellationToken.None);
+        var result = await sut.HandleAsync(WpSipsTestEnvelope.Valid(), CancellationToken.None);
 
         // Assert
         result.Should().NotBeNullOrWhiteSpace();
@@ -128,7 +128,7 @@ public class IncomingTransactionHandlerTests
             .Throws(new InvalidOperationException("signing failed"));
         var sut = CreateSut(signatureMock: signature, signerOverride: signer);
 
-        var act = () => sut.HandleAsync("<xml>payload</xml>", CancellationToken.None);
+        var act = () => sut.HandleAsync(WpSipsTestEnvelope.Valid(), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("signing failed");

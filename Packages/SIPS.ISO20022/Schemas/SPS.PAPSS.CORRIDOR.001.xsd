@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:sps:papss:corridor:001" xmlns="urn:sps:papss:corridor:001" elementFormDefault="qualified">
+  <xs:simpleType name="CountryCode"><xs:restriction base="xs:string"><xs:pattern value="[A-Z]{2}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="CurrencyCode"><xs:restriction base="xs:string"><xs:pattern value="[A-Z]{3}"/></xs:restriction></xs:simpleType>
+  <xs:element name="PapssCorridor">
+    <xs:complexType><xs:sequence>
+      <xs:element name="SenderCountry" type="CountryCode"/>
+      <xs:element name="ReceiverCountry" type="CountryCode"/>
+      <xs:element name="SenderCurrency" type="CurrencyCode"/>
+      <xs:element name="ReceiverCurrency" type="CurrencyCode"/>
+    </xs:sequence></xs:complexType>
+  </xs:element>
+</xs:schema>

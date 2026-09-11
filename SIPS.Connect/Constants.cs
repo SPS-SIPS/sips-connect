@@ -10,6 +10,13 @@ public static class Constants
     public const string StatusRequest = "StatusRequest";
     public const string ReturnRequest = "ReturnRequest";
     public const string ReturnResponse = "ReturnResponse";
+    public const string ReadinessRequest = "ReadinessRequest";
+    public const string ReadinessResponse = "ReadinessResponse";
+    public const string ParticipantDiscoveryRequest = "ParticipantDiscoveryRequest";
+    public const string ParticipantDiscoveryResponse = "ParticipantDiscoveryResponse";
+    public const string FxRequest = "FxRequest";
+    public const string FxResponse = "FxResponse";
+    public const string PapssAdmissionMapping = "PapssAdmissionResponse";
 }
 
 public static class PointOfInitializationMethod
