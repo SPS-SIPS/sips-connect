@@ -35,7 +35,7 @@ To install the package, follow these steps:
 1. Add the package to your project.
 
 ```bash
-dotnet add package Sps.Sips.XmlSecurity.Xades --version 1.0.2
+dotnet add package Sps.Sips.XmlSecurity.Xades --version 1.0.3
 ```
 
 2. Add the following configuration to your `appsettings.json` file:
