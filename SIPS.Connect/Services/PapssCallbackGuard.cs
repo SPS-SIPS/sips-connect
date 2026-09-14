@@ -6,6 +6,7 @@ using SIPS.ISO20022.Models.WpSips;
 using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Enums;
 using SIPS.XMLDsig.Xades.Interfaces;
+using SIPS.XMLDsig.Xades.Models;
 
 namespace SIPS.Connect.Services;
 
@@ -40,7 +41,7 @@ public sealed class PapssCallbackGuard(PapssFacingOptions options, JsonAdapterOp
             if (!allowed.Contains(messageDefinition)) throw new InvalidDataException("The PAPSS financial callback message/profile pairing is invalid.");
             ValidateFinancialReferences(Document(xml), messageDefinition);
         }
-        var verified = await verifier.VerifyWithProvenance(xml, ct);
+        var verified = await verifier.VerifyWithProvenance(xml, XadesProfile.WpSipsPapss, ct);
         if (!verified.Result || verified.Signer is not { FromOwnershipVerified: true } signer || !string.Equals(signer.RepresentedParticipant, options.RemoteWpSipsIdentity, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException("The callback signer is not the configured PAPSS responder.");
         if (!string.Equals(signer.MessageDefinitionId, messageDefinition, StringComparison.Ordinal) || !string.Equals(signer.BusinessService, service, StringComparison.Ordinal))

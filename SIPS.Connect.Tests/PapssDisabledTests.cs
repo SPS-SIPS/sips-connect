@@ -48,7 +48,7 @@ public sealed class PapssDisabledTests
         using var provider = services.BuildServiceProvider();
         Assert.False(provider.GetRequiredService<PapssFacingOptions>().Enabled);
         Assert.True(provider.GetRequiredService<XadesOptions>().WithoutPKI);
-        Assert.Equal(DownstreamRail.Sips, provider.GetRequiredService<IParticipantOperationRouter>().Select("legacy", ParticipantOperation.Payment, null));
+        Assert.Equal(DownstreamRail.Sips, provider.GetRequiredService<IParticipantOperationRouter>().Select(ParticipantOperation.Payment, null));
     }
 }
 
@@ -61,7 +61,7 @@ public sealed class PapssCallbackGuardTests
         { ["bank-a"] = new() { Enabled=true, Bic="BANKSOSIXXX", CallbackMappingProfile="bank-a", CallbackUrl="https://bank.test/callback" } } };
         var mappings = new JsonAdapterOptions { Endpoints = new() { ["bank-a.CB_PaymentRequest"] = new() } };
         var verifier = new Mock<INativeVerifier>();
-        verifier.Setup(x => x.VerifyWithProvenance(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new SignatureVerificationResult(true, new VerboseResult(),
+        verifier.Setup(x => x.VerifyWithProvenance(It.IsAny<string>(), XadesProfile.WpSipsPapss, It.IsAny<CancellationToken>())).ReturnsAsync(new SignatureVerificationResult(true, new VerboseResult(),
             new("PAPSS","CA","test","PAPSS","issuer","1","hash",true,"v1","pacs.008.001.10",options.SecurityProfile,"hash",DateTimeOffset.UtcNow)));
         var xml = $"<FPEnvelope xmlns:h='urn:iso:std:iso:20022:tech:xsd:head.001.001.03'><h:AppHdr><h:Fr><h:FIId><h:FinInstnId><h:Othr><h:Id>PAPSS</h:Id></h:Othr></h:FinInstnId></h:FIId></h:Fr><h:To><h:FIId><h:FinInstnId><h:Othr><h:Id>BANKSOSIXXX</h:Id></h:Othr></h:FinInstnId></h:FIId></h:To><h:BizMsgIdr>M1</h:BizMsgIdr><h:MsgDefIdr>pacs.008.001.10</h:MsgDefIdr><h:BizSvc>{options.SecurityProfile}</h:BizSvc><h:CreDt>2026-01-01T00:00:00Z</h:CreDt></h:AppHdr></FPEnvelope>";
         var route = await new PapssCallbackGuard(options, mappings, verifier.Object).ValidateAsync(xml, CancellationToken.None);
@@ -88,8 +88,8 @@ public sealed class PapssCallbackGuardTests
         var header = document.Descendants().Single(x => x.Name.LocalName == "AppHdr");
         header.Elements().First(x => x.Name.LocalName == "MsgDefIdr").AddAfterSelf(new XElement(header.Name.Namespace + "BizSvc", options.SecurityProfile));
         document.Descendants().First(x => x.Name.LocalName == "Assgne").Descendants().First(x => x.Name.LocalName == "Id").Value = "PAPSS";
-        var signed = pki.Signer.SignEnvelope(document.ToString(SaveOptions.DisableFormatting));
-        var verified = await pki.Verifier.VerifyWithProvenance(signed, CancellationToken.None);
+        var signed = pki.Signer.SignEnvelope(document.ToString(SaveOptions.DisableFormatting), XadesProfile.WpSipsPapss);
+        var verified = await pki.Verifier.VerifyWithProvenance(signed, XadesProfile.WpSipsPapss, CancellationToken.None);
         Assert.True(verified.Result, $"certificate={verified.Verbose.CertificateStatus}; signature={verified.Verbose.SignatureStatus}; references={verified.Verbose.ReferencesStatus}; ownership={verified.Verbose.OwnershSIPStatus}");
 
         var route = await new PapssCallbackGuard(options, Mappings(), pki.Verifier).ValidateAsync(signed, CancellationToken.None);

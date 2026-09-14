@@ -158,10 +158,10 @@ public class GatewayController(
     }
 
     private DownstreamRail Select(ParticipantOperation operation, string? rail)
-        => _operationRouter.Select(User.Identity?.Name ?? throw new ParticipantRailException("PARTICIPANT_IDENTITY_MISSING", "Authenticated participant identity is missing."), operation, rail);
+        => _operationRouter.Select(operation, rail);
 
     private PapssParticipantBinding Binding(ParticipantOperation operation)
-        => _operationRouter.ResolvePapss(User.Identity?.Name ?? throw new ParticipantRailException("PARTICIPANT_IDENTITY_MISSING", "Authenticated participant identity is missing."), operation);
+        => _operationRouter.ResolvePapss(operation);
 
     private async Task<ActionResult> Papss(Func<Task<ActionResult>> action)
     {
