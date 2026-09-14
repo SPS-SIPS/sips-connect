@@ -427,7 +427,7 @@ public static class DI
         {
             if (!participant.Enabled) continue;
             if (string.IsNullOrWhiteSpace(principal) || string.IsNullOrWhiteSpace(participant.Bic))
-                throw new InvalidOperationException("Each enabled PAPSS participant requires a principal key and BIC.");
+                throw new InvalidOperationException("Each enabled PAPSS participant requires a configuration key and BIC.");
             if (options.Participants.Where(x => x.Value.Enabled).Count(x => string.Equals(x.Value.Bic, participant.Bic, StringComparison.OrdinalIgnoreCase)) != 1)
                 throw new InvalidOperationException("Each enabled PAPSS participant BIC must be unique.");
             if (string.IsNullOrWhiteSpace(participant.CallbackMappingProfile) || !configuration.GetSection("Endpoints").GetChildren().Any(x => x.Key.StartsWith(participant.CallbackMappingProfile + ".", StringComparison.Ordinal)))

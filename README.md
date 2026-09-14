@@ -89,11 +89,113 @@ Important configuration areas:
 - `ConnectionStrings:db`
 - `Core`
 - `Xades`
+- `PapssFacing`
 - `ISO20022`
 - `Emv`
 - `Keycloak`
 - `CorsPolicies`
 - `ApiKeys`
+
+## PAPSS Integration
+
+SIPS Connect can route the existing participant operations to either the domestic IPS or PAPSS. Each deployment represents one participant bank. The bank identity is read from `Xades:BIC`; it is not selected from an HTTP identity claim or request payload.
+
+| Request rail | Destination | XAdES profile |
+|---|---|---|
+| omitted, empty, or `SIPS` | Existing SmartVista/IPS endpoint | `IpsVendorLegacy` |
+| `PAPSS` | `PapssFacing:IsoIngressUrl` | `WpSipsPapss` |
+
+PAPSS is disabled by default. A disabled PAPSS configuration does not create a PAPSS network dependency and does not affect existing SmartVista traffic.
+
+### Configuration
+
+Use deployment-specific values and keep private keys and passphrases in the deployment secret store. The following example contains placeholders only:
+
+```json
+{
+  "Xades": {
+    "BIC": "<LOCAL-BANK-BIC>",
+    "CertificatePath": "/certs/<SIGNING-CERTIFICATE>.pem",
+    "PrivateKeyPath": "/certs/<SIGNING-PRIVATE-KEY>.key",
+    "PrivateKeyPassphrase": "<SECRET-INJECTION>",
+    "ChainPath": "/certs/<WP-SIPS-TRUST-CHAIN>.pem",
+    "Algorithms": ["SHA256withRSA"],
+    "DefaultSignatureMethod": "SHA256withRSA",
+    "VerificationWindowMinutes": 100,
+    "WithoutPKI": false,
+    "BaseDN": "<EXPECTED-ISSUING-CA-DN>"
+  },
+  "PapssFacing": {
+    "Enabled": false,
+    "IsoIngressUrl": "https://<PAPSS-SERVICE-HOST>/sips/messages",
+    "AllowedHosts": ["<PAPSS-SERVICE-HOST>"],
+    "Environment": "UAT",
+    "RemoteWpSipsIdentity": "<PAPSS-WP-SIPS-IDENTITY>",
+    "SecurityProfile": "<WP-SIPS-BUSINESS-SERVICE>",
+    "RequestTimeoutSeconds": 30,
+    "MaximumResponseBytes": 2000000,
+    "ReadinessStaleSeconds": 300,
+    "AllowedLocalInstruments": ["<LOCAL-INSTRUMENT>"],
+    "AllowedCorridors": [
+      {
+        "SenderCountry": "<ISO-3166-ALPHA-2>",
+        "ReceiverCountry": "<ISO-3166-ALPHA-2>",
+        "SenderCurrency": "<ISO-4217>",
+        "ReceiverCurrency": "<ISO-4217>",
+        "DestinationBic": "<DESTINATION-BIC>",
+        "LocalInstruments": ["<LOCAL-INSTRUMENT>"]
+      }
+    ],
+    "Participants": {
+      "local-bank": {
+        "Enabled": true,
+        "Bic": "<SAME-AS-XADES-BIC>",
+        "AllowedOperations": [
+          "Verification",
+          "Payment",
+          "Status",
+          "Return",
+          "Readiness",
+          "Discovery",
+          "Fx"
+        ],
+        "CallbackMappingProfile": "papss-callback-v1",
+        "CallbackUrl": "https://<BANK-INTERNAL-HOST>/<CALLBACK-PATH>"
+      }
+    }
+  }
+}
+```
+
+`PapssFacing:Participants` is optional for outbound routing. When it is absent, `PapssFacing:Enabled` enables outbound operations for the local `Xades:BIC`. Configure a participant entry when operation restrictions or asynchronous callback delivery are required. Its `Bic` must match `Xades:BIC`; its key (`local-bank` above) is only a mapping-profile label.
+
+All PAPSS operations use one service ingress:
+
+```text
+POST https://<PAPSS-SERVICE-HOST>/sips/messages
+Content-Type: application/xml
+signed ISO 20022 using WpSipsPapss
+```
+
+The existing `/Verify`, `/Payment`, `/Status`, and `/Return` JSON mappings accept an optional `rail` field. Omitting it preserves domestic IPS behavior. `/Readiness`, `/Discovery`, and `/FX` are PAPSS-only and require `rail=PAPSS`.
+
+### Safe enablement
+
+1. Deploy SIPS Connect with `PapssFacing:Enabled=false`.
+2. Verify normal SmartVista/IPS traffic and health.
+3. Install the local WP-SIPS signing certificate/private key and the PAPSS verification trust chain.
+4. Configure `/sips/messages`, its allowed host, the expected PAPSS identity, security profile, corridors, and instruments.
+5. Load the PAPSS request and callback JSON adapter mappings.
+6. Set `PapssFacing:Enabled=true` and restart SIPS Connect so startup validation runs.
+7. Verify readiness, then test `Verification` before enabling financial UAT flows.
+
+Use `Sps.Sips.XmlSecurity.Xades` version `1.0.2` or later. Version `1.0.2` keeps the PAPSS identified-envelope signature while removing the PAPSS-only `FPEnvelope/@Id` from legacy IPS messages.
+
+Detailed integration and mapping guidance:
+
+- [PAPSS Bank Integration Guide](docs/PAPSS_BANK_INTEGRATION_GUIDE.md)
+- [PAPSS Participant Adapter](docs/PAPSS_PARTICIPANT_ADAPTER.md)
+- [XAdES Profile-Separation Evidence](docs/XADES_PROFILE_SEPARATION_EVIDENCE.md)
 
 ---
 

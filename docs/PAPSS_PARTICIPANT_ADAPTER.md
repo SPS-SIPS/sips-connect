@@ -9,7 +9,7 @@ The existing authenticated JSON endpoints remain unchanged:
 - `POST /api/v1/Gateway/Status`
 - `POST /api/v1/Gateway/Return`
 
-An omitted `rail` continues to select `SIPS`. A supplied rail is a closed enum: `SIPS` or `PAPSS`. PAPSS selection is allowed only when the global feature is enabled and the authenticated API-key/JWT participant is enabled for that operation. The participant identity is derived from the authenticated principal; request bodies cannot select another participant.
+An omitted `rail` continues to select `SIPS`. A supplied rail is a closed enum: `SIPS` or `PAPSS`. PAPSS selection is allowed only when the global feature is enabled. Each deployment represents one bank and uses its existing `Xades:BIC` as the local participant identity; request bodies and HTTP identity claims cannot select another participant. If optional participant capability entries are present, the enabled entry matching `Xades:BIC` must permit the operation.
 
 PAPSS adds the same optional `rail` field to the existing request mappings. A PAPSS payment also supplies `papss.senderCountry`, `papss.receiverCountry`, `papss.senderCurrency`, and `papss.receiverCurrency`. These values are carried in signed `pacs.008` supplementary data and are recovered when the ISO message is parsed. PAPSS status additionally needs `endToEnd`, `txId`, and `toBIC`; returns need `toBIC`, `originalAmount`, and `originalCurrency`.
 
@@ -60,12 +60,12 @@ Example:
 
 ## Security and operations
 
-Outbound traffic uses one configured PAPSS ISO ingress, `application/xml`, a correlation header, bounded time and response size, signed envelopes, response signature/provenance verification, schema/profile validation, and financial/information correlation checks. The authenticated principal selects exactly one configured participant BIC, which becomes BAH `From`; PAPSS is BAH `To`. Response signer identity, BAH reversal, message type, service, original message identifier, and applicable transaction references are checked before parsing.
+Outbound traffic uses one configured PAPSS ISO ingress, `application/xml`, a correlation header, bounded time and response size, signed envelopes, response signature/provenance verification, schema/profile validation, and financial/information correlation checks. The deployment's `Xades:BIC` becomes BAH `From`; PAPSS is BAH `To`. Response signer identity, BAH reversal, message type, service, original message identifier, and applicable transaction references are checked before parsing.
 
 Reverse traffic continues to enter through the existing signed-ISO `/api/v1/Incoming` endpoint. PAPSS callbacks are verified before dispatch, resolved by BAH `To` to one configured participant, and execute under an async-local callback mapping scope. Mapping keys use `<CallbackMappingProfile>.<existing mapping name>` (for example `participant-callback-v1.CB_PaymentRequest`), so the accepted duplicate suppression, ambiguous-delivery handling, and recall refusal remain in the existing Core handlers while participant-specific JSON shapes are selected safely per request.
 
 Roll out with `Enabled=false`, configure trust and participant capabilities, validate connectivity in a non-production environment, then enable one participant and operation at a time. Rollback is setting `PapssFacing:Enabled=false`; omitted-rail requests continue down the original SmartVista/SIPS path.
 
-## Known upstream dependency
+## Qualified counterpart
 
-At PAPSS commit `41f8f44fb8b65bb61fcc2ef156777ff56eba1cac`, the service exposes only `POST /sips/payments` as unsigned JSON. That is incompatible with the signed ISO-only boundary required by this adapter. Do not enable PAPSS routing until the patch in `PAPSS_COMMON_INGRESS_PATCH.md` is implemented and its conformance tests pass.
+The signed ISO boundary was bilaterally qualified with PAPSS commit `05ae5e2dc1494ca30e703bb81394d3f439ead3be`. The bank-facing request examples, callback duties, error handling, and UAT checklist are documented in `PAPSS_BANK_INTEGRATION_GUIDE.md`.

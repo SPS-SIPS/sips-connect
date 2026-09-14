@@ -9,6 +9,7 @@ using SIPS.ISO20022.Models.DTOs;
 using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Models.WpSips;
 using SIPS.XMLDsig.Xades.Interfaces;
+using SIPS.XMLDsig.Xades.Models;
 
 namespace SIPS.Connect.Services;
 
@@ -85,8 +86,8 @@ public sealed class PapssFacingSipsClient(
         try
         {
             var id = Id(); var header = new BusinessHeader(participant.Bic, options.RemoteWpSipsIdentity, id, "admi.009.001.02", profile, DateTimeOffset.UtcNow);
-            var unsigned = build(header, id); var signed = signer.SignEnvelope(unsigned); var response = await PostAsync(signed, id, ct);
-            var verified = await verifier.VerifyWithProvenance(response, ct);
+            var unsigned = build(header, id); var signed = signer.SignEnvelope(unsigned, XadesProfile.WpSipsPapss); var response = await PostAsync(signed, id, ct);
+            var verified = await verifier.VerifyWithProvenance(response, XadesProfile.WpSipsPapss, ct);
             if (!verified.Result || verified.Signer is null) throw new UnauthorizedAccessException("Invalid signed WP-SIPS response.");
             ValidateSignerAndHeader(verified.Signer, participant, response, "admi.010.001.02", profile);
             WpSipsProtocolValidator.ValidateCorrelation(signed, response);
@@ -102,8 +103,8 @@ public sealed class PapssFacingSipsClient(
         {
             var profiled = SetBusinessService(unsigned, options.SecurityProfile);
             var requestMsgId = Value(SecureDocument(profiled).Descendants().Single(x => x.Name.LocalName == "AppHdr"), "BizMsgIdr");
-            var signed = signer.SignEnvelope(profiled); var response = await PostAsync(signed, requestMsgId, ct);
-            var verified = await verifier.VerifyWithProvenance(response, ct);
+            var signed = signer.SignEnvelope(profiled, XadesProfile.WpSipsPapss); var response = await PostAsync(signed, requestMsgId, ct);
+            var verified = await verifier.VerifyWithProvenance(response, XadesProfile.WpSipsPapss, ct);
             if (!verified.Result || verified.Signer is null) throw new UnauthorizedAccessException("Invalid signed WP-SIPS response.");
             ValidateSignerAndHeader(verified.Signer, participant, response, WpSipsMessageTypes.MessageReject, options.SecurityProfile);
             WpSipsProtocolValidator.Validate(response);

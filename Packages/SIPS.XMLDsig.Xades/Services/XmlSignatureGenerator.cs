@@ -4,10 +4,16 @@ namespace SIPS.XMLDsig.Xades.Services;
 public static class XmlSignatureGenerator
 {
     public static XDocument GenerateSignatureXml(string keyInfoId, string signedPropsId, string businessLayerId, string certificateDigest, string x509IssuerName, string x509SerialNumber, string signingTime, string algorithm)
+        => GenerateSignatureXml(keyInfoId, signedPropsId, businessLayerId, certificateDigest, x509IssuerName, x509SerialNumber, signingTime, algorithm, XadesProfile.IpsVendorLegacy);
+
+    public static XDocument GenerateSignatureXml(string keyInfoId, string signedPropsId, string businessLayerId, string certificateDigest, string x509IssuerName, string x509SerialNumber, string signingTime, string algorithm, XadesProfile profile)
     {
         XNamespace ds = "http://www.w3.org/2000/09/xmldsig#";
         XNamespace xades = "http://uri.etsi.org/01903/v1.3.2#";
         var signatureAlgorithm = SignatureAlgorithmURL(algorithm);
+        if (profile == XadesProfile.IpsVendorLegacy)
+            return GenerateLegacy(keyInfoId, signedPropsId, x509IssuerName, x509SerialNumber, signingTime, signatureAlgorithm);
+
         var signatureId = $"{signedPropsId}-signature";
         XDocument signatureDoc = new(
             new XElement(ds + "Signature", new XAttribute(XNamespace.Xmlns + "ds", ds), new XAttribute("Id", signatureId),
@@ -68,6 +74,44 @@ public static class XmlSignatureGenerator
         );
 
         return signatureDoc;
+    }
+
+    private static XDocument GenerateLegacy(string keyInfoId, string signedPropsId, string x509IssuerName, string x509SerialNumber, string signingTime, string signatureAlgorithm)
+    {
+        XNamespace ds = "http://www.w3.org/2000/09/xmldsig#";
+        XNamespace xades = "http://uri.etsi.org/01903/v1.3.2#";
+        return new(
+            new XElement(ds + "Signature", new XAttribute(XNamespace.Xmlns + "ds", ds),
+                new XElement(ds + "SignedInfo",
+                    new XElement(ds + "CanonicalizationMethod", new XAttribute("Algorithm", "http://www.w3.org/2001/10/xml-exc-c14n#")),
+                    new XElement(ds + "SignatureMethod", new XAttribute("Algorithm", signatureAlgorithm)),
+                    Reference(ds, $"#{keyInfoId}"),
+                    Reference(ds, $"#{signedPropsId}-signedprops", "http://uri.etsi.org/01903/v1.3.2#SignedProperties"),
+                    Reference(ds, null)),
+                new XElement(ds + "SignatureValue"),
+                new XElement(ds + "KeyInfo", new XAttribute("Id", keyInfoId),
+                    new XElement(ds + "X509Data",
+                        new XElement(ds + "X509IssuerSerial",
+                            new XElement(ds + "X509IssuerName", x509IssuerName),
+                            new XElement(ds + "X509SerialNumber", x509SerialNumber)))),
+                new XElement(ds + "Object",
+                    new XElement(xades + "QualifyingProperties", new XAttribute(XNamespace.Xmlns + "xades", xades),
+                        new XElement(xades + "SignedProperties", new XAttribute("Id", $"{signedPropsId}-signedprops"),
+                            new XElement(xades + "SignedSignatureProperties",
+                                new XElement(xades + "SigningTime", signingTime)))))));
+
+        static XElement Reference(XNamespace ds, string? uri, string? type = null)
+        {
+            var element = new XElement(ds + "Reference");
+            if (uri is not null) element.Add(new XAttribute("URI", uri));
+            if (type is not null) element.Add(new XAttribute("Type", type));
+            element.Add(
+                new XElement(ds + "Transforms",
+                    new XElement(ds + "Transform", new XAttribute("Algorithm", "http://www.w3.org/2001/10/xml-exc-c14n#"))),
+                new XElement(ds + "DigestMethod", new XAttribute("Algorithm", "http://www.w3.org/2001/04/xmlenc#sha256")),
+                new XElement(ds + "DigestValue", uri is null ? "digestValue3" : type is null ? "digestValue1" : "digestValue2"));
+            return element;
+        }
     }
 
     private static string SignatureAlgorithmURL(string algorithm)

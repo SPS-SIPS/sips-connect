@@ -153,7 +153,13 @@ public sealed class CertificateService : ICertificateService
 
         return certificate;
     }
+    public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string signingTime, string algorithm)
+        => GetSignatureElement(keyInfoId, signedPropsId, string.Empty, signingTime, algorithm, XadesProfile.IpsVendorLegacy);
+
     public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string businessLayerId, string signingTime, string algorithm)
+        => GetSignatureElement(keyInfoId, signedPropsId, businessLayerId, signingTime, algorithm, XadesProfile.IpsVendorLegacy);
+
+    public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string businessLayerId, string signingTime, string algorithm, XadesProfile profile)
     {
         keyInfoId = "_" + keyInfoId;
         signedPropsId = "_" + signedPropsId;
@@ -161,7 +167,7 @@ public sealed class CertificateService : ICertificateService
         var x509SerialNumber = Certificate!.SerialNumber.ToString();
 
         var certificateDigest = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(Certificate.GetEncoded()));
-        XDocument signatureDoc = XmlSignatureGenerator.GenerateSignatureXml(keyInfoId, signedPropsId, businessLayerId, certificateDigest, x509IssuerName, x509SerialNumber, signingTime, algorithm);
+        XDocument signatureDoc = XmlSignatureGenerator.GenerateSignatureXml(keyInfoId, signedPropsId, businessLayerId, certificateDigest, x509IssuerName, x509SerialNumber, signingTime, algorithm, profile);
 
         XmlDocument signatureElement = new()
         {
@@ -224,6 +230,46 @@ public sealed class CertificateService : ICertificateService
                 }
                 current = issuer;
             }
+        }
+        catch (InvalidKeyException ex) { return (false, ex.Message); }
+        catch (SignatureException ex) { return (false, ex.Message); }
+        catch (CertificateExpiredException ex) { return (false, ex.Message); }
+        catch (CertificateNotYetValidException ex) { return (false, ex.Message); }
+    }
+
+    public (bool isValid, string? ex) CheckValidity(X509Certificate certificate, XadesProfile profile)
+    {
+        if (profile == XadesProfile.WpSipsPapss)
+            return CheckValidity(certificate);
+
+        try
+        {
+            if (certificate.IssuerDN.Equivalent(certificate.SubjectDN))
+            {
+                certificate.Verify(certificate.GetPublicKey());
+                certificate.CheckValidity();
+                return (true, "");
+            }
+
+            var possibleIssuers = Chain.Where(candidate => candidate.SubjectDN.Equivalent(certificate.IssuerDN)).ToList();
+            if (possibleIssuers.Count == 0)
+                return (false, $"Issuer not found in configured certificate chain: {certificate.IssuerDN}");
+
+            foreach (var issuer in possibleIssuers)
+            {
+                try
+                {
+                    certificate.Verify(issuer.GetPublicKey());
+                    certificate.CheckValidity();
+                    return (true, "");
+                }
+                catch
+                {
+                    // Historical IPS behavior tries every subject-matching issuer.
+                }
+            }
+
+            return (false, "No matching issuer could verify the certificate signature.");
         }
         catch (InvalidKeyException ex) { return (false, ex.Message); }
         catch (SignatureException ex) { return (false, ex.Message); }

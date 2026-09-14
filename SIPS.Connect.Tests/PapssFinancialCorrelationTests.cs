@@ -50,9 +50,9 @@ public sealed class PapssFinancialCorrelationTests
     private static PapssFacingSipsClient Client(bool wrongMessage)
     {
         var options = Options();
-        var signer = new Mock<INativeSigner>(); signer.Setup(x => x.SignEnvelope(It.IsAny<string>(), It.IsAny<string>())).Returns<string, string>((xml, _) => xml);
+        var signer = new Mock<INativeSigner>(); signer.Setup(x => x.SignEnvelope(It.IsAny<string>(), XadesProfile.WpSipsPapss, It.IsAny<string>())).Returns<string, XadesProfile, string>((xml, _, _) => xml);
         var verifier = new Mock<INativeVerifier>();
-        verifier.Setup(x => x.VerifyWithProvenance(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new SignatureVerificationResult(true, new VerboseResult(),
+        verifier.Setup(x => x.VerifyWithProvenance(It.IsAny<string>(), XadesProfile.WpSipsPapss, It.IsAny<CancellationToken>())).ReturnsAsync(new SignatureVerificationResult(true, new VerboseResult(),
             new("PAPSS", "CA", "test", "PAPSS", "issuer", "1", "hash", true, "v1", "admi.002.001.01", options.SecurityProfile, "hash", DateTimeOffset.UtcNow)));
         var http = new HttpClient(new ResponseHandler(requestXml => Response(requestXml, wrongMessage)));
         return new PapssFacingSipsClient(options, http, signer.Object, verifier.Object, new PapssHealthState(), NullLogger<PapssFacingSipsClient>.Instance);
