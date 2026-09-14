@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>Sps.Sips.Iso20022</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>Abdulshakur Ahmed</Authors>
     <Product>SPS SIPS ISO 20022</Product>
     <Title>SPS SIPS ISO 20022</Title>

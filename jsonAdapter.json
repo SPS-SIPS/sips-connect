@@ -77,7 +77,7 @@
         },
         {
           "InternalField": "Type",
-          "UserField": "type",
+          "UserField": "accountType",
           "Type": "string",
           "OmitIfNull": true,
           "OmitIfEmpty": true
