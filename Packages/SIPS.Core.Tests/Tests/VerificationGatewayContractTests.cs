@@ -147,6 +147,30 @@ public class VerificationGatewayContractTests
     [InlineData("jsonAdapter.json")]
     [InlineData("jsonAdapter.node-a.json")]
     [InlineData("jsonAdapter.node-b.json")]
+    public void CB_VerificationRequest_Uses_CoreBank_AccountType_Field(string adapterFile)
+    {
+        var adapterPath = Path.Combine(_basePath, adapterFile);
+        var jsonContent = File.ReadAllText(adapterPath);
+        var options = JsonSerializer.Deserialize<JsonAdapterOptions>(jsonContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var adapter = new JsonAdapter(options, NullLogger<JsonAdapter>.Instance);
+
+        var transformed = adapter.Transform(new
+        {
+            AccountNo = "401005007403",
+            Type = "ACCT",
+            Agent = "ZKBASOS0",
+            VerificationId = "VERIFY-1"
+        }, "CB_VerificationRequest");
+
+        Assert.Equal("401005007403", transformed["accountNo"]?.GetValue<string>());
+        Assert.Equal("ACCT", transformed["accountType"]?.GetValue<string>());
+        Assert.False(transformed.ContainsKey("type"));
+    }
+
+    [Theory]
+    [InlineData("jsonAdapter.json")]
+    [InlineData("jsonAdapter.node-a.json")]
+    [InlineData("jsonAdapter.node-b.json")]
     public void VerifyPayee_JsonResponse_Includes_Normalized_Bill_Details(string adapterFile)
     {
         var adapterPath = Path.Combine(_basePath, adapterFile);
