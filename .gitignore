@@ -181,6 +181,7 @@ $tf/
 *.e2e
 *.env
 *.env*
+!.env.example
 *.gpState
 *.ilk
 *.iobj

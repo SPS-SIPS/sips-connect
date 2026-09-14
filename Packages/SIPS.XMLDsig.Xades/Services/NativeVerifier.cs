@@ -18,6 +18,9 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
     private readonly XadesOptions _configuration = options;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     public async Task<SignatureVerificationResult> VerifyWithProvenance(string message, CancellationToken cancellationToken)
+        => await VerifyWithProvenance(message, XadesProfile.IpsVendorLegacy, cancellationToken);
+
+    public async Task<SignatureVerificationResult> VerifyWithProvenance(string message, XadesProfile profile, CancellationToken cancellationToken)
     {
         if (_configuration.WithoutPKI) return new(false,new VerboseResult{CertificateStatus="Not Verified",SignatureStatus="Not Verified",ReferencesStatus="Not Verified",OwnershSIPStatus="Not Verified"},null);
         try
@@ -28,19 +31,20 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         var serial = keyInfo.GetElementsByTagName("X509SerialNumber", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single().InnerText;
         var issuer = keyInfo.GetElementsByTagName("X509IssuerName", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single().InnerText.Trim();
         var (record, error) = await _cdService.GetCertificatesAsync(serial, issuer, cancellationToken);
-        if (record is null || record.Revoked || string.IsNullOrWhiteSpace(record.Authority) || string.IsNullOrWhiteSpace(record.Environment) || string.IsNullOrWhiteSpace(record.RepresentedParticipant) || string.IsNullOrWhiteSpace(record.CertificateSha256) || string.IsNullOrWhiteSpace(record.TrustProfileVersion) || string.IsNullOrWhiteSpace(record.RequiredExtendedKeyUsageOid))
+        if (record is null || profile == XadesProfile.WpSipsPapss &&
+            (record.Revoked || string.IsNullOrWhiteSpace(record.Authority) || string.IsNullOrWhiteSpace(record.Environment) || string.IsNullOrWhiteSpace(record.RepresentedParticipant) || string.IsNullOrWhiteSpace(record.CertificateSha256) || string.IsNullOrWhiteSpace(record.TrustProfileVersion) || string.IsNullOrWhiteSpace(record.RequiredExtendedKeyUsageOid)))
         {
             var failed=new VerboseResult{CertificateStatus=error ?? "Signer provenance is incomplete or revoked",SignatureStatus="Not Verified",ReferencesStatus="Not Verified",OwnershSIPStatus="Not Verified"};
             return new(false, failed, null);
         }
-        var basic = await VerifySignatureCore(message, true, cancellationToken, record);
+        var basic = await VerifySignatureCore(message, true, profile, cancellationToken, record);
         if (!basic.result) return new(false, basic.verbose, null);
         var certificate=_cs.CertificateFromPem(record.Content);var fingerprint=Convert.ToHexString(SHA256.HashData(certificate.GetEncoded())).ToLowerInvariant();
-        if(!StringComparer.OrdinalIgnoreCase.Equals(fingerprint,record.CertificateSha256))return new(false,basic.verbose,null);
+        if(profile == XadesProfile.WpSipsPapss && !StringComparer.OrdinalIgnoreCase.Equals(fingerprint,record.CertificateSha256))return new(false,basic.verbose,null);
         var headerNs="urn:iso:std:iso:20022:tech:xsd:head.001.001.03";var app=envelope.GetElementsByTagName("AppHdr",headerNs).Cast<XmlElement>().Single();
         var definition=app.GetElementsByTagName("MsgDefIdr",headerNs).Cast<XmlElement>().First().InnerText;var service=app.GetElementsByTagName("BizSvc",headerNs).Cast<XmlElement>().FirstOrDefault()?.InnerText??string.Empty;
-        var protectedHash=Convert.ToHexString(SHA256.HashData(CanonicalizeElement(envelope.DocumentElement!))).ToLowerInvariant();
-        return new(true, basic.verbose, new(record.Owner, record.Authority, record.Environment, record.RepresentedParticipant, issuer, serial, fingerprint, true, record.TrustProfileVersion, definition, service, protectedHash, _timeProvider.GetUtcNow()));
+        var protectedHash=Convert.ToHexString(SHA256.HashData(CanonicalizeElement(envelope.DocumentElement!, profile))).ToLowerInvariant();
+        return new(true, basic.verbose, new(record.Owner, record.Authority ?? string.Empty, record.Environment ?? string.Empty, record.RepresentedParticipant ?? string.Empty, issuer, serial, fingerprint, true, record.TrustProfileVersion ?? string.Empty, definition, service, protectedHash, _timeProvider.GetUtcNow()));
         }
         catch(Exception ex)
         {
@@ -49,8 +53,10 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         }
     }
     public Task<(bool result, VerboseResult verbose)> VerifySignature(string message, bool checkOwnerShip, CancellationToken cancellationToken)
-        => VerifySignatureCore(message, checkOwnerShip, cancellationToken, null);
-    private async Task<(bool result, VerboseResult verbose)> VerifySignatureCore(string message, bool checkOwnerShip, CancellationToken cancellationToken, SIPS.XMLDsig.Xades.Models.CertificateDownloadResponse? suppliedRecord)
+        => VerifySignatureCore(message, checkOwnerShip, XadesProfile.IpsVendorLegacy, cancellationToken, null);
+    public Task<(bool result, VerboseResult verbose)> VerifySignature(string message, bool checkOwnerShip, XadesProfile profile, CancellationToken cancellationToken)
+        => VerifySignatureCore(message, checkOwnerShip, profile, cancellationToken, null);
+    private async Task<(bool result, VerboseResult verbose)> VerifySignatureCore(string message, bool checkOwnerShip, XadesProfile profile, CancellationToken cancellationToken, SIPS.XMLDsig.Xades.Models.CertificateDownloadResponse? suppliedRecord)
     {
         _logger.LogDebug("Verifying the signature of the message.");
         if (_configuration.WithoutPKI)
@@ -88,8 +94,11 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             XmlElement signedInfoElement = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "ds:SignedInfo");
             XmlElement signatureAlgorithm = GetFirstOfXmlElementsByTagWithPrefix(signedInfoElement, "ds:SignatureMethod");
             XmlElement SigningTime = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "xades:SigningTime");
-            ValidateWpSipsProfile(envelope, signatureElement, signedInfoElement, signatureAlgorithm);
-            var (isValid, signingCertificate, owner) = await ValidateCertificate(signatureElement, cancellationToken, suppliedRecord);
+            if (profile == XadesProfile.WpSipsPapss)
+                ValidateWpSipsProfile(envelope, signatureElement, signedInfoElement, signatureAlgorithm);
+            else
+                ValidateIpsVendorLegacyProfile(signatureElement, signedInfoElement, signatureAlgorithm);
+            var (isValid, signingCertificate, owner) = await ValidateCertificate(signatureElement, profile, cancellationToken, suppliedRecord);
 
             if (!isValid)
             {
@@ -98,7 +107,8 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
                 return (false, vr);
             }
             vr.CertificateStatus = "Valid";
-            ValidateSigningCertificateDigest(signatureElement, signingCertificate!);
+            if (profile == XadesProfile.WpSipsPapss)
+                ValidateSigningCertificateDigest(signatureElement, signingCertificate!);
 
             if (checkOwnerShip)
             {
@@ -112,19 +122,20 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
                 vr.OwnershSIPStatus = "Valid";
             }
 
-            if (!VerifyReferences(envelope, ns, signatureElement, signedInfoElement, vr))
+            if (!VerifyReferences(envelope, ns, signatureElement, signedInfoElement, profile, vr))
             {
                 return (false, vr);
             }
 
-            if (!VerifyValidationWindow(SigningTime.InnerText))
+            if (profile == XadesProfile.WpSipsPapss && !VerifyValidationWindow(SigningTime.InnerText))
             {
                 vr.SignatureStatus = "The signature is not within the validation window.";
                 return (false, vr);
             }
-            ValidateTimestampCorrelation(envelope, SigningTime.InnerText, _timeProvider.GetUtcNow());
+            if (profile == XadesProfile.WpSipsPapss)
+                ValidateTimestampCorrelation(envelope, SigningTime.InnerText, _timeProvider.GetUtcNow());
 
-            var isSignatureValid = VerifySignatureValue(signatureElement, signedInfoElement, signingCertificate!, signatureAlgorithm);
+            var isSignatureValid = VerifySignatureValue(signatureElement, signedInfoElement, signingCertificate!, signatureAlgorithm, profile);
             vr.SignatureStatus = isSignatureValid ? "Valid" : "Invalid";
             return (
                 isSignatureValid,
@@ -144,20 +155,28 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         const string exc = "http://www.w3.org/2001/10/xml-exc-c14n#";
         const string sha256 = "http://www.w3.org/2001/04/xmlenc#sha256";
         const string rsaSha256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
-        if (envelope.GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl).Count != 1 ||
-            signatureMethod.GetAttribute("Algorithm") != rsaSha256 ||
-            GetFirstOfXmlElementsByTagWithPrefix(signedInfo, "ds:CanonicalizationMethod").GetAttribute("Algorithm") != exc)
-            throw new CryptographicException("Signature algorithms or cardinality do not match the WP-SIPS profile.");
+        if (envelope.GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl).Count != 1)
+            throw new CryptographicException("The WP-SIPS/PAPSS profile requires exactly one Signature element.");
+        if (signatureMethod.GetAttribute("Algorithm") != rsaSha256)
+            throw new CryptographicException("The WP-SIPS/PAPSS signature method must be RSA-SHA256.");
+        if (GetFirstOfXmlElementsByTagWithPrefix(signedInfo, "ds:CanonicalizationMethod").GetAttribute("Algorithm") != exc)
+            throw new CryptographicException("The WP-SIPS/PAPSS SignedInfo canonicalization must be exclusive C14N.");
         var refs = signedInfo.GetElementsByTagName("Reference", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().ToArray();
-        if (refs.Length != 3 || refs.Any(r => !r.GetAttribute("URI").StartsWith('#') || ((XmlElement?)r.GetElementsByTagName("DigestMethod", SignedXml.XmlDsigNamespaceUrl)[0])?.GetAttribute("Algorithm") != sha256))
-            throw new CryptographicException("The WP-SIPS profile requires exactly three identified SHA-256 references.");
+        if (refs.Length != 3)
+            throw new CryptographicException("The WP-SIPS/PAPSS profile requires exactly three references.");
+        if (refs.Any(r => ((XmlElement?)r.GetElementsByTagName("DigestMethod", SignedXml.XmlDsigNamespaceUrl)[0])?.GetAttribute("Algorithm") != sha256))
+            throw new CryptographicException("Every WP-SIPS/PAPSS reference must use SHA-256.");
+        if (refs.Any(r => !r.HasAttribute("URI") || string.IsNullOrWhiteSpace(r.GetAttribute("URI")) || !r.GetAttribute("URI").StartsWith('#')))
+            throw new CryptographicException("Every WP-SIPS/PAPSS reference requires a non-empty fragment URI.");
         var rootId = envelope.DocumentElement?.GetAttribute("Id");
         var ids = envelope.SelectNodes("//*[@Id]")!.Cast<XmlElement>().Select(x => x.GetAttribute("Id")).ToArray();
         if (ids.Any(string.IsNullOrWhiteSpace) || ids.Distinct(StringComparer.Ordinal).Count() != ids.Length) throw new CryptographicException("Signature target Id values must be non-empty and unique.");
         foreach(var id in ids) try { XmlConvert.VerifyNCName(id); } catch(XmlException ex) { throw new CryptographicException("Signature target Id is not a valid XML ID.",ex); }
-        var rootRef = refs.SingleOrDefault(r => r.GetAttribute("URI") == "#" + rootId) ?? throw new CryptographicException("BusinessLayer reference is missing.");
+        if (string.IsNullOrWhiteSpace(rootId)) throw new CryptographicException("The WP-SIPS/PAPSS FPEnvelope root requires an Id.");
+        var rootRef = refs.SingleOrDefault(r => r.GetAttribute("URI") == "#" + rootId) ?? throw new CryptographicException("The WP-SIPS/PAPSS reference set does not target the FPEnvelope root Id.");
         var transforms = rootRef.GetElementsByTagName("Transform", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Select(x => x.GetAttribute("Algorithm")).ToArray();
-        if (!transforms.SequenceEqual(new[] { SignedXml.XmlDsigEnvelopedSignatureTransformUrl, exc })) throw new CryptographicException("BusinessLayer transforms do not match the WP-SIPS profile.");
+        if (!transforms.Contains(SignedXml.XmlDsigEnvelopedSignatureTransformUrl, StringComparer.Ordinal)) throw new CryptographicException("The WP-SIPS/PAPSS FPEnvelope reference is missing the enveloped-signature transform.");
+        if (!transforms.SequenceEqual(new[] { SignedXml.XmlDsigEnvelopedSignatureTransformUrl, exc })) throw new CryptographicException("The WP-SIPS/PAPSS FPEnvelope transforms must be enveloped-signature followed by exclusive C14N.");
         var keyInfo = signature.GetElementsByTagName("KeyInfo", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single();
         var signedProperties = signature.GetElementsByTagName("SignedProperties", "http://uri.etsi.org/01903/v1.3.2#").Cast<XmlElement>().Single();
         var signatureId = signature.GetAttribute("Id");
@@ -173,6 +192,38 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             if (!ts.SequenceEqual(new[] { exc })) throw new CryptographicException("KeyInfo/SignedProperties must use exclusive canonicalization only.");
         }
         if(rootRef.HasAttribute("Type"))throw new CryptographicException("BusinessLayer reference must not carry a reference Type.");
+    }
+
+    private static void ValidateIpsVendorLegacyProfile(XmlElement signature, XmlElement signedInfo, XmlElement signatureMethod)
+    {
+        const string exc = "http://www.w3.org/2001/10/xml-exc-c14n#";
+        const string sha256 = "http://www.w3.org/2001/04/xmlenc#sha256";
+        _ = GetAlgorithmName(signatureMethod.GetAttribute("Algorithm"));
+        if (GetFirstOfXmlElementsByTagWithPrefix(signedInfo, "ds:CanonicalizationMethod").GetAttribute("Algorithm") != exc)
+            throw new CryptographicException("The IPS vendor SignedInfo canonicalization declaration must be exclusive C14N.");
+        var refs = signedInfo.GetElementsByTagName("Reference", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().ToArray();
+        if (refs.Length != 3) throw new CryptographicException("The IPS vendor profile requires exactly three references.");
+        if (refs.Any(r => ((XmlElement?)r.GetElementsByTagName("DigestMethod", SignedXml.XmlDsigNamespaceUrl)[0])?.GetAttribute("Algorithm") != sha256))
+            throw new CryptographicException("Every IPS vendor reference must use SHA-256.");
+        var anonymous = refs.Where(r => !r.HasAttribute("URI") || r.GetAttribute("URI").Length == 0).ToArray();
+        if (anonymous.Length != 1) throw new CryptographicException("The IPS vendor profile requires exactly one anonymous document reference.");
+        ValidateTransforms(anonymous[0], [exc], "The IPS vendor anonymous reference must use exclusive C14N only.");
+        var keyInfo = signature.GetElementsByTagName("KeyInfo", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single();
+        var signedProperties = signature.GetElementsByTagName("SignedProperties", "http://uri.etsi.org/01903/v1.3.2#").Cast<XmlElement>().Single();
+        foreach (var target in new[] { keyInfo, signedProperties })
+        {
+            var reference = refs.SingleOrDefault(r => r.GetAttribute("URI") == "#" + target.GetAttribute("Id"))
+                ?? throw new CryptographicException("The IPS vendor KeyInfo/SignedProperties reference target is missing.");
+            var expectedType = ReferenceEquals(target, signedProperties) ? "http://uri.etsi.org/01903/v1.3.2#SignedProperties" : string.Empty;
+            if (reference.GetAttribute("Type") != expectedType) throw new CryptographicException("The IPS vendor reference role/type binding is invalid.");
+            ValidateTransforms(reference, [exc], "IPS vendor KeyInfo/SignedProperties references must use exclusive C14N only.");
+        }
+
+        static void ValidateTransforms(XmlElement reference, string[] expected, string error)
+        {
+            var transforms = reference.GetElementsByTagName("Transform", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Select(x => x.GetAttribute("Algorithm")).ToArray();
+            if (!transforms.SequenceEqual(expected)) throw new CryptographicException(error);
+        }
     }
 
     private static XmlElement GetReferencedKeyInfo(XmlElement signature)
@@ -196,7 +247,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         if(!certificate.IssuerDN.ToString().Equals(issuer,StringComparison.Ordinal)||certificate.SerialNumber.ToString()!=serial)throw new CryptographicException("SigningCertificate IssuerSerial does not bind the downloaded certificate.");
     }
 
-    private bool VerifyReferences(XmlDocument envelope, XmlNamespaceManager ns, XmlElement signatureElement, XmlElement signedInfoElement, VerboseResult vr)
+    private bool VerifyReferences(XmlDocument envelope, XmlNamespaceManager ns, XmlElement signatureElement, XmlElement signedInfoElement, XadesProfile profile, VerboseResult vr)
     {
         // Verify the digest values for each reference
         XmlNodeList references = signedInfoElement.GetElementsByTagName("Reference", SignedXml.XmlDsigNamespaceUrl);
@@ -206,13 +257,25 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             if (uri.StartsWith('#'))
             {
                 string id = uri[1..];
-                XmlElement? referencedElement = envelope.SelectSingleNode($"//*[@Id='{id}']", ns) as XmlElement
+                XmlNode referenceScope = profile == XadesProfile.IpsVendorLegacy ? signatureElement : envelope;
+                XmlElement? referencedElement = referenceScope.SelectSingleNode($"//*[@Id='{id}']", ns) as XmlElement
                     ?? throw new InvalidOperationException($"Referenced element with Id '{id}' not found.");
-                var (isDigestValid, expected, computed) = VerifyDigest(reference, referencedElement);
+                var (isDigestValid, expected, computed) = VerifyDigest(reference, referencedElement, profile);
                 if (!isDigestValid)
                 {
                     vr.ReferencesStatus = $"The digest value for the reference with URI '{uri}' is not valid, expected: {expected}, computed: {computed}";
                     _logger.LogError("The digest value for the reference with URI '{uri}' is not valid, expected: {expected}, computed: {computed}", uri, expected, computed);
+                    return false;
+                }
+            }
+            else if (profile == XadesProfile.IpsVendorLegacy && string.IsNullOrEmpty(uri))
+            {
+                var document = (XmlElement?)envelope.SelectSingleNode("//document:Document", ns)
+                    ?? throw new InvalidOperationException("document:Document not found.");
+                var (isDigestValid, expected, computed) = VerifyDigest(reference, document, profile);
+                if (!isDigestValid)
+                {
+                    vr.ReferencesStatus = $"The digest value for the anonymous IPS vendor document reference is not valid, expected: {expected}, computed: {computed}";
                     return false;
                 }
             }
@@ -227,7 +290,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         return true;
     }
 
-    private async Task<(bool valid, X509Certificate? signingCertificate, string? owner)> ValidateCertificate(XmlElement signatureElement, CancellationToken cancellationToken = default, SIPS.XMLDsig.Xades.Models.CertificateDownloadResponse? suppliedRecord = null)
+    private async Task<(bool valid, X509Certificate? signingCertificate, string? owner)> ValidateCertificate(XmlElement signatureElement, XadesProfile profile, CancellationToken cancellationToken = default, SIPS.XMLDsig.Xades.Models.CertificateDownloadResponse? suppliedRecord = null)
     {
         var keyInfo=GetReferencedKeyInfo(signatureElement);
         XmlElement sn = keyInfo.GetElementsByTagName("X509SerialNumber",SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single();
@@ -244,14 +307,17 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             _logger.LogError("Could not download the certificate: {error}", error);
             return (false, null, null);
         }
-        if (certificate.Revoked) return (false, null, null);
         var SigningCert = _cs.CertificateFromPem(certificate.Content);
-        var commonNames=SigningCert.SubjectDN.GetValueList(Org.BouncyCastle.Asn1.X509.X509Name.CN).Cast<object>().Select(x=>x.ToString()).ToArray();
-        if(commonNames.Length!=1||!StringComparer.Ordinal.Equals(commonNames[0],certificate.Owner))return(false,null,null);
-        var eku=SigningCert.GetExtendedKeyUsage()?.Cast<object>().Select(x=>x.ToString()).ToArray();
-        if(eku is null||!eku.Contains(certificate.RequiredExtendedKeyUsageOid,StringComparer.Ordinal))return(false,null,null);
-        var fingerprint=Convert.ToHexString(SHA256.HashData(SigningCert.GetEncoded())).ToLowerInvariant();if(!StringComparer.OrdinalIgnoreCase.Equals(fingerprint,certificate.CertificateSha256))return(false,null,null);
-        var (isValid, ex) = _cs.CheckValidity(SigningCert);
+        if (profile == XadesProfile.WpSipsPapss)
+        {
+            if (certificate.Revoked) return (false, null, null);
+            var commonNames=SigningCert.SubjectDN.GetValueList(Org.BouncyCastle.Asn1.X509.X509Name.CN).Cast<object>().Select(x=>x.ToString()).ToArray();
+            if(commonNames.Length!=1||!StringComparer.Ordinal.Equals(commonNames[0],certificate.Owner))return(false,null,null);
+            var eku=SigningCert.GetExtendedKeyUsage()?.Cast<object>().Select(x=>x.ToString()).ToArray();
+            if(eku is null||!eku.Contains(certificate.RequiredExtendedKeyUsageOid,StringComparer.Ordinal))return(false,null,null);
+            var fingerprint=Convert.ToHexString(SHA256.HashData(SigningCert.GetEncoded())).ToLowerInvariant();if(!StringComparer.OrdinalIgnoreCase.Equals(fingerprint,certificate.CertificateSha256))return(false,null,null);
+        }
+        var (isValid, ex) = _cs.CheckValidity(SigningCert, profile);
         if (!isValid)
         {
             _logger.LogError("The certificate in the signature is not valid: {ex}", ex);
@@ -261,12 +327,12 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         return (true, SigningCert, certificate.Owner);
     }
 
-    private static byte[] CanonicalizeElement(XmlElement element)
+    private static byte[] CanonicalizeElement(XmlElement element, XadesProfile profile)
     {
         XmlDocument doc = new();
         doc.AppendChild(doc.ImportNode(element, true));
 
-        if (element.LocalName != "Signature")
+        if (profile == XadesProfile.WpSipsPapss && element.LocalName != "Signature")
         {
             var signatures = doc.GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl)
                 .Cast<XmlNode>().ToArray();
@@ -274,7 +340,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
                 signature.ParentNode?.RemoveChild(signature);
         }
 
-        XmlDsigExcC14NTransform transform = new();
+        Transform transform = profile == XadesProfile.IpsVendorLegacy ? new XmlDsigC14NTransform() : new XmlDsigExcC14NTransform();
         transform.LoadInput(doc);
         using Stream stream = (Stream)transform.GetOutput(typeof(Stream));
         using StreamReader reader = new(stream);
@@ -282,12 +348,12 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         return Encoding.UTF8.GetBytes(data);
     }
 
-    private static bool VerifySignatureValue(XmlElement signatureElement, XmlElement signedInfoElement, X509Certificate certificate, XmlElement signatureAlgorithm)
+    private static bool VerifySignatureValue(XmlElement signatureElement, XmlElement signedInfoElement, X509Certificate certificate, XmlElement signatureAlgorithm, XadesProfile profile)
     {
         XmlElement signatureValueElement = GetFirstOfXmlElementsByTagWithPrefix(signatureElement, "ds:SignatureValue") ?? throw new InvalidOperationException("XML must contain ds:SignatureValue node");
 
         byte[] signatureValue = Convert.FromBase64String(signatureValueElement.InnerText);
-        byte[] canonicalizedSignedInfo = CanonicalizeElement(signedInfoElement);
+        byte[] canonicalizedSignedInfo = CanonicalizeElement(signedInfoElement, profile);
 
         var algorithm = GetAlgorithmName(signatureAlgorithm?.Attributes["Algorithm"]?.Value ?? "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256");
 
@@ -310,13 +376,13 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         };
     }
 
-    private static (bool result, string expected, string computed) VerifyDigest(XmlElement reference, XmlElement referencedElement)
+    private static (bool result, string expected, string computed) VerifyDigest(XmlElement reference, XmlElement referencedElement, XadesProfile profile)
     {
         XmlElement digestValueElement = GetFirstOfXmlElementsByTagWithPrefix(reference, "ds:DigestValue") ?? throw new InvalidOperationException("XML must contain ds:SignatureValue node");
 
         byte[] digestValue = Convert.FromBase64String(digestValueElement.InnerText);
 
-        byte[] canonicalizedData = CanonicalizeElement(referencedElement);
+        byte[] canonicalizedData = CanonicalizeElement(referencedElement, profile);
 
         var digestMethodNode = reference.GetElementsByTagName("DigestMethod", SignedXml.XmlDsigNamespaceUrl)[0];
         if (digestMethodNode?.Attributes?["Algorithm"] == null)

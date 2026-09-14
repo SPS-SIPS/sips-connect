@@ -2,6 +2,23 @@
 
 This package provides XML Digital Signature (XMLDSig) and XML Advanced Electronic Signatures (XAdES) for SIPS.
 
+## Explicit profiles
+
+The package exposes two strongly typed profiles through `XadesProfile`:
+
+- `IpsVendorLegacy` preserves the historical SmartVista/IPS signature contract and is the default for existing overloads.
+- `WpSipsPapss` preserves the hardened identified-envelope WP-SIPS contract and must be selected explicitly by PAPSS callers.
+
+```csharp
+var ipsSigned = signer.SignEnvelope(xml, XadesProfile.IpsVendorLegacy);
+var ipsResult = await verifier.VerifySignature(xml, true, XadesProfile.IpsVendorLegacy, ct);
+
+var papssSigned = signer.SignEnvelope(xml, XadesProfile.WpSipsPapss);
+var papssResult = await verifier.VerifyWithProvenance(xml, XadesProfile.WpSipsPapss, ct);
+```
+
+No profile is inferred from XML. The original overloads remain compatible and route to `IpsVendorLegacy`. The package targets `net8.0` and can be referenced by the PAPSS `.NET 10` service; that service must use the explicit `WpSipsPapss` overloads at `/sips/messages`.
+
 ## Overview
 
 The SIPS XMLDSig Xades package provides XML Digital Signature (XMLDSig) and XML Advanced Electronic Signatures (XAdES) for SIPS. The package includes the following features:
@@ -18,7 +35,7 @@ To install the package, follow these steps:
 1. Add the package to your project.
 
 ```bash
-dotnet add package Sps.Sips.XmlSecurity.Xades --version 1.0.0
+dotnet add package Sps.Sips.XmlSecurity.Xades --version 1.0.2
 ```
 
 2. Add the following configuration to your `appsettings.json` file:

@@ -36,6 +36,34 @@ services:
       - ConnectionStrings__db=Host=sips-postgresql-b;Database=${DB_NAME:-SIPS.Connect.DB.B};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:-postgres};Include Error Detail=True;
       - Xades__BIC=${BANK_CODE:-BKBASOS0}
       - Xades__WithoutPKI=${WITHOUT_PKI:-true}
+      # PAPSS-facing integration (disabled by default)
+      - PapssFacing__Enabled=${PAPSS_ENABLED:-false}
+      - PapssFacing__IsoIngressUrl=${PAPSS_ISO_INGRESS_URL:-}
+      - PapssFacing__AllowedHosts__0=${PAPSS_ALLOWED_HOST:-}
+      - PapssFacing__Environment=${PAPSS_ENVIRONMENT:-}
+      - PapssFacing__RemoteWpSipsIdentity=${PAPSS_REMOTE_IDENTITY:-}
+      - PapssFacing__SecurityProfile=${PAPSS_SECURITY_PROFILE:-}
+      - PapssFacing__RequestTimeoutSeconds=${PAPSS_REQUEST_TIMEOUT_SECONDS:-30}
+      - PapssFacing__MaximumResponseBytes=${PAPSS_MAXIMUM_RESPONSE_BYTES:-2000000}
+      - PapssFacing__ReadinessStaleSeconds=${PAPSS_READINESS_STALE_SECONDS:-300}
+      - PapssFacing__AllowedLocalInstruments__0=${PAPSS_LOCAL_INSTRUMENT:-}
+      - PapssFacing__AllowedCorridors__0__SenderCountry=${PAPSS_SENDER_COUNTRY:-}
+      - PapssFacing__AllowedCorridors__0__ReceiverCountry=${PAPSS_RECEIVER_COUNTRY:-}
+      - PapssFacing__AllowedCorridors__0__SenderCurrency=${PAPSS_SENDER_CURRENCY:-}
+      - PapssFacing__AllowedCorridors__0__ReceiverCurrency=${PAPSS_RECEIVER_CURRENCY:-}
+      - PapssFacing__AllowedCorridors__0__DestinationBic=${PAPSS_DESTINATION_BIC:-}
+      - PapssFacing__AllowedCorridors__0__LocalInstruments__0=${PAPSS_LOCAL_INSTRUMENT:-}
+      - PapssFacing__Participants__local-bank__Enabled=${PAPSS_PARTICIPANT_ENABLED:-false}
+      - PapssFacing__Participants__local-bank__Bic=${BANK_CODE:-}
+      - PapssFacing__Participants__local-bank__AllowedOperations__0=Verification
+      - PapssFacing__Participants__local-bank__AllowedOperations__1=Payment
+      - PapssFacing__Participants__local-bank__AllowedOperations__2=Status
+      - PapssFacing__Participants__local-bank__AllowedOperations__3=Return
+      - PapssFacing__Participants__local-bank__AllowedOperations__4=Readiness
+      - PapssFacing__Participants__local-bank__AllowedOperations__5=Discovery
+      - PapssFacing__Participants__local-bank__AllowedOperations__6=Fx
+      - PapssFacing__Participants__local-bank__CallbackMappingProfile=${PAPSS_CALLBACK_MAPPING_PROFILE:-}
+      - PapssFacing__Participants__local-bank__CallbackUrl=${PAPSS_CALLBACK_URL:-}
       - ISO20022__SIPS=${SIPS_PEER_URL:?SIPS_PEER_URL is required}
       - ISO20022__Agent=${BANK_CODE:?BANK_CODE is required}
       - ISO20022__BIC=${BANK_CODE:?BANK_CODE is required}

@@ -27,8 +27,16 @@ public sealed class NoOpCertificateService : ICertificateService
 
     public (bool isValid, string? ex) CheckValidity(X509Certificate certificate) => throw new InvalidOperationException(ErrorMessage);
 
+    public (bool isValid, string? ex) CheckValidity(X509Certificate certificate, XadesProfile profile) => throw new InvalidOperationException(ErrorMessage);
+
     public string GetCertificatePem() => throw new InvalidOperationException(ErrorMessage);
 
+    public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string signingTime, string algorithm)
+        => throw new InvalidOperationException(ErrorMessage);
+
     public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string businessLayerId, string signingTime, string algorithm)
+        => throw new InvalidOperationException(ErrorMessage);
+
+    public XmlDocument GetSignatureElement(string keyInfoId, string signedPropsId, string businessLayerId, string signingTime, string algorithm, XadesProfile profile)
         => throw new InvalidOperationException(ErrorMessage);
 }
