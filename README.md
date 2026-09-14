@@ -189,7 +189,7 @@ The existing `/Verify`, `/Payment`, `/Status`, and `/Return` JSON mappings accep
 6. Set `PapssFacing:Enabled=true` and restart SIPS Connect so startup validation runs.
 7. Verify readiness, then test `Verification` before enabling financial UAT flows.
 
-Use `Sps.Sips.XmlSecurity.Xades` version `1.0.2` or later. Version `1.0.2` keeps the PAPSS identified-envelope signature while removing the PAPSS-only `FPEnvelope/@Id` from legacy IPS messages.
+Use `Sps.Sips.XmlSecurity.Xades` version `1.0.3` or later. Version `1.0.3` keeps the PAPSS identified-envelope signature while removing the PAPSS-only `FPEnvelope/@Id` from legacy IPS messages.
 
 Detailed integration and mapping guidance:
 
