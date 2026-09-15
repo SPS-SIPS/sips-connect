@@ -144,6 +144,29 @@ Use deployment-specific values and keep private keys and passphrases in the depl
 }
 ```
 
+Configuration reference:
+
+| Configuration | Meaning and use | Supplied by / example |
+|---|---|---|
+| `Xades:BIC` | The identity of the single participant represented by this SIPS Connect deployment. It is protected by the signature and used as the outbound Business Application Header (BAH) `From` value and the expected inbound BAH `To` value. | The participant bank and its certificate-registration process; for example `BANKSOSIXXX`. |
+| `Xades:CertificatePath`, `PrivateKeyPath`, `ChainPath` | The participant signing certificate, its private key, and the trust chain used to sign outbound WP-SIPS messages and verify trusted signed traffic. | Deployment/PKI administrators. Keep the private key and its passphrase in the deployment secret store. |
+| `PapssFacing:Enabled` | Deployment-wide switch for the PAPSS rail. When `false`, PAPSS requests are rejected and existing IPS routing remains unaffected. | SIPS Connect operator; enable only after trust, routing, and mappings have been validated. |
+| `PapssFacing:IsoIngressUrl` | The PAPSS service endpoint to which every signed WP-SIPS request is posted. | PAPSS service operator; for example `https://papss.example/sips/messages`. |
+| `PapssFacing:AllowedHosts` | Explicit outbound-host allowlist for the PAPSS URL. The host in `IsoIngressUrl` must be listed here. | SIPS Connect security/operator team; for example `papss.example`. |
+| `PapssFacing:Environment` | Labels the configured PAPSS operating environment, such as UAT or production. It is required when PAPSS is enabled, but is not a participant identity or payment-routing field. | PAPSS service/operator deployment agreement; use the exact bilateral environment value. |
+| `PapssFacing:RemoteWpSipsIdentity` | The expected signed identity of the remote PAPSS WP-SIPS service. SIPS Connect writes it as outbound BAH `To` and requires it as inbound/response BAH `From`; it is not a receiver-bank BIC or a selectable participant. | PAPSS service operator; for example `PAPSS`. It must match PAPSS's certificate/identity contract exactly. |
+| `PapssFacing:SecurityProfile` | The agreed WP-SIPS business-service identifier carried in BAH `BizSvc`. It tells both systems which message/security processing contract applies; it does not identify either party. | PAPSS/WP-SIPS integration contract; for example `SPS.PAPSS.FINANCIAL.001`. Use the exact value PAPSS supports. |
+| `PapssFacing:RequestTimeoutSeconds` | Maximum time allowed for a PAPSS request. | SIPS Connect operator, within operational limits. |
+| `PapssFacing:MaximumResponseBytes` | Maximum PAPSS response size accepted before processing is stopped. | SIPS Connect security/operator team. |
+| `PapssFacing:ReadinessStaleSeconds` | Freshness threshold for signed PAPSS Discovery and Readiness observations used to validate payments; it also governs PAPSS readiness health freshness. | Agreed operational policy. |
+| `PapssFacing:SpsPolicy:AllowedLocalInstruments` | Optional local restriction on PAPSS instruments. An empty array adds no local restriction; PAPSS remains authoritative through signed Discovery/Readiness data. | SIPS Connect operator, only when SPS deliberately imposes a narrower policy. |
+| `PapssFacing:LocalCountry` | Country of this deployment's participant, used as the sender country. It is not the receiver country. | Participant deployment data; ISO 3166-1 alpha-2, for example `SO`. |
+| `PapssFacing:SendingCurrencies` | Currencies this participant deployment may send on the PAPSS rail. | Participant deployment data; ISO 4217, for example `SOS`. |
+| `PapssFacing:CallbackMappingProfile` | Prefix selecting the JsonAdapter mappings used when translating verified PAPSS callbacks for the participant. | SIPS Connect integration team; for example `papss-callback-v1`. |
+| `PapssFacing:CallbackUrl` | Internal participant endpoint that receives verified and mapped PAPSS callbacks. | Participant/integration team; use an HTTPS endpoint controlled by the participant. |
+
+`RemoteWpSipsIdentity` and `SecurityProfile` are deliberately separate: the first answers **“who is the remote signed party?”**, while the second answers **“which WP-SIPS business service governs this message?”**. Neither value describes the destination bank of an individual payment.
+
 One SIPS Connect deployment represents one local participant. `Xades:BIC` supplies its protected sender identity; `PapssFacing` only adds the local country, sending currencies, PAPSS route, and callback transport. Authentication remains mandatory at the API boundary, but there is no participant registry or per-operation policy inside SIPS Connect. `SpsPolicy:AllowedLocalInstruments` is an optional SPS restriction; PAPSS-supported instruments are always learned from signed discovery/readiness data.
 
 For the supplied Docker Compose manifests, configure those values with:
