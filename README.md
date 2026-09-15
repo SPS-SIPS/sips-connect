@@ -161,6 +161,17 @@ Use deployment-specific values and keep private keys and passphrases in the depl
 
 `PapssFacing:Participants` is required when PAPSS is enabled. Its key must exactly match the authenticated API-key/JWT principal name, and its `Bic` must match `Xades:BIC`. The entry owns local country, permitted sending currencies, operations and callback configuration. `SpsPolicy:AllowedLocalInstruments` is an optional SPS restriction; PAPSS-supported instruments are always learned from signed discovery/readiness data.
 
+For the supplied Docker Compose manifests, configure those values with:
+
+```dotenv
+PAPSS_PARTICIPANT_PRINCIPAL=<EXACT-API-KEY-OR-JWT-PRINCIPAL-NAME>
+PAPSS_LOCAL_COUNTRY=<ISO-3166-ALPHA-2>
+PAPSS_SENDING_CURRENCY=<ISO-4217>
+PAPSS_SPS_POLICY_LOCAL_INSTRUMENT=
+```
+
+`PAPSS_SPS_POLICY_LOCAL_INSTRUMENT` should remain empty unless SPS deliberately restricts the PAPSS instruments reported by Discovery/Readiness. Do not configure `PAPSS_RECEIVER_COUNTRY`, `PAPSS_RECEIVER_CURRENCY`, `PAPSS_DESTINATION_BIC`, or an `AllowedCorridors` section; those values are transaction-selected or PAPSS-owned.
+
 Payment destination BIC and, where needed, receiver currency are transaction selections. SIPS Connect performs signed, correlated Discovery and Readiness lookups for every PAPSS payment, derives receiver country, and validates current status, online eligibility, currencies and payment schemas. No per-destination deployment entry is used.
 
 All PAPSS operations use one service ingress:
@@ -178,7 +189,7 @@ The existing `/Verify`, `/Payment`, `/Status`, and `/Return` JSON mappings accep
 1. Deploy SIPS Connect with `PapssFacing:Enabled=false`.
 2. Verify normal SmartVista/IPS traffic and health.
 3. Install the local WP-SIPS signing certificate/private key and the PAPSS verification trust chain.
-4. Configure `/sips/messages`, its allowed host, the expected PAPSS identity, security profile, and authenticated local participant facts. Add an SPS instrument restriction only if deliberately required.
+4. Configure `/sips/messages`, its allowed host, the expected PAPSS identity, security profile, `PAPSS_PARTICIPANT_PRINCIPAL`, local country, and permitted sending currency. Add an SPS instrument restriction only if deliberately required.
 5. Load the PAPSS request and callback JSON adapter mappings.
 6. Set `PapssFacing:Enabled=true` and restart SIPS Connect so startup validation runs.
 7. Verify readiness, then test `Verification` before enabling financial UAT flows.
