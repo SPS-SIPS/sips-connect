@@ -45,7 +45,8 @@ public sealed class PapssFacingSipsClient(
 
     public async Task<PapssAdmissionResponse> PayAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct)
     {
-        ValidateCorridor(participant, request);
+        var destination = await ResolveDestinationAsync(participant, request, ct);
+        ValidateAndApplyCorridor(participant, destination, request);
         var txId = Required(request.TxId, "transaction identifier");
         var built = PaymentRequestBuilder.Build(new()
         {
@@ -180,23 +181,78 @@ public sealed class PapssFacingSipsClient(
     private static T Payload<T>(WpSipsMessage<object> message) => message.Payload is T value ? value : throw new InvalidDataException("Unexpected WP-SIPS response profile.");
     private static string Id() => "SIPS-" + Guid.NewGuid().ToString("N")[..24];
     private static string Required(string? value, string name) => !string.IsNullOrWhiteSpace(value) ? value : throw new ArgumentException($"Required PAPSS field missing: {name}.");
-    private void ValidateCorridor(PapssParticipantBinding participant, PaymentRequestDto x)
+    private async Task<Participant> ResolveDestinationAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct)
     {
-        Required(x.ToBIC, "destination institution"); Required(x.SenderCountry, "sender country"); Required(x.ReceiverCountry, "receiver country"); Required(x.SenderCurrency, "sender currency"); Required(x.ReceiverCurrency, "receiver currency"); Required(x.LocalInstrument, "local instrument");
+        var destinationBic = NormalizeBic(Required(request.ToBIC, "destination institution"));
+        request.ToBIC = destinationBic;
+        var discoveryMessage = await Information(participant, WpSipsProfiles.Participant,
+            (h, id) => WpSipsInformationMessageBuilder.BuildParticipantRequest(h, id, new(null, null, destinationBic, null)), ct);
+        EnsureFresh(discoveryMessage.Header.CreatedAt, "discovery");
+        var discovery = Payload<ParticipantDiscoveryResponse>(discoveryMessage);
+        if (discovery.Error is not null) throw new ArgumentException("PAPSS participant discovery rejected the destination lookup.");
+        var matches = discovery.Participants.Where(x => x.Bic is not null && NormalizeBic(x.Bic) == destinationBic).ToArray();
+        if (matches.Length != 1) throw new ArgumentException("The destination BIC did not resolve to exactly one PAPSS participant.");
+
+        var discovered = matches[0];
+        var readinessMessage = await Information(participant, WpSipsProfiles.Readiness,
+            (h, id) => WpSipsInformationMessageBuilder.BuildReadinessRequest(h, id, new(discovered.PapssId, null)), ct);
+        EnsureFresh(readinessMessage.Header.CreatedAt, "readiness");
+        var readiness = Payload<ReadinessResponse>(readinessMessage);
+        if (readiness.Error is not null || readiness.Observation is null) throw new ArgumentException("PAPSS readiness did not return an eligible destination observation.");
+        var observed = readiness.Observation;
+        if (!string.Equals(observed.PapssId, discovered.PapssId, StringComparison.Ordinal) || observed.Bic is null || NormalizeBic(observed.Bic) != destinationBic)
+            throw new InvalidDataException("The PAPSS readiness observation does not match the discovered destination.");
+        if (!string.Equals(observed.Status.Trim(), "ACTIVE", StringComparison.OrdinalIgnoreCase) || !observed.Online)
+            throw new ArgumentException("The PAPSS destination is disabled, suspended, offline, or ineligible.");
+        return observed with { CountryCode = discovered.CountryCode };
+    }
+
+    private void ValidateAndApplyCorridor(PapssParticipantBinding participant, Participant destination, PaymentRequestDto x)
+    {
+        Required(x.LocalInstrument, "local instrument");
         static bool Code(string value, int length) => value.Length == length && value.All(c => c is >= 'A' and <= 'Z');
-        x.SenderCountry = x.SenderCountry!.Trim().ToUpperInvariant(); x.ReceiverCountry = x.ReceiverCountry!.Trim().ToUpperInvariant();
-        x.SenderCurrency = x.SenderCurrency!.Trim().ToUpperInvariant(); x.ReceiverCurrency = x.ReceiverCurrency!.Trim().ToUpperInvariant();
+        var senderCountry = participant.LocalCountry.Trim().ToUpperInvariant();
+        var senderCurrency = x.Currency.Trim().ToUpperInvariant();
+        RejectContradiction(x.SenderCountry, senderCountry, "sender country");
+        RejectContradiction(x.SenderCurrency, senderCurrency, "sender currency");
+        RejectContradiction(x.ReceiverCountry, destination.CountryCode.Trim().ToUpperInvariant(), "receiver country");
+        x.SenderCountry = senderCountry; x.ReceiverCountry = destination.CountryCode.Trim().ToUpperInvariant();
+        x.SenderCurrency = senderCurrency;
+        var currencies = destination.Currencies.Select(v => v.Trim().ToUpperInvariant()).Distinct(StringComparer.Ordinal).ToArray();
+        x.ReceiverCurrency = string.IsNullOrWhiteSpace(x.ReceiverCurrency)
+            ? currencies.Length == 1 ? currencies[0] : throw new ArgumentException("Receiver currency must be selected when the PAPSS destination supports multiple currencies.")
+            : x.ReceiverCurrency.Trim().ToUpperInvariant();
         x.Currency = x.Currency.Trim().ToUpperInvariant(); x.LocalInstrument = x.LocalInstrument.Trim().ToUpperInvariant();
         if (!Code(x.SenderCountry, 2) || !Code(x.ReceiverCountry, 2)) throw new ArgumentException("PAPSS country codes must be two uppercase ASCII letters.");
         if (!Code(x.SenderCurrency, 3) || !Code(x.ReceiverCurrency, 3) || !Code(x.Currency, 3)) throw new ArgumentException("PAPSS currency codes must be three uppercase ASCII letters.");
-        if (!string.Equals(x.Currency, x.SenderCurrency, StringComparison.Ordinal)) throw new ArgumentException("PAPSS sender currency must equal the instructed amount currency.");
-        if (!x.LocalInstrument.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') || x.LocalInstrument.Length > 35 || !options.AllowedLocalInstruments.Contains(x.LocalInstrument, StringComparer.Ordinal)) throw new ArgumentException("PAPSS local instrument is invalid or not allowed.");
+        if (!participant.SendingCurrencies.Contains(x.SenderCurrency, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The authenticated participant is not permitted to send the instructed currency.");
+        if (!currencies.Contains(x.ReceiverCurrency, StringComparer.Ordinal)) throw new ArgumentException("The PAPSS destination does not support the selected receiver currency.");
+        if (!x.LocalInstrument.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') || x.LocalInstrument.Length > 35) throw new ArgumentException("PAPSS local instrument is invalid.");
+        if (!destination.PaymentSchemas.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The PAPSS destination does not support the selected local instrument.");
+        var policyInstruments = options.SpsPolicy.AllowedLocalInstruments.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
+        if (policyInstruments.Length != 0 && !policyInstruments.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The selected local instrument is restricted by SPS policy.");
         if (!string.Equals(x.DebtorAgentBIC?.Trim(), participant.Bic, StringComparison.OrdinalIgnoreCase)) throw new ParticipantRailException("PARTICIPANT_BIC_MISMATCH", "The payment debtor agent does not match the authenticated participant BIC.");
-        var corridor = options.AllowedCorridors.SingleOrDefault(c =>
-            string.Equals(c.SenderCountry, x.SenderCountry, StringComparison.OrdinalIgnoreCase) && string.Equals(c.ReceiverCountry, x.ReceiverCountry, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(c.SenderCurrency, x.SenderCurrency, StringComparison.OrdinalIgnoreCase) && string.Equals(c.ReceiverCurrency, x.ReceiverCurrency, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(c.DestinationBic, x.ToBIC, StringComparison.OrdinalIgnoreCase));
-        if (corridor is null || !corridor.LocalInstruments.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase))
-            throw new ArgumentException("The PAPSS corridor, destination, currency pair, and local instrument combination is not configured.");
+        if (!string.Equals(x.CreditorAgentBIC?.Trim(), x.ToBIC, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("The payment creditor agent does not match the transaction destination BIC.");
+    }
+
+    private void EnsureFresh(DateTimeOffset observedAt, string observation)
+    {
+        var age = DateTimeOffset.UtcNow - observedAt;
+        if (age < TimeSpan.FromMinutes(-1) || age > TimeSpan.FromSeconds(options.ReadinessStaleSeconds))
+            throw new ArgumentException($"The signed PAPSS {observation} observation is stale.");
+    }
+
+    private static void RejectContradiction(string? supplied, string authoritative, string field)
+    {
+        if (!string.IsNullOrWhiteSpace(supplied) && !string.Equals(supplied.Trim(), authoritative, StringComparison.OrdinalIgnoreCase))
+            throw new ParticipantRailException("PARTICIPANT_AUTHORITY_MISMATCH", $"The supplied {field} contradicts the authenticated participant or PAPSS directory.");
+    }
+
+    private static string NormalizeBic(string value)
+    {
+        var bic = value.Trim().ToUpperInvariant();
+        if (bic.Length is not (8 or 11) || !bic[..6].All(char.IsAsciiLetter) || !bic[6..].All(char.IsAsciiLetterOrDigit))
+            throw new ArgumentException("PAPSS destination BIC is invalid.");
+        return bic;
     }
 }

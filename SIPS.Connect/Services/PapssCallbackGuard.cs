@@ -53,7 +53,8 @@ public sealed class PapssCallbackGuard(PapssFacingOptions options, JsonAdapterOp
         var match = matches[0];
         if (string.IsNullOrWhiteSpace(match.Value.CallbackMappingProfile) || !mappings.Endpoints.Keys.Any(x => x.StartsWith(match.Value.CallbackMappingProfile + ".", StringComparison.Ordinal)))
             throw new InvalidDataException("The participant callback mapping profile is missing or unknown.");
-        return new(match.Key, match.Value.Bic.Trim().ToUpperInvariant(), match.Value.CallbackMappingProfile, match.Value.CallbackUrl);
+        return new(match.Key, match.Value.Bic.Trim().ToUpperInvariant(), match.Value.LocalCountry.Trim().ToUpperInvariant(),
+            match.Value.SendingCurrencies.Select(x => x.Trim().ToUpperInvariant()).ToArray(), match.Value.CallbackMappingProfile, match.Value.CallbackUrl);
     }
 
     private static XDocument Document(string xml)

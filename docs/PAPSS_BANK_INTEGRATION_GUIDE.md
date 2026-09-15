@@ -12,12 +12,12 @@ Exchange the following through the approved secure onboarding channel:
 
 - the bank's configured `Xades:BIC` and Gateway role assignment;
 - the bank BIC that SIPS Connect must place in WP-SIPS BAH `From`;
-- enabled PAPSS operations and corridors/local instruments;
+- authenticated principal name, local BIC/country/sending currencies, enabled PAPSS operations, and any deliberate SPS instrument policy;
 - the bank callback HTTPS URL and callback mapping profile;
 - API credentials or JWT issuer/client details;
 - participant inbound-verification certificates and callback transport/signing requirements.
 
-Each SIPS Connect deployment represents one bank. Its existing `Xades:BIC`, not an HTTP identity claim or request-body participant identifier, becomes BAH `From`. When optional `PapssFacing.Participants` capability/callback entries are configured, exactly one enabled entry must match `Xades:BIC`; a missing or ambiguous match fails closed.
+Each SIPS Connect deployment represents one bank. The authenticated principal name must exactly match one enabled `PapssFacing.Participants` key, and that entry's BIC must match `Xades:BIC`; a missing, contradictory, or ambiguous binding fails closed. The configured local BIC becomes BAH `From`.
 
 ## Authentication
 
@@ -105,7 +105,7 @@ For PAPSS, a successful request is acknowledged with:
 }
 ```
 
-The debtor-agent identity is derived from the authenticated participant binding. The submitted corridor, destination BIC, currencies, and local instrument must match an enabled configured corridor. Reuse neither `localId` nor another transaction's references.
+The debtor-agent, sender country and sender currency authority comes from the authenticated local participant configuration; contradictory legacy JSON values are rejected. Destination BIC is transaction data. Receiver country, supported receiver currencies and payment schemas are resolved through signed, correlated, freshness-checked Discovery and Readiness calls. Select receiver currency when more than one is available. Reuse neither `localId` nor another transaction's references.
 
 The response uses the same admission shape shown for `/Verify`.
 
@@ -156,7 +156,7 @@ Unsupported recall semantics are refused. The response uses the common PAPSS adm
 }
 ```
 
-The response contains either `observation` or `error`. Treat readiness as operational evidence, not as authorization to use a corridor that is not configured for the participant.
+The response contains either `observation` or `error`. Readiness is current PAPSS operational and capability evidence; local participant enablement and any explicitly configured SPS policy remain independent controls.
 
 ### Discover participants
 
@@ -203,7 +203,7 @@ Error bodies use `code` and `message` where PAPSS routing or validation fails.
 | --- | --- | --- |
 | `400` | Rail, participant binding, PAPSS enablement, or operation permission failed | Correct configuration/request; do not blind-retry |
 | `401` / `403` | Authentication or Gateway role failed | Refresh credentials or correct authorization |
-| `422` | PAPSS request/corridor validation failed | Correct business data; do not retry unchanged |
+| `422` | PAPSS authority, directory capability, or transaction validation failed | Correct business data or wait for an eligible fresh directory observation; do not retry unchanged |
 | `502` | Signed response was invalid or could not be authenticated | Preserve references; escalate, do not create a replacement payment |
 | `503` | PAPSS/WP-SIPS service unavailable | Retry with bounded backoff using the same business references |
 
@@ -255,5 +255,5 @@ Callback mappings remain participant-profile-prefixed and are separate from thes
 6. Enable PAPSS only for the selected UAT participant and approved operations.
 7. Exercise Verify, Payment, Status, Return, Readiness, Discovery, and FX.
 8. Confirm signed-ISO correlation and asynchronous callback delivery where applicable.
-9. Test duplicate callback handling, ambiguous delivery reconciliation, denied operations, invalid corridors, and credential failure.
+9. Test duplicate callback handling, ambiguous delivery reconciliation, denied operations, stale/ambiguous/ineligible directory observations, unsupported currencies/instruments, and credential failure.
 10. Record request references, expected results, timestamps, and evidence without recording secrets or sensitive account data.
