@@ -133,7 +133,7 @@ public sealed class PapssFinancialCorrelationTests
         return new(options, new HttpClient(directory), signer.Object, verifier.Object, new PapssHealthState(), NullLogger<PapssFacingSipsClient>.Instance);
     }
 
-    private static PapssParticipantBinding Binding() => new("bank-a", "BANKSOSIXXX", "SO", ["SOS"], "bank-a", null);
+    private static PapssParticipantBinding Binding() => new("BANKSOSIXXX", "SO", ["SOS"], "bank-a", null);
     private static string Corridor(DirectoryScenario directory, string name) => XDocument.Parse(directory.FinancialRequest!).Descendants().Single(x => x.Name.LocalName == name).Value;
     private static PaymentRequestDto Payment() => new() { Rail="PAPSS", ToBIC="BANKKE00XXX", LocalInstrument="INST", CategoryPurpose="CASH", EndToEndId="E2E-1", TxId=Guid.NewGuid().ToString("N"), Amount=10, Currency="SOS", SenderCountry="SO", ReceiverCountry="KE", SenderCurrency="SOS", ReceiverCurrency="KES", DebtorName="Debtor", DebtorAccount="D1", DebtorAccountType="ACCT", DebtorAgentBIC="BANKSOSIXXX", CreditorName="Creditor", CreditorAccount="C1", CreditorAccountType="ACCT", CreditorAgentBIC="BANKKE00XXX", RemittanceInformation="test" };
     private static PapssFacingOptions Options() => new() { Enabled=true, IsoIngressUrl="https://papss.test/sips/messages", AllowedHosts=["papss.test"], RemoteWpSipsIdentity="PAPSS", SecurityProfile="SPS.PAPSS.FINANCIAL.001", RequestTimeoutSeconds=5, ReadinessStaleSeconds=300 };

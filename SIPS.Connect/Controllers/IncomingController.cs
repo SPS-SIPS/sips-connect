@@ -21,7 +21,7 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
         {
             if (await papssGuard.ValidateAsync(body, ct) is { } route)
             {
-                logger.LogInformation("Validated PAPSS callback for participant {Participant} using mapping profile {MappingProfile}", route.Principal, route.CallbackMappingProfile);
+                logger.LogInformation("Validated PAPSS callback for local participant {Bic} using mapping profile {MappingProfile}", route.Bic, route.CallbackMappingProfile);
                 using var mapping = callbackContext.Push(route);
                 var routedResult = await _isoService.Handle(body, ct);
                 return Content(routedResult, "application/xml", Encoding.UTF8);

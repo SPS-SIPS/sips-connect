@@ -12,7 +12,6 @@ using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 using SIPS.Connect.Services;
 using SIPS.ISO20022.Models.WpSips;
-using System.Security.Claims;
 
 namespace SIPS.Connect.Controllers;
 [ApiController]
@@ -47,7 +46,7 @@ public class GatewayController(
         JsonObject md = _jsonAdapter.Transform(body, VerificationRequest);
         var query = _jsonAdapter.ToObject<VerificationRequestDto>(md);
         if (Select(ParticipantOperation.Verification, query.Rail) == DownstreamRail.Papss)
-            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.VerifyAsync(Binding(ParticipantOperation.Verification), query, ct), PapssAdmissionMapping)));
+            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.VerifyAsync(Binding(), query, ct), PapssAdmissionMapping)));
         var response = await _verificationService.HandleAsync(query, ct);
         return GenerateAdminMessage(response, _jsonAdapter, VerificationResponse);
     }
@@ -64,7 +63,7 @@ public class GatewayController(
         JsonObject md = _jsonAdapter.Transform(body, PaymentRequest);
         var query = _jsonAdapter.ToObject<PaymentRequestDto>(md);
         if (Select(ParticipantOperation.Payment, query.Rail) == DownstreamRail.Papss)
-            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.PayAsync(Binding(ParticipantOperation.Payment), query, ct), PapssAdmissionMapping)));
+            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.PayAsync(Binding(), query, ct), PapssAdmissionMapping)));
         var response = await _transactionService.HandleAsync(query, ct);
         return GenerateAdminMessage(response, _jsonAdapter, PaymentResponse);
     }
@@ -81,7 +80,7 @@ public class GatewayController(
         JsonObject md = _jsonAdapter.Transform(body, StatusRequest);
         var query = _jsonAdapter.ToObject<StatusRequestDto>(md);
         if (Select(ParticipantOperation.Status, query.Rail) == DownstreamRail.Papss)
-            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.GetStatusAsync(Binding(ParticipantOperation.Status), query, ct), PapssAdmissionMapping)));
+            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.GetStatusAsync(Binding(), query, ct), PapssAdmissionMapping)));
         var response = await _transactionStatusService.HandleAsync(query, ct);
         return GenerateAdminMessage(response, _jsonAdapter, PaymentResponse);
     }
@@ -98,7 +97,7 @@ public class GatewayController(
         JsonObject md = _jsonAdapter.Transform(body, ReturnRequest);
         var query = _jsonAdapter.ToObject<ReturnPaymentRequestDto>(md);
         if (Select(ParticipantOperation.Return, query.Rail) == DownstreamRail.Papss)
-            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.ReturnAsync(Binding(ParticipantOperation.Return), query, ct), PapssAdmissionMapping)));
+            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.ReturnAsync(Binding(), query, ct), PapssAdmissionMapping)));
         var response = await _returnTransactionService.HandleAsync(query, ct);
         return GenerateAdminMessage(response, _jsonAdapter, PaymentResponse);
     }
@@ -137,7 +136,7 @@ public class GatewayController(
     {
         var mapped = _jsonAdapter.ToObject<ParticipantReadinessJsonRequest>(_jsonAdapter.Transform(body, Constants.ReadinessRequest));
         Select(ParticipantOperation.Readiness, mapped.Rail);
-        return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.GetReadinessAsync(Binding(ParticipantOperation.Readiness), new(mapped.PapssId, mapped.Bic), ct), Constants.ReadinessResponse)));
+        return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.GetReadinessAsync(Binding(), new(mapped.PapssId, mapped.Bic), ct), Constants.ReadinessResponse)));
     }
 
     [HttpPost("Discovery")]
@@ -146,7 +145,7 @@ public class GatewayController(
     {
         var mapped = _jsonAdapter.ToObject<ParticipantDiscoveryJsonRequest>(_jsonAdapter.Transform(body, Constants.ParticipantDiscoveryRequest));
         Select(ParticipantOperation.Discovery, mapped.Rail);
-        return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.DiscoverAsync(Binding(ParticipantOperation.Discovery), new(mapped.Online, mapped.Type, mapped.Bic, mapped.PapssId), ct), Constants.ParticipantDiscoveryResponse)));
+        return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.DiscoverAsync(Binding(), new(mapped.Online, mapped.Type, mapped.Bic, mapped.PapssId), ct), Constants.ParticipantDiscoveryResponse)));
     }
 
     [HttpPost("FX")]
@@ -155,14 +154,14 @@ public class GatewayController(
     {
         var mapped = _jsonAdapter.ToObject<FxJsonRequest>(_jsonAdapter.Transform(body, Constants.FxRequest));
         Select(ParticipantOperation.Fx, mapped.Rail);
-        return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.GetFxAsync(Binding(ParticipantOperation.Fx), new(mapped.SenderCountry, mapped.ReceiverCountry, mapped.SenderCurrency, mapped.ReceiverCurrency, mapped.ReceiverBank, mapped.LocalInstrument, mapped.Amount, mapped.IsInvoice, mapped.InvoiceCurrency), ct), Constants.FxResponse)));
+        return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.GetFxAsync(Binding(), new(mapped.SenderCountry, mapped.ReceiverCountry, mapped.SenderCurrency, mapped.ReceiverCurrency, mapped.ReceiverBank, mapped.LocalInstrument, mapped.Amount, mapped.IsInvoice, mapped.InvoiceCurrency), ct), Constants.FxResponse)));
     }
 
     private DownstreamRail Select(ParticipantOperation operation, string? rail)
         => _operationRouter.Select(operation, rail);
 
-    private PapssParticipantBinding Binding(ParticipantOperation operation)
-        => _operationRouter.ResolvePapss(operation, User.Identity?.Name ?? User.FindFirstValue("preferred_username") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"));
+    private PapssParticipantBinding Binding()
+        => _operationRouter.ResolvePapss();
 
     private async Task<ActionResult> Papss(Func<Task<ActionResult>> action)
     {
