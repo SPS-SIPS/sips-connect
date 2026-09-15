@@ -419,17 +419,25 @@ public static class DI
             throw new InvalidOperationException("PapssFacing responder identity, environment and security profile are required when PAPSS is enabled.");
         if (options.RequestTimeoutSeconds is < 1 or > 120 || options.MaximumResponseBytes is < 1024 or > 10_000_000)
             throw new InvalidOperationException("PapssFacing timeout or response-size limit is invalid.");
-        if (options.AllowedLocalInstruments.Length == 0)
-            throw new InvalidOperationException("PapssFacing requires an explicit allowed-local-instrument list when enabled.");
-        if (options.AllowedCorridors.Length == 0 || options.ReadinessStaleSeconds is < 10 or > 86400)
-            throw new InvalidOperationException("PapssFacing requires explicit corridors and a valid readiness staleness interval when enabled.");
+        if (options.ReadinessStaleSeconds is < 10 or > 86400)
+            throw new InvalidOperationException("PapssFacing requires a valid readiness staleness interval when enabled.");
+        if (options.Participants.Count == 0 || !options.Participants.Any(x => x.Value.Enabled))
+            throw new InvalidOperationException("PapssFacing requires at least one authenticated local participant configuration when enabled.");
         foreach (var (principal, participant) in options.Participants)
         {
             if (!participant.Enabled) continue;
-            if (string.IsNullOrWhiteSpace(principal) || string.IsNullOrWhiteSpace(participant.Bic))
-                throw new InvalidOperationException("Each enabled PAPSS participant requires a configuration key and BIC.");
-            if (options.Participants.Where(x => x.Value.Enabled).Count(x => string.Equals(x.Value.Bic, participant.Bic, StringComparison.OrdinalIgnoreCase)) != 1)
+            if (string.IsNullOrWhiteSpace(principal) || string.IsNullOrWhiteSpace(participant.Bic) ||
+                participant.LocalCountry.Length != 2 || participant.SendingCurrencies.Length == 0)
+                throw new InvalidOperationException("Each enabled PAPSS participant requires an authenticated principal key, BIC, local country and sending currencies.");
+            if (!participant.LocalCountry.All(char.IsAsciiLetter) || participant.SendingCurrencies.Any(x => x.Length != 3 || !x.All(char.IsAsciiLetter)))
+                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' has an invalid local country or sending currency code.");
+            var bic = participant.Bic.Trim();
+            if (bic.Length is not (8 or 11) || !bic[..6].All(char.IsAsciiLetter) || !bic[6..].All(char.IsAsciiLetterOrDigit))
+                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' has an invalid ISO 9362 BIC.");
+            if (options.Participants.Where(x => x.Value.Enabled).Count(x => string.Equals(x.Value.Bic.Trim(), participant.Bic.Trim(), StringComparison.OrdinalIgnoreCase)) != 1)
                 throw new InvalidOperationException("Each enabled PAPSS participant BIC must be unique.");
+            if (!string.Equals(participant.Bic.Trim(), configuration["Xades:BIC"]?.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' BIC must match Xades:BIC.");
             if (string.IsNullOrWhiteSpace(participant.CallbackMappingProfile) || !configuration.GetSection("Endpoints").GetChildren().Any(x => x.Key.StartsWith(participant.CallbackMappingProfile + ".", StringComparison.Ordinal)))
                 throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' requires a configured callback mapping profile.");
             if (!Uri.TryCreate(participant.CallbackUrl, UriKind.Absolute, out var callbackUri) || callbackUri.Scheme != Uri.UriSchemeHttps)
