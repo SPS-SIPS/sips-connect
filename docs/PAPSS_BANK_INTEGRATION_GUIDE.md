@@ -12,12 +12,12 @@ Exchange the following through the approved secure onboarding channel:
 
 - the bank's configured `Xades:BIC` and Gateway role assignment;
 - the bank BIC that SIPS Connect must place in WP-SIPS BAH `From`;
-- authenticated principal name, local BIC/country/sending currencies, enabled PAPSS operations, and any deliberate SPS instrument policy;
+- local BIC/country/sending currencies, deployment-level PAPSS route state, and any deliberate SPS instrument policy;
 - the bank callback HTTPS URL and callback mapping profile;
 - API credentials or JWT issuer/client details;
 - participant inbound-verification certificates and callback transport/signing requirements.
 
-Each SIPS Connect deployment represents one bank. The authenticated principal name must exactly match one enabled `PapssFacing.Participants` key, and that entry's BIC must match `Xades:BIC`; a missing, contradictory, or ambiguous binding fails closed. The configured local BIC becomes BAH `From`.
+Each SIPS Connect deployment represents one bank. Its `Xades:BIC` is the protected local identity and becomes BAH `From`; flat `PapssFacing` settings supply local country, sending currencies, PAPSS routing, and callback transport. API authentication remains required, but SIPS Connect does not maintain a participant registry or per-operation authorization map.
 
 ## Authentication
 
@@ -211,7 +211,7 @@ An HTTP success confirms the returned admission result; it does not permit reuse
 
 ## Callback contract
 
-The bank supplies one HTTPS callback URL and a `CallbackMappingProfile`. SIPS Connect verifies PAPSS-originated XAdES signatures, resolves the destination institution and correlation, applies the participant-specific `JsonAdapter` callback mappings, and delivers the resulting JSON to that URL.
+The bank supplies one HTTPS callback URL and a `CallbackMappingProfile`. SIPS Connect verifies PAPSS-originated XAdES signatures, checks the local BIC and correlation, applies the deployment's `JsonAdapter` callback mappings, and delivers the resulting JSON to that URL.
 
 The callback mapping keys are `<profile>.<callback-name>`, for example `bank-uat-v1.CB_PaymentRequest`. The profile must define every callback the participant enables. Callback authentication/signing is agreed during onboarding; secrets and private keys are deployed through the approved secret store, never in adapter JSON or this document.
 
@@ -247,12 +247,12 @@ Callback mappings remain participant-profile-prefixed and are separate from thes
 
 ## UAT acceptance checklist
 
-1. Confirm `Xades:BIC` is the expected local bank BIC and any configured PAPSS capability entry matches it.
-2. Confirm PAPSS remains globally and per-participant disabled during initial deployment.
+1. Confirm `Xades:BIC` is the expected local bank BIC and the flat `PapssFacing` local/callback settings describe this deployment.
+2. Confirm the deployment-level PAPSS rail remains disabled during initial deployment.
 3. Verify the four legacy endpoints without `rail` still use SmartVista/SIPS.
 4. Load and validate the participant JsonAdapter and callback mappings.
 5. Bind certificates and secrets through the environment's secret store.
-6. Enable PAPSS only for the selected UAT participant and approved operations.
+6. Enable the deployment-level PAPSS rail for UAT.
 7. Exercise Verify, Payment, Status, Return, Readiness, Discovery, and FX.
 8. Confirm signed-ISO correlation and asynchronous callback delivery where applicable.
 9. Test duplicate callback handling, ambiguous delivery reconciliation, denied operations, stale/ambiguous/ineligible directory observations, unsupported currencies/instruments, and credential failure.

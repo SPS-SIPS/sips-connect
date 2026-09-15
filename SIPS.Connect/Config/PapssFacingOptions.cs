@@ -13,22 +13,13 @@ public sealed class PapssFacingOptions
     public string[] AllowedHosts { get; set; } = [];
     public PapssSpsPolicy SpsPolicy { get; set; } = new();
     public int ReadinessStaleSeconds { get; set; } = 300;
-    public Dictionary<string, PapssParticipantCapability> Participants { get; set; } =
-        new(StringComparer.OrdinalIgnoreCase);
+    public string LocalCountry { get; set; } = string.Empty;
+    public string[] SendingCurrencies { get; set; } = [];
+    public string? CallbackMappingProfile { get; set; }
+    public string? CallbackUrl { get; set; }
 }
 
 public sealed class PapssSpsPolicy
 {
     public string[] AllowedLocalInstruments { get; set; } = [];
-}
-
-public sealed class PapssParticipantCapability
-{
-    public bool Enabled { get; set; }
-    public string Bic { get; set; } = string.Empty;
-    public string LocalCountry { get; set; } = string.Empty;
-    public string[] SendingCurrencies { get; set; } = [];
-    public string[] AllowedOperations { get; set; } = [];
-    public string? CallbackMappingProfile { get; set; }
-    public string? CallbackUrl { get; set; }
 }

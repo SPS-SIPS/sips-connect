@@ -7,6 +7,7 @@ using SIPS.ISO20022.Helpers;
 using SIPS.ISO20022.Enums;
 using SIPS.XMLDsig.Xades.Interfaces;
 using SIPS.XMLDsig.Xades.Models;
+using SIPS.XMLDsig.Xades.Options;
 
 namespace SIPS.Connect.Services;
 
@@ -15,7 +16,7 @@ public interface IPapssCallbackGuard
     Task<PapssParticipantBinding?> ValidateAsync(string xml, CancellationToken ct);
 }
 
-public sealed class PapssCallbackGuard(PapssFacingOptions options, JsonAdapterOptions mappings, INativeVerifier verifier) : IPapssCallbackGuard
+public sealed class PapssCallbackGuard(PapssFacingOptions options, XadesOptions xades, JsonAdapterOptions mappings, INativeVerifier verifier) : IPapssCallbackGuard
 {
     public async Task<PapssParticipantBinding?> ValidateAsync(string xml, CancellationToken ct)
     {
@@ -48,13 +49,12 @@ public sealed class PapssCallbackGuard(PapssFacingOptions options, JsonAdapterOp
             throw new InvalidDataException("The protected callback provenance does not match its BAH profile.");
         var to = Party(header, "To");
         if (!string.Equals(from, options.RemoteWpSipsIdentity, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("PAPSS callback BAH From is invalid.");
-        var matches = options.Participants.Where(x => x.Value.Enabled && string.Equals(x.Value.Bic, to, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (matches.Length != 1) throw new InvalidDataException("PAPSS callback destination does not resolve to exactly one participant.");
-        var match = matches[0];
-        if (string.IsNullOrWhiteSpace(match.Value.CallbackMappingProfile) || !mappings.Endpoints.Keys.Any(x => x.StartsWith(match.Value.CallbackMappingProfile + ".", StringComparison.Ordinal)))
-            throw new InvalidDataException("The participant callback mapping profile is missing or unknown.");
-        return new(match.Key, match.Value.Bic.Trim().ToUpperInvariant(), match.Value.LocalCountry.Trim().ToUpperInvariant(),
-            match.Value.SendingCurrencies.Select(x => x.Trim().ToUpperInvariant()).ToArray(), match.Value.CallbackMappingProfile, match.Value.CallbackUrl);
+        var localBic = xades.BIC?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(localBic) || !string.Equals(localBic, to, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("PAPSS callback destination does not match this SIPS Connect participant.");
+        if (string.IsNullOrWhiteSpace(options.CallbackMappingProfile) || !mappings.Endpoints.Keys.Any(x => x.StartsWith(options.CallbackMappingProfile + ".", StringComparison.Ordinal)))
+            throw new InvalidDataException("The callback mapping profile is missing or unknown.");
+        return new(localBic, options.LocalCountry.Trim().ToUpperInvariant(), options.SendingCurrencies.Select(x => x.Trim().ToUpperInvariant()).ToArray(), options.CallbackMappingProfile, options.CallbackUrl);
     }
 
     private static XDocument Document(string xml)
