@@ -135,21 +135,13 @@ Use deployment-specific values and keep private keys and passphrases in the depl
     "RequestTimeoutSeconds": 30,
     "MaximumResponseBytes": 2000000,
     "ReadinessStaleSeconds": 300,
-    "AllowedLocalInstruments": ["<LOCAL-INSTRUMENT>"],
-    "AllowedCorridors": [
-      {
-        "SenderCountry": "<ISO-3166-ALPHA-2>",
-        "ReceiverCountry": "<ISO-3166-ALPHA-2>",
-        "SenderCurrency": "<ISO-4217>",
-        "ReceiverCurrency": "<ISO-4217>",
-        "DestinationBic": "<DESTINATION-BIC>",
-        "LocalInstruments": ["<LOCAL-INSTRUMENT>"]
-      }
-    ],
+    "SpsPolicy": { "AllowedLocalInstruments": [] },
     "Participants": {
       "local-bank": {
         "Enabled": true,
         "Bic": "<SAME-AS-XADES-BIC>",
+        "LocalCountry": "<ISO-3166-ALPHA-2>",
+        "SendingCurrencies": ["<ISO-4217>"],
         "AllowedOperations": [
           "Verification",
           "Payment",
@@ -167,7 +159,9 @@ Use deployment-specific values and keep private keys and passphrases in the depl
 }
 ```
 
-`PapssFacing:Participants` is optional for outbound routing. When it is absent, `PapssFacing:Enabled` enables outbound operations for the local `Xades:BIC`. Configure a participant entry when operation restrictions or asynchronous callback delivery are required. Its `Bic` must match `Xades:BIC`; its key (`local-bank` above) is only a mapping-profile label.
+`PapssFacing:Participants` is required when PAPSS is enabled. Its key must exactly match the authenticated API-key/JWT principal name, and its `Bic` must match `Xades:BIC`. The entry owns local country, permitted sending currencies, operations and callback configuration. `SpsPolicy:AllowedLocalInstruments` is an optional SPS restriction; PAPSS-supported instruments are always learned from signed discovery/readiness data.
+
+Payment destination BIC and, where needed, receiver currency are transaction selections. SIPS Connect performs signed, correlated Discovery and Readiness lookups for every PAPSS payment, derives receiver country, and validates current status, online eligibility, currencies and payment schemas. No per-destination deployment entry is used.
 
 All PAPSS operations use one service ingress:
 
@@ -184,7 +178,7 @@ The existing `/Verify`, `/Payment`, `/Status`, and `/Return` JSON mappings accep
 1. Deploy SIPS Connect with `PapssFacing:Enabled=false`.
 2. Verify normal SmartVista/IPS traffic and health.
 3. Install the local WP-SIPS signing certificate/private key and the PAPSS verification trust chain.
-4. Configure `/sips/messages`, its allowed host, the expected PAPSS identity, security profile, corridors, and instruments.
+4. Configure `/sips/messages`, its allowed host, the expected PAPSS identity, security profile, and authenticated local participant facts. Add an SPS instrument restriction only if deliberately required.
 5. Load the PAPSS request and callback JSON adapter mappings.
 6. Set `PapssFacing:Enabled=true` and restart SIPS Connect so startup validation runs.
 7. Verify readiness, then test `Verification` before enabling financial UAT flows.

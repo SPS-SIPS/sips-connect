@@ -38,17 +38,14 @@ Example:
     "RequestTimeoutSeconds": 15,
     "MaximumResponseBytes": 2000000,
     "AllowedHosts": ["papss.example"],
-    "AllowedLocalInstruments": ["INST"],
-    "AllowedCorridors": [{
-      "SenderCountry": "SO", "ReceiverCountry": "KE",
-      "SenderCurrency": "SOS", "ReceiverCurrency": "KES",
-      "DestinationBic": "BANKKE00XXX", "LocalInstruments": ["INST"]
-    }],
+    "SpsPolicy": { "AllowedLocalInstruments": [] },
     "ReadinessStaleSeconds": 300,
     "Participants": {
       "participant-api-key-name": {
         "Enabled": true,
         "Bic": "BANKSOSIXXX",
+        "LocalCountry": "SO",
+        "SendingCurrencies": ["SOS"],
         "AllowedOperations": ["Verification", "Payment", "Status", "Return", "Readiness", "Discovery", "Fx"],
         "CallbackMappingProfile": "participant-callback-v1",
         "CallbackUrl": "https://bank.example/papss/callback"
@@ -60,7 +57,9 @@ Example:
 
 ## Security and operations
 
-Outbound traffic uses one configured PAPSS ISO ingress, `application/xml`, a correlation header, bounded time and response size, signed envelopes, response signature/provenance verification, schema/profile validation, and financial/information correlation checks. The deployment's `Xades:BIC` becomes BAH `From`; PAPSS is BAH `To`. Response signer identity, BAH reversal, message type, service, original message identifier, and applicable transaction references are checked before parsing.
+Outbound traffic uses one configured PAPSS ISO ingress, `application/xml`, a correlation header, bounded time and response size, signed envelopes, response signature/provenance verification, schema/profile validation, and financial/information correlation checks. The authenticated principal must exactly select one enabled participant entry whose BIC matches `Xades:BIC`; that entry supplies sender BIC, country and currencies. PAPSS is BAH `To`.
+
+For payments, destination BIC is transaction data. Signed Discovery must return one exact BIC match, and correlated signed Readiness must be fresh, active and online. Receiver country comes from Discovery; receiver currencies and payment schemas come from Readiness. Unsupported or ambiguous observations fail closed. `SpsPolicy` is only an optional local restriction and never duplicates PAPSS directory master data.
 
 Reverse traffic continues to enter through the existing signed-ISO `/api/v1/Incoming` endpoint. PAPSS callbacks are verified before dispatch, resolved by BAH `To` to one configured participant, and execute under an async-local callback mapping scope. Mapping keys use `<CallbackMappingProfile>.<existing mapping name>` (for example `participant-callback-v1.CB_PaymentRequest`), so the accepted duplicate suppression, ambiguous-delivery handling, and recall refusal remain in the existing Core handlers while participant-specific JSON shapes are selected safely per request.
 

@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
 using SIPS.Connect.Services;
 using SIPS.ISO20022.Models.WpSips;
+using System.Security.Claims;
 
 namespace SIPS.Connect.Controllers;
 [ApiController]
@@ -161,7 +162,7 @@ public class GatewayController(
         => _operationRouter.Select(operation, rail);
 
     private PapssParticipantBinding Binding(ParticipantOperation operation)
-        => _operationRouter.ResolvePapss(operation);
+        => _operationRouter.ResolvePapss(operation, User.Identity?.Name ?? User.FindFirstValue("preferred_username") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"));
 
     private async Task<ActionResult> Papss(Func<Task<ActionResult>> action)
     {
