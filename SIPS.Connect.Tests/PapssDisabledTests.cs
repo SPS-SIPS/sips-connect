@@ -28,7 +28,7 @@ public sealed class PapssDisabledTests
     public async Task Disabled_callback_guard_does_not_touch_trust_verifier()
     {
         var verifier = new Mock<INativeVerifier>(MockBehavior.Strict);
-        var guard = new PapssCallbackGuard(new() { Enabled = false }, new JsonAdapterOptions(), verifier.Object);
+        var guard = new PapssCallbackGuard(new() { Enabled = false }, new XadesOptions(), new JsonAdapterOptions(), verifier.Object);
         Assert.Null(await guard.ValidateAsync("not-even-xml", CancellationToken.None));
         verifier.VerifyNoOtherCalls();
     }
@@ -57,15 +57,14 @@ public sealed class PapssCallbackGuardTests
     [Fact]
     public async Task Signed_callback_resolves_bah_destination_to_participant_profile()
     {
-        var options = new PapssFacingOptions { Enabled=true, RemoteWpSipsIdentity="PAPSS", SecurityProfile="SPS.PAPSS.FINANCIAL.001", Participants=new(StringComparer.OrdinalIgnoreCase)
-        { ["bank-a"] = new() { Enabled=true, Bic="BANKSOSIXXX", CallbackMappingProfile="bank-a", CallbackUrl="https://bank.test/callback" } } };
+        var options = Options();
         var mappings = new JsonAdapterOptions { Endpoints = new() { ["bank-a.CB_PaymentRequest"] = new() } };
         var verifier = new Mock<INativeVerifier>();
         verifier.Setup(x => x.VerifyWithProvenance(It.IsAny<string>(), XadesProfile.WpSipsPapss, It.IsAny<CancellationToken>())).ReturnsAsync(new SignatureVerificationResult(true, new VerboseResult(),
             new("PAPSS","CA","test","PAPSS","issuer","1","hash",true,"v1","pacs.008.001.10",options.SecurityProfile,"hash",DateTimeOffset.UtcNow)));
         var xml = $"<FPEnvelope xmlns:h='urn:iso:std:iso:20022:tech:xsd:head.001.001.03'><h:AppHdr><h:Fr><h:FIId><h:FinInstnId><h:Othr><h:Id>PAPSS</h:Id></h:Othr></h:FinInstnId></h:FIId></h:Fr><h:To><h:FIId><h:FinInstnId><h:Othr><h:Id>BANKSOSIXXX</h:Id></h:Othr></h:FinInstnId></h:FIId></h:To><h:BizMsgIdr>M1</h:BizMsgIdr><h:MsgDefIdr>pacs.008.001.10</h:MsgDefIdr><h:BizSvc>{options.SecurityProfile}</h:BizSvc><h:CreDt>2026-01-01T00:00:00Z</h:CreDt></h:AppHdr></FPEnvelope>";
-        var route = await new PapssCallbackGuard(options, mappings, verifier.Object).ValidateAsync(xml, CancellationToken.None);
-        Assert.Equal("bank-a", route?.Principal);
+        var route = await new PapssCallbackGuard(options, LocalXades(), mappings, verifier.Object).ValidateAsync(xml, CancellationToken.None);
+        Assert.Equal("BANKSOSIXXX", route?.Bic);
         Assert.Equal("bank-a", route?.CallbackMappingProfile);
     }
 
@@ -74,7 +73,7 @@ public sealed class PapssCallbackGuardTests
     {
         var options = new PapssFacingOptions { Enabled=true, RemoteWpSipsIdentity="PAPSS", SecurityProfile="SPS.PAPSS.FINANCIAL.001" };
         var xml = $"<FPEnvelope xmlns:h='urn:iso:std:iso:20022:tech:xsd:head.001.001.03'><h:AppHdr><h:Fr><h:FIId><h:FinInstnId><h:Othr><h:Id>PAPSS</h:Id></h:Othr></h:FinInstnId></h:FIId></h:Fr><h:To><h:FIId><h:FinInstnId><h:Othr><h:Id>BANKSOSIXXX</h:Id></h:Othr></h:FinInstnId></h:FIId></h:To><h:BizMsgIdr>M1</h:BizMsgIdr><h:MsgDefIdr>pacs.002.001.12</h:MsgDefIdr><h:BizSvc>{options.SecurityProfile}</h:BizSvc><h:CreDt>2026-01-01T00:00:00Z</h:CreDt></h:AppHdr></FPEnvelope>";
-        await Assert.ThrowsAsync<InvalidDataException>(() => new PapssCallbackGuard(options, new(), Mock.Of<INativeVerifier>()).ValidateAsync(xml, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidDataException>(() => new PapssCallbackGuard(options, LocalXades(), new(), Mock.Of<INativeVerifier>()).ValidateAsync(xml, CancellationToken.None));
     }
 
     [Fact]
@@ -92,9 +91,8 @@ public sealed class PapssCallbackGuardTests
         var verified = await pki.Verifier.VerifyWithProvenance(signed, XadesProfile.WpSipsPapss, CancellationToken.None);
         Assert.True(verified.Result, $"certificate={verified.Verbose.CertificateStatus}; signature={verified.Verbose.SignatureStatus}; references={verified.Verbose.ReferencesStatus}; ownership={verified.Verbose.OwnershSIPStatus}");
 
-        var route = await new PapssCallbackGuard(options, Mappings(), pki.Verifier).ValidateAsync(signed, CancellationToken.None);
+        var route = await new PapssCallbackGuard(options, LocalXades(), Mappings(), pki.Verifier).ValidateAsync(signed, CancellationToken.None);
 
-        Assert.Equal("bank-a", route?.Principal);
         Assert.Equal("BANKSOSIXXX", route?.Bic);
     }
 
@@ -105,7 +103,7 @@ public sealed class PapssCallbackGuardTests
         {
             var incoming = new Mock<IIncoming>(MockBehavior.Strict);
             var verifier = new Mock<INativeVerifier>(MockBehavior.Strict);
-            var guard = new PapssCallbackGuard(Options(), Mappings(), verifier.Object);
+            var guard = new PapssCallbackGuard(Options(), LocalXades(), Mappings(), verifier.Object);
             var controller = new IncomingController(incoming.Object, guard, new ParticipantCallbackContext(), NullLogger<IncomingController>.Instance)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
@@ -122,7 +120,8 @@ public sealed class PapssCallbackGuardTests
         }
     }
 
-    private static PapssFacingOptions Options() => new() { Enabled=true, RemoteWpSipsIdentity="PAPSS", SecurityProfile="SPS.PAPSS.FINANCIAL.001", Participants=new(StringComparer.OrdinalIgnoreCase) { ["bank-a"] = new() { Enabled=true, Bic="BANKSOSIXXX", CallbackMappingProfile="bank-a", CallbackUrl="https://bank.test/callback" } } };
+    private static PapssFacingOptions Options() => new() { Enabled=true, RemoteWpSipsIdentity="PAPSS", SecurityProfile="SPS.PAPSS.FINANCIAL.001", LocalCountry="SO", SendingCurrencies=["SOS"], CallbackMappingProfile="bank-a", CallbackUrl="https://bank.test/callback" };
+    private static XadesOptions LocalXades() => new() { BIC="BANKSOSIXXX" };
     private static JsonAdapterOptions Mappings() => new() { Endpoints = new() { ["bank-a.CB_VerificationResponse"] = new() } };
 
     private sealed class CallbackPki : IDisposable

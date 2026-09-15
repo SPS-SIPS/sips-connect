@@ -22,7 +22,7 @@ public sealed class ParticipantCallbackJsonAdapterTests
         var input = new JsonObject { ["value"] = "ok" };
 
         Assert.True(adapter.Transform(input, "CB_PaymentRequest").ContainsKey("defaultField"));
-        using (context.Push(new("bank-a", "BANKSOSIXXX", "SO", ["SOS"], "bank-a", "https://bank.test/callback")))
+        using (context.Push(new("BANKSOSIXXX", "SO", ["SOS"], "bank-a", "https://bank.test/callback")))
             Assert.True(adapter.Transform(input, "CB_PaymentRequest").ContainsKey("participantField"));
         Assert.True(adapter.Transform(input, "CB_PaymentRequest").ContainsKey("defaultField"));
     }

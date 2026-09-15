@@ -421,27 +421,14 @@ public static class DI
             throw new InvalidOperationException("PapssFacing timeout or response-size limit is invalid.");
         if (options.ReadinessStaleSeconds is < 10 or > 86400)
             throw new InvalidOperationException("PapssFacing requires a valid readiness staleness interval when enabled.");
-        if (options.Participants.Count == 0 || !options.Participants.Any(x => x.Value.Enabled))
-            throw new InvalidOperationException("PapssFacing requires at least one authenticated local participant configuration when enabled.");
-        foreach (var (principal, participant) in options.Participants)
-        {
-            if (!participant.Enabled) continue;
-            if (string.IsNullOrWhiteSpace(principal) || string.IsNullOrWhiteSpace(participant.Bic) ||
-                participant.LocalCountry.Length != 2 || participant.SendingCurrencies.Length == 0)
-                throw new InvalidOperationException("Each enabled PAPSS participant requires an authenticated principal key, BIC, local country and sending currencies.");
-            if (!participant.LocalCountry.All(char.IsAsciiLetter) || participant.SendingCurrencies.Any(x => x.Length != 3 || !x.All(char.IsAsciiLetter)))
-                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' has an invalid local country or sending currency code.");
-            var bic = participant.Bic.Trim();
-            if (bic.Length is not (8 or 11) || !bic[..6].All(char.IsAsciiLetter) || !bic[6..].All(char.IsAsciiLetterOrDigit))
-                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' has an invalid ISO 9362 BIC.");
-            if (options.Participants.Where(x => x.Value.Enabled).Count(x => string.Equals(x.Value.Bic.Trim(), participant.Bic.Trim(), StringComparison.OrdinalIgnoreCase)) != 1)
-                throw new InvalidOperationException("Each enabled PAPSS participant BIC must be unique.");
-            if (!string.Equals(participant.Bic.Trim(), configuration["Xades:BIC"]?.Trim(), StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' BIC must match Xades:BIC.");
-            if (string.IsNullOrWhiteSpace(participant.CallbackMappingProfile) || !configuration.GetSection("Endpoints").GetChildren().Any(x => x.Key.StartsWith(participant.CallbackMappingProfile + ".", StringComparison.Ordinal)))
-                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' requires a configured callback mapping profile.");
-            if (!Uri.TryCreate(participant.CallbackUrl, UriKind.Absolute, out var callbackUri) || callbackUri.Scheme != Uri.UriSchemeHttps)
-                throw new InvalidOperationException($"Enabled PAPSS participant '{principal}' requires an HTTPS callback URL.");
-        }
+        if (options.LocalCountry.Length != 2 || !options.LocalCountry.All(char.IsAsciiLetter) || options.SendingCurrencies.Length == 0 || options.SendingCurrencies.Any(x => x.Length != 3 || !x.All(char.IsAsciiLetter)))
+            throw new InvalidOperationException("PapssFacing requires a valid local country and at least one sending currency when enabled.");
+        var bic = configuration["Xades:BIC"]?.Trim() ?? string.Empty;
+        if (bic.Length is not (8 or 11) || !bic[..6].All(char.IsAsciiLetter) || !bic[6..].All(char.IsAsciiLetterOrDigit))
+            throw new InvalidOperationException("Xades:BIC must be a valid ISO 9362 BIC when PAPSS is enabled.");
+        if (string.IsNullOrWhiteSpace(options.CallbackMappingProfile) || !configuration.GetSection("Endpoints").GetChildren().Any(x => x.Key.StartsWith(options.CallbackMappingProfile + ".", StringComparison.Ordinal)))
+            throw new InvalidOperationException("PapssFacing requires a configured callback mapping profile when enabled.");
+        if (!Uri.TryCreate(options.CallbackUrl, UriKind.Absolute, out var callbackUri) || callbackUri.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("PapssFacing requires an HTTPS callback URL when enabled.");
     }
 }

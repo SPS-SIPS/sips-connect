@@ -90,7 +90,7 @@ FRONTEND REQUIREMENTS
    - PAPSS return;
    - callback/event history if the frontend already displays incoming events.
 
-6. PAPSS should be visibly unavailable when the backend returns `PAPSS_DISABLED` or `PAPSS_NOT_ENABLED`. Do not silently fall back to Domestic SIPS after a user explicitly chooses PAPSS.
+6. PAPSS should be visibly unavailable when the backend returns `PAPSS_DISABLED`. Do not silently fall back to Domestic SIPS after a user explicitly chooses PAPSS.
 
 7. Do not expose private keys, certificate passwords, API secrets, or raw signing material in the frontend.
 
@@ -179,7 +179,7 @@ POST /Readiness
   "bic": "<OPTIONAL_BIC>"
 }
 
-Readiness is PAPSS operational and capability information. Local participant enablement, operation permissions, and any explicit SPS policy remain separate authorization controls.
+Readiness is PAPSS operational and capability information. The deployment-level PAPSS rail switch and any explicit SPS policy remain separate controls.
 
 Discovery:
 
@@ -315,7 +315,7 @@ Execute in this order:
 
 1. PAPSS disabled: run the complete existing Domestic SIPS regression.
 2. Confirm Readiness/Discovery/FX are unavailable while PAPSS is disabled.
-3. Enable PAPSS for the selected UAT bank and approved operations.
+3. Enable the deployment-level PAPSS rail for the UAT bank.
 4. Run Readiness.
 5. Run Discovery.
 6. Run FX.

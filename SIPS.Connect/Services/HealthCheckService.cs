@@ -150,7 +150,7 @@ public class HealthCheckService : IHealthCheckService
         var signingReady = !_xadesConfig.WithoutPKI && File.Exists(_xadesConfig.CertificatePath) && File.Exists(_xadesConfig.PrivateKeyPath);
         var configured = Uri.TryCreate(_papss.IsoIngressUrl, UriKind.Absolute, out var uri) &&
             string.Equals(uri.AbsolutePath.TrimEnd('/'), "/sips/messages", StringComparison.Ordinal) &&
-            (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback) && _papss.AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase) && _papss.Participants.Values.Any(x => x.Enabled) && signingReady;
+            (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback) && _papss.AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase) && signingReady;
         var lastSuccess = _papssHealth.LastSuccessfulObservation;
         var lastFailure = _papssHealth.LastFailure;
         var fresh = lastSuccess is { } success && DateTimeOffset.UtcNow - success <= TimeSpan.FromSeconds(_papss.ReadinessStaleSeconds) && (lastFailure is null || success > lastFailure);
