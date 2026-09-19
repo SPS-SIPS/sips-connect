@@ -604,6 +604,7 @@ public sealed class IncomingTransactionHandler(
     {
         var normalizedStatus = status?.Trim();
         return string.Equals(normalizedStatus, ACSC, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalizedStatus, "ACCP", StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalizedStatus, "SUCC", StringComparison.OrdinalIgnoreCase);
     }
 }

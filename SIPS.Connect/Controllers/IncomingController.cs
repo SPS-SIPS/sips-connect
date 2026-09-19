@@ -2,11 +2,12 @@ using System.Text;
 using SIPS.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using SIPS.Connect.Services;
+using System.Xml.Linq;
 namespace SIPS.Connect.Controllers;
 [ApiController]
 [Produces("application/xml")]
 [Route("api/v1/[controller]")]
-public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssGuard, IParticipantCallbackContext callbackContext, ILogger<IncomingController> logger) : ControllerBase
+public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssGuard, IPapssPaymentDecisionPublisher decisionPublisher, IParticipantCallbackContext callbackContext, ILogger<IncomingController> logger) : ControllerBase
 {
     private readonly IIncoming _isoService = isoService;
     [HttpPost]
@@ -23,8 +24,10 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
             {
                 logger.LogInformation("Validated PAPSS callback for local participant {Bic} using mapping profile {MappingProfile}", route.Bic, route.CallbackMappingProfile);
                 using var mapping = callbackContext.Push(route);
-                var routedResult = await _isoService.Handle(body, ct);
-                return Content(routedResult, "application/xml", Encoding.UTF8);
+                await _isoService.Handle(body, ct);
+                if (MessageDefinition(body) == "pacs.008.001.10")
+                    await decisionPublisher.PersistAndSubmitAsync(route, body, ct);
+                return Ok();
             }
         }
         catch (UnauthorizedAccessException)
@@ -39,5 +42,12 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
         var result = await _isoService.Handle(body, ct);
 
         return Content(result, "application/xml", Encoding.UTF8);
+    }
+
+    private static string? MessageDefinition(string xml)
+    {
+        using var reader = System.Xml.XmlReader.Create(new StringReader(xml), new() { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null });
+        return XDocument.Load(reader, LoadOptions.None).Descendants().SingleOrDefault(x => x.Name.LocalName == "AppHdr")?
+            .Elements().SingleOrDefault(x => x.Name.LocalName == "MsgDefIdr")?.Value;
     }
 }

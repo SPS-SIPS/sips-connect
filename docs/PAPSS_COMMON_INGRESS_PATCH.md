@@ -29,7 +29,7 @@ This specification is intentionally implementation-ready but was not applied bec
 - Readiness, discovery, and FX exercise the existing `WpSipsAdapter` and preserve typed success/error payloads.
 - A payment round-trip preserves sender country, receiver country, sender currency, and receiver currency; missing or contradictory values are rejected.
 - Concurrent duplicate payment/correlation identifiers remain idempotent.
-- Existing `/sips/payments` behavior is covered during the migration window and explicitly deprecated.
+- SIPS Connect never calls the temporary `/sips/payments` compatibility route; every operation, including participant `pacs.002` decisions, uses `/sips/messages`.
 
 ## Cross-repository conformance gate
 

@@ -17,6 +17,7 @@ public interface IPapssFacingSipsClient
 {
     Task<PapssAdmissionResponse> VerifyAsync(PapssParticipantBinding participant, VerificationRequestDto request, CancellationToken ct);
     Task<PapssAdmissionResponse> PayAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct);
+    Task<PapssAdmissionResponse> SubmitPaymentDecisionAsync(PapssParticipantBinding participant, string signedPacs002, CancellationToken ct);
     Task<PapssAdmissionResponse> GetStatusAsync(PapssParticipantBinding participant, StatusRequestDto request, CancellationToken ct);
     Task<PapssAdmissionResponse> ReturnAsync(PapssParticipantBinding participant, ReturnPaymentRequestDto request, CancellationToken ct);
     Task<ReadinessResponse> GetReadinessAsync(PapssParticipantBinding participant, ReadinessRequest request, CancellationToken ct);
@@ -58,6 +59,30 @@ public sealed class PapssFacingSipsClient(
             PapssCorridor = new(request.SenderCountry!, request.ReceiverCountry!, request.SenderCurrency!, request.ReceiverCurrency!)
         });
         return await SendAdmissionAsync(built.document, participant, ct);
+    }
+
+    public async Task<PapssAdmissionResponse> SubmitPaymentDecisionAsync(PapssParticipantBinding participant, string signedPacs002, CancellationToken ct)
+    {
+        try
+        {
+            var document = SecureDocument(signedPacs002);
+            var header = document.Descendants().Single(x => x.Name.LocalName == "AppHdr");
+            var requestMsgId = Value(header, "BizMsgIdr");
+            if (Value(header, "MsgDefIdr") != "pacs.002.001.12" || Value(header, "BizSvc") != options.SecurityProfile)
+                throw new InvalidDataException("The PAPSS payment decision profile is invalid.");
+            if (!string.Equals(Party(header, "Fr"), participant.Bic, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(Party(header, "To"), options.RemoteWpSipsIdentity, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The PAPSS payment decision parties are invalid.");
+
+            var status = document.Descendants().Single(x => x.Name.LocalName == "TxSts").Value;
+            if (status is not ("ACCP" or "RJCT")) throw new InvalidDataException("A PAPSS payment decision must be ACCP or RJCT.");
+            if (status == "RJCT" && !PapssPaymentDecisionPublisher.HasRejectionReason(document))
+                throw new InvalidDataException("A rejected PAPSS payment decision requires a reason.");
+
+            var response = await PostAsync(signedPacs002, requestMsgId, ct);
+            return await ParseAdmissionAsync(response, requestMsgId, participant, ct);
+        }
+        catch (Exception error) { health.RecordFailure(error); throw; }
     }
 
     public async Task<PapssAdmissionResponse> GetStatusAsync(PapssParticipantBinding participant, StatusRequestDto request, CancellationToken ct)
@@ -105,20 +130,33 @@ public sealed class PapssFacingSipsClient(
             var profiled = SetBusinessService(unsigned, options.SecurityProfile);
             var requestMsgId = Value(SecureDocument(profiled).Descendants().Single(x => x.Name.LocalName == "AppHdr"), "BizMsgIdr");
             var signed = signer.SignEnvelope(profiled, XadesProfile.WpSipsPapss); var response = await PostAsync(signed, requestMsgId, ct);
-            var verified = await verifier.VerifyWithProvenance(response, XadesProfile.WpSipsPapss, ct);
-            if (!verified.Result || verified.Signer is null) throw new UnauthorizedAccessException("Invalid signed WP-SIPS response.");
-            ValidateSignerAndHeader(verified.Signer, participant, response, WpSipsMessageTypes.MessageReject, options.SecurityProfile);
-            WpSipsProtocolValidator.Validate(response);
-            var parsed = WpSipsInformationMessageParser.Parse(response);
-            if (parsed.Header.RelatedBusinessMessageId != requestMsgId || parsed.Payload is not AdminReject admission || admission.RejectedBusinessMessageId != requestMsgId)
-                throw new InvalidDataException("The technical admission response does not correlate to the request.");
-            if (admission.ReasonCode is not ("RECEIVED_AND_DURABLY_ADMITTED" or "EXACT_REPLAY"))
-                throw new InvalidDataException("The WP-SIPS request was not durably admitted: " + admission.ReasonCode);
-            health.RecordSuccess();
-            return new(requestMsgId, admission.ReasonCode, true);
+            return await ParseAdmissionAsync(response, requestMsgId, participant, ct);
         }
         catch (Exception error) { health.RecordFailure(error); throw; }
     }
+
+    private async Task<PapssAdmissionResponse> ParseAdmissionAsync(string response, string requestMsgId, PapssParticipantBinding participant, CancellationToken ct)
+    {
+        var verified = await verifier.VerifyWithProvenance(response, XadesProfile.WpSipsPapss, ct);
+        if (!verified.Result || verified.Signer is null) throw new UnauthorizedAccessException("Invalid signed WP-SIPS response.");
+        ValidateSignerAndHeader(verified.Signer, participant, response, WpSipsMessageTypes.MessageReject, options.SecurityProfile);
+        WpSipsProtocolValidator.Validate(response);
+        var parsed = WpSipsInformationMessageParser.Parse(response);
+        if (parsed.Header.RelatedBusinessMessageId != requestMsgId || parsed.Payload is not AdminReject admission || admission.RejectedBusinessMessageId != requestMsgId)
+            throw new InvalidDataException("The technical admission response does not correlate to the request.");
+        if (admission.ReasonCode is not ("RECEIVED_AND_DURABLY_ADMITTED" or "EXACT_REPLAY"))
+            throw new ParticipantRailException(MapAdmissionCode(admission.ReasonCode), "The WP-SIPS request was not durably admitted: " + admission.ReasonCode);
+        health.RecordSuccess();
+        return new(requestMsgId, admission.ReasonCode, true);
+    }
+
+    private static string MapAdmissionCode(string code) => code switch
+    {
+        "DUPLICATE_CONFLICT" => "DUPLICATE_CONFLICT",
+        "AUTHORIZATION_REJECTED" => "AUTHORIZATION_REJECTED",
+        "UNSUPPORTED_PROFILE" => "UNSUPPORTED_PROFILE",
+        _ => "REJECTED_BEFORE_EXTERNAL_EFFECT"
+    };
 
     private async Task<string> PostAsync(string signedXml, string correlation, CancellationToken ct)
     {
@@ -227,6 +265,8 @@ public sealed class PapssFacingSipsClient(
         if (!Code(x.SenderCurrency, 3) || !Code(x.ReceiverCurrency, 3) || !Code(x.Currency, 3)) throw new ArgumentException("PAPSS currency codes must be three uppercase ASCII letters.");
         if (!participant.SendingCurrencies.Contains(x.SenderCurrency, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The authenticated participant is not permitted to send the instructed currency.");
         if (!currencies.Contains(x.ReceiverCurrency, StringComparer.Ordinal)) throw new ArgumentException("The PAPSS destination does not support the selected receiver currency.");
+        if (x.SenderCurrency == "USD" && x.ReceiverCurrency != "USD")
+            throw new ParticipantRailException("PAPSS_FX_FEE_NOT_READY", "USD-to-local-currency PAPSS payments remain disabled until the FX and fee contract is closed. FX enquiry is indicative only.");
         if (!x.LocalInstrument.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') || x.LocalInstrument.Length > 35) throw new ArgumentException("PAPSS local instrument is invalid.");
         if (!destination.PaymentSchemas.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The PAPSS destination does not support the selected local instrument.");
         var policyInstruments = options.SpsPolicy.AllowedLocalInstruments.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();

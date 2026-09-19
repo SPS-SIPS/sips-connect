@@ -1172,7 +1172,7 @@
         { "InternalField": "ReceiverCurrency", "UserField": "receiverCurrency", "Type": "string" },
         { "InternalField": "ReceiverBank", "UserField": "receiverBank", "Type": "string" },
         { "InternalField": "LocalInstrument", "UserField": "localInstrument", "Type": "string" },
-        { "InternalField": "Amount", "UserField": "amount", "Type": "double" },
+        { "InternalField": "Amount", "UserField": "amount", "Type": "decimal" },
         { "InternalField": "IsInvoice", "UserField": "isInvoice", "Type": "bool" },
         { "InternalField": "InvoiceCurrency", "UserField": "invoiceCurrency", "Type": "string", "OmitIfNull": true }
       ]
@@ -1181,8 +1181,10 @@
       "FieldMappings": [
         { "InternalField": "Rates", "UserField": "rates", "Type": "object", "OmitIfNull": true },
         { "InternalField": "SenderAmount", "UserField": "senderAmount", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "ExchangeAmount", "UserField": "exchangeAmount", "Type": "object", "OmitIfNull": true },
         { "InternalField": "ReceiverAmount", "UserField": "receiverAmount", "Type": "object", "OmitIfNull": true },
-        { "InternalField": "InvoiceAmount", "UserField": "invoiceAmount", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "NationalFeeAmount", "UserField": "nationalFeeAmount", "Type": "object", "OmitIfNull": true },
+        { "InternalField": "FeeAmount", "UserField": "feeAmount", "Type": "object", "OmitIfNull": true },
         { "InternalField": "Error", "UserField": "error", "Type": "object", "OmitIfNull": true }
       ]
     },

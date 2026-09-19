@@ -196,6 +196,16 @@ The existing `/Verify`, `/Payment`, `/Status`, and `/Return` JSON mappings accep
 1. Deploy SIPS Connect with `PapssFacing:Enabled=false`.
 2. Verify normal SmartVista/IPS traffic and health.
 3. Install the local WP-SIPS signing certificate/private key and the PAPSS verification trust chain.
+
+### PAPSS payment decisions and admission
+
+An inbound PAPSS `pacs.008.001.10` is verified with `WpSipsPapss`, delivered to the bank callback, and converted into one durable `ACCP` or `RJCT` decision. SIPS Connect persists the exact signed `pacs.002.001.12` before posting it separately to `POST /sips/messages`. Callback HTTP success acknowledges delivery only; its response body is not the business decision. Ambiguous handoffs are retried from the stored signed bytes, so neither a callback retry nor a timeout creates a second decision.
+
+`RECEIVED_AND_DURABLY_ADMITTED` and `EXACT_REPLAY` are technical admission outcomes. They do not mean beneficiary verification, payment acceptance, settlement, return completion, or authoritative status. Stable admission failures are exposed as `DUPLICATE_CONFLICT`, `AUTHORIZATION_REJECTED`, `REJECTED_BEFORE_EXTERNAL_EFFECT`, or `UNSUPPORTED_PROFILE`.
+
+### Guevara certificate registration
+
+For every SIPS Connect deployment, Guevara must contain exactly one unambiguous active certificate record matching the signing certificate's issuer DN and serial number. The record must contain the certificate owner, exact represented participant BIC, environment, WP-SIPS security profile, required EKU, SHA-256 fingerprint, SPS authority, and a non-revoked/non-suspended status. The participant keeps its certificate and private key locally; no private key is sent to PAPSS Adapter or Guevara. PAPSS Adapter mTLS and PAPSS XML-signing certificates are not SIPS Connect settings.
 4. Configure `/sips/messages`, its allowed host, the expected PAPSS identity, security profile, local country, and sending currency. Add an SPS instrument restriction only if deliberately required.
 5. Load the PAPSS request and callback JSON adapter mappings.
 6. Set `PapssFacing:Enabled=true` and restart SIPS Connect so startup validation runs.
