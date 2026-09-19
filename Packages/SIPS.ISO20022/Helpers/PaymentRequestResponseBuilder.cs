@@ -162,8 +162,10 @@ public static class PaymentRequestResponseBuilder
                             OrgnlMsgNmId = orig.MsgDefIdr,
                             OrgnlCreDtTm = orig.CreDt
                         },
+                        OrgnlInstrId = orig.InstrId,
                         OrgnlEndToEndId = orig.EndToEndId,
                         OrgnlTxId = orig.TxId,
+                        OrgnlUETR = orig.UETR,
                         TxSts = request.Status,
                         StsRsnInf = GetStatusReasonInformation(request),
                         AccptncDtTm = request.Status == "RJCT" ? null : request.AcceptanceDate,
@@ -265,6 +267,8 @@ public static class PaymentRequestResponseBuilder
             CreDt = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlGrpInf?.OrgnlCreDtTm ?? DateTime.UtcNow,
             EndToEndId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlEndToEndId ?? "",
             TxId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxId ?? "",
+            InstrId = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlInstrId,
+            UETR = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlUETR,
             Amount = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.TypedValue ?? 0,
             Currency = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.Ccy ?? "USD"
         };

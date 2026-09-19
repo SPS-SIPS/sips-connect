@@ -104,7 +104,7 @@ public sealed class PapssCallbackGuardTests
             var incoming = new Mock<IIncoming>(MockBehavior.Strict);
             var verifier = new Mock<INativeVerifier>(MockBehavior.Strict);
             var guard = new PapssCallbackGuard(Options(), LocalXades(), Mappings(), verifier.Object);
-            var controller = new IncomingController(incoming.Object, guard, new ParticipantCallbackContext(), NullLogger<IncomingController>.Instance)
+            var controller = new IncomingController(incoming.Object, guard, Mock.Of<IPapssPaymentDecisionPublisher>(), new ParticipantCallbackContext(), NullLogger<IncomingController>.Instance)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
             };

@@ -243,6 +243,36 @@ FxRequest
 FxResponse
 ```
 
+The current `FxResponse` fields are `Rates`, `SenderAmount`, `ExchangeAmount`, `ReceiverAmount`, `NationalFeeAmount`, `FeeAmount`, and `Error`. `InvoiceAmount` is obsolete. FX rates and amounts use decimal-safe values and must never pass through binary `double` arithmetic.
+
+## Payment template and authority boundaries
+
+```json
+{
+  "rail": "PAPSS",
+  "agent": "<DESTINATION-BIC>",
+  "lclInstrument": "<PAPSS-PAYMENT-SCHEMA>",
+  "ctgPurp": "<CATEGORY-PURPOSE>",
+  "localId": "<END-TO-END-ID>",
+  "txId": "<TRANSACTION-ID>",
+  "currency": "<SENDER-CURRENCY>",
+  "amount": 100.00,
+  "papss": { "receiverCurrency": "<RECEIVER-CURRENCY>" }
+}
+```
+
+SIPS Connect derives the sender BIC and country from its participant deployment, validates sender currency against that deployment, resolves the destination by an exact unique BIC, and validates receiver country, currency, and local instrument against fresh signed PAPSS discovery/readiness observations. A bank must not send a PAPSS ParticipantId, technical channel, PAPSS endpoint, or certificate identity as routing data.
+
+USD-to-local-currency PAPSS payment submission currently fails closed with `PAPSS_FX_FEE_NOT_READY` until the authoritative transaction FX/fee handoff is enabled. The FX endpoint remains indicative reference data only.
+
+## Callback decision loop
+
+HTTP success from the PAPSS callback endpoint acknowledges delivery only. After the bank returns `ACCP` or `RJCT` (with a reason for rejection), SIPS Connect creates one correlated `pacs.002.001.12`, signs it explicitly with `WpSipsPapss`, persists it, and publishes it separately to `/sips/messages`. Retries reuse the exact stored signed decision. `IpsVendorLegacy` remains exclusive to SmartVista.
+
+## Certificate registration in Guevara
+
+Guevara must have one active, unambiguous record for the participant signing certificate, resolved by exact issuer DN and serial number. It records the owner, represented participant BIC, environment, WP-SIPS security profile, required EKU, SHA-256 fingerprint, SPS authority, and non-revoked/non-suspended status. The private key stays inside the participant deployment. PAPSS Adapter mTLS and PAPSS XML-signing certificates are not bank configuration values.
+
 Callback mappings remain participant-profile-prefixed and are separate from these outbound Gateway mappings.
 
 ## UAT acceptance checklist

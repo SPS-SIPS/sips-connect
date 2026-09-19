@@ -40,6 +40,10 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("bizmsgidr");
 
+                    b.Property<string>("BusinessService")
+                        .HasColumnType("text")
+                        .HasColumnName("businessservice");
+
                     b.Property<string>("CoreBankResponse")
                         .HasColumnType("jsonb")
                         .HasColumnName("corebankresponse");
@@ -85,6 +89,26 @@ namespace SIPS.PostgreSQL.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("pacs002role");
+
+                    b.Property<byte[]>("PapssDecision")
+                        .HasColumnType("bytea")
+                        .HasColumnName("papssdecision");
+
+                    b.Property<string>("PapssDecisionAdmissionCode")
+                        .HasColumnType("text")
+                        .HasColumnName("papssdecisionadmissioncode");
+
+                    b.Property<DateTimeOffset?>("PapssDecisionPublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("papssdecisionpublishedat");
+
+                    b.Property<string>("PapssDecisionFailureCode")
+                        .HasColumnType("text")
+                        .HasColumnName("papssdecisionfailurecode");
+
+                    b.Property<DateTimeOffset?>("PapssDecisionFailedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("papssdecisionfailedat");
 
                     b.Property<string>("Reason")
                         .HasColumnType("text")
@@ -138,6 +162,9 @@ namespace SIPS.PostgreSQL.Migrations
 
                     b.HasIndex("UETR")
                         .HasDatabaseName("ix_iso_msg_uetr");
+
+                    b.HasIndex("BusinessService", "PapssDecisionPublishedAt", "PapssDecisionFailedAt", "Id")
+                        .HasDatabaseName("ix_iso_msg_papss_decision_pending");
 
                     b.HasIndex("MessageType", "MsgId")
                         .IsUnique()

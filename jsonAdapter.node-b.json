@@ -1309,7 +1309,7 @@
         {
           "InternalField": "Amount",
           "UserField": "amount",
-          "Type": "double"
+          "Type": "decimal"
         },
         {
           "InternalField": "IsInvoice",
@@ -1339,14 +1339,26 @@
           "OmitIfNull": true
         },
         {
+          "InternalField": "ExchangeAmount",
+          "UserField": "exchangeAmount",
+          "Type": "object",
+          "OmitIfNull": true
+        },
+        {
           "InternalField": "ReceiverAmount",
           "UserField": "receiverAmount",
           "Type": "object",
           "OmitIfNull": true
         },
         {
-          "InternalField": "InvoiceAmount",
-          "UserField": "invoiceAmount",
+          "InternalField": "NationalFeeAmount",
+          "UserField": "nationalFeeAmount",
+          "Type": "object",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "FeeAmount",
+          "UserField": "feeAmount",
           "Type": "object",
           "OmitIfNull": true
         },

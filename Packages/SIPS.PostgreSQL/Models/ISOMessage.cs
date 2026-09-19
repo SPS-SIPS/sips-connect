@@ -11,6 +11,7 @@ public class ISOMessage
     public TransactionStatus Status { get; set; }
     public string MsgId { get; set; } = string.Empty;
     public string BizMsgIdr { get; set; } = string.Empty;
+    public string? BusinessService { get; set; }
     public string MsgDefIdr { get; set; } = string.Empty;
     public int Round { get; set; } = 1;
     public int CoreBankRetryCount { get; set; }
@@ -24,6 +25,11 @@ public class ISOMessage
     public string ToBIC { get; set; } = null!;
     public byte[] Message { get; set; } = null!;
     public byte[]? Response { get; set; }
+    public byte[]? PapssDecision { get; set; }
+    public string? PapssDecisionAdmissionCode { get; set; }
+    public DateTimeOffset? PapssDecisionPublishedAt { get; set; }
+    public string? PapssDecisionFailureCode { get; set; }
+    public DateTimeOffset? PapssDecisionFailedAt { get; set; }
     public string? CoreBankResponse { get; set; }
     public string? ReturnId { get; set; }
     public string? ReturnDedupKey { get; set; }
@@ -59,6 +65,15 @@ public sealed class ISOMessageConfiguration : IEntityTypeConfiguration<ISOMessag
 
         builder.Property(e => e.Response)
             .HasColumnType("bytea");
+
+        builder.Property(e => e.PapssDecision)
+            .HasColumnType("bytea");
+
+        builder.Property(e => e.PapssDecisionPublishedAt)
+            .HasColumnType("timestamp with time zone");
+
+        builder.Property(e => e.PapssDecisionFailedAt)
+            .HasColumnType("timestamp with time zone");
 
         builder.Property(e => e.CoreBankResponse)
             .HasColumnType("jsonb");
@@ -105,5 +120,8 @@ public sealed class ISOMessageConfiguration : IEntityTypeConfiguration<ISOMessag
         // Secondary index for UETR correlation and audit
         builder.HasIndex(e => e.UETR)
             .HasDatabaseName("ix_iso_msg_uetr");
+
+        builder.HasIndex(e => new { e.BusinessService, e.PapssDecisionPublishedAt, e.PapssDecisionFailedAt, e.Id })
+            .HasDatabaseName("ix_iso_msg_papss_decision_pending");
     }
 }

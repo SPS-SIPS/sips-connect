@@ -167,6 +167,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             TxId = request.TxId,
             EndToEndId = request.EndToEndId,
             BizMsgIdr = request.BizMsgIdr,
+            BusinessService = request.BusinessService,
             MsgDefIdr = request.MsgDefIdr,
             MsgId = request.MsgId,
             UETR = request.UETR,
@@ -219,6 +220,7 @@ public sealed class ISOMessageService(IPersistenceGateway persistence, ILogger<I
             UETR = request.UETR,
             EndToEndId = request.EndToEndId,
             BizMsgIdr = request.BizMsgIdr,
+            BusinessService = request.BusinessService,
             MsgDefIdr = request.MsgDefIdr,
             MsgId = request.MsgId,
         };
