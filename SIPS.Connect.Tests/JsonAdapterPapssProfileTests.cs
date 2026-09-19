@@ -24,7 +24,7 @@ public sealed class JsonAdapterPapssProfileTests
         ["ParticipantDiscoveryRequest"] = ["Rail", "Online", "Type", "Bic", "PapssId"],
         ["ParticipantDiscoveryResponse"] = ["Participants", "Error"],
         ["FxRequest"] = ["Rail", "SenderCountry", "ReceiverCountry", "SenderCurrency", "ReceiverCurrency", "ReceiverBank", "LocalInstrument", "Amount", "IsInvoice", "InvoiceCurrency"],
-        ["FxResponse"] = ["Rates", "SenderAmount", "ReceiverAmount", "InvoiceAmount", "Error"]
+        ["FxResponse"] = ["Rates", "SenderAmount", "ExchangeAmount", "ReceiverAmount", "NationalFeeAmount", "FeeAmount", "Error"]
     };
 
     [Theory]
@@ -44,6 +44,13 @@ public sealed class JsonAdapterPapssProfileTests
 
             foreach (var required in requiredFields)
                 Assert.Contains(required, actual);
+
+            if (mapping == "FxResponse") Assert.DoesNotContain("InvoiceAmount", actual);
+            if (mapping == "FxRequest")
+            {
+                var amount = endpoint.GetProperty("FieldMappings").EnumerateArray().Single(x => x.GetProperty("InternalField").GetString() == "Amount");
+                Assert.Equal("decimal", amount.GetProperty("Type").GetString());
+            }
         }
     }
 

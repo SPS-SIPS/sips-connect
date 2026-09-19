@@ -12,6 +12,7 @@ public static class PaymentRequestBuilder
         public string To { get; set; } = default!;
         public string MsgDefIdr { get; set; } = default!;
         public string BizMsgIdr { get; set; } = default!;
+        public string? BusinessService { get; set; }
         public DateTime CreDt { get; set; }
         public string MsgId { get; set; } = string.Empty;
 
@@ -21,6 +22,7 @@ public static class PaymentRequestBuilder
         public string LocalInstrument { get; set; } = string.Empty;
         public string CategoryPurpose { get; set; } = string.Empty;
         public string TxId { get; set; } = string.Empty;
+        public string? InstrId { get; set; }
         public string? UETR { get; set; }
         public string EndToEndId { get; set; } = string.Empty;
         public decimal Amount { get; set; }
@@ -135,6 +137,7 @@ public static class PaymentRequestBuilder
                     new CreditTransferTransaction50 {
                         PmtId = new PaymentIdentification13
                         {
+                            InstrId = request.InstrId,
                             EndToEndId = request.EndToEndId,
                             TxId = request.TxId,
                             UETR = request.UETR
@@ -251,6 +254,7 @@ public static class PaymentRequestBuilder
             From = appHeader.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
             To = appHeader.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
             BizMsgIdr = appHeader.BizMsgIdr,
+            BusinessService = appHeader.BizSvc,
             MsgDefIdr = appHeader.MsgDefIdr,
             CreDt = appHeader.CreDt,
             MsgId = document.FIToFICstmrCdtTrf.GrpHdr.MsgId,
@@ -259,6 +263,7 @@ public static class PaymentRequestBuilder
             LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.LclInstrm?.Prtry ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.LclInstrm?.Prtry ?? string.Empty,
             CategoryPurpose = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.CtgyPurp?.Prtry ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.CtgyPurp?.Prtry ?? string.Empty,
             TxId = document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtId?.TxId ?? string.Empty,
+            InstrId = document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtId?.InstrId,
             UETR = document.FIToFICstmrCdtTrf.CdtTrfTxInf![0].PmtId.UETR,
             EndToEndId = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].PmtId.EndToEndId,
             Amount = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].InstdAmt.TypedValue,

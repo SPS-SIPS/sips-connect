@@ -152,6 +152,7 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
             MappingType.String => value,
             MappingType.Int => int.TryParse(value, out var intValue) ? intValue : throw new InvalidCastException("Invalid integer value."),
             MappingType.Double => double.TryParse(value, out var doubleValue) ? doubleValue : throw new InvalidCastException("Invalid double value."),
+            MappingType.Decimal => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var decimalValue) ? decimalValue : throw new InvalidCastException("Invalid decimal value."),
             MappingType.Bool => bool.TryParse(value, out var boolValue) ? boolValue : throw new InvalidCastException("Invalid boolean value."),
             _ => throw new NotSupportedException($"Type '{expectedType}' is not supported.")
         };
@@ -187,6 +188,7 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
             "string" => MappingType.String,
             "int" => MappingType.Int,
             "double" => MappingType.Double,
+            "decimal" => MappingType.Decimal,
             "bool" => MappingType.Bool,
             "datetime" => MappingType.DateTime,
             "object" => MappingType.Object,

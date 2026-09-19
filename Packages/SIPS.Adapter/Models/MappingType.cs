@@ -5,6 +5,7 @@ public enum MappingType
     String,
     Int,
     Double,
+    Decimal,
     Bool,
     DateTime,
     Object

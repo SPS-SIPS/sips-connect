@@ -104,6 +104,56 @@ public sealed class PapssFinancialCorrelationTests
     }
 
     [Fact]
+    public async Task Usd_to_local_currency_payment_fails_closed_while_fx_is_indicative()
+    {
+        var directory = new DirectoryScenario { Currencies = ["KES"] };
+        var payment = Payment(); payment.Currency = "USD"; payment.SenderCurrency = "USD";
+        var binding = Binding() with { SendingCurrencies = ["SOS", "USD"] };
+        var error = await Assert.ThrowsAsync<ParticipantRailException>(() => Client(directory).PayAsync(binding, payment, CancellationToken.None));
+        Assert.Equal("PAPSS_FX_FEE_NOT_READY", error.Code);
+        Assert.Null(directory.FinancialRequest);
+    }
+
+    [Fact]
+    public async Task Payment_decision_uses_common_ingress_and_accepts_only_technical_admission()
+    {
+        var directory = new DirectoryScenario();
+        var original = PaymentRequestBuilder.Build(new()
+        {
+            From="PAPSS", To="BANKSOSIXXX", MsgId="MSG-1", BizMsgIdr="BAH-1", MsgDefIdr="pacs.008.001.10", CreDt=DateTime.UtcNow,
+            InstrId="INSTR-1", EndToEndId="E2E-1", TxId="TX-1", UETR=Guid.NewGuid().ToString(), Amount=10, Currency="SOS",
+            LocalInstrument="INST", CategoryPurpose="CASH", Ustrd="test", Debtor=new() { Name="D", Account="D1", Address="A", AccountType="ACCT", AgentBIC="PAPSS", Issuer="I" },
+            Creditor=new() { Name="C", Account="C1", Address="A", AccountType="ACCT", AgentBIC="BANKSOSIXXX", Issuer="I" }
+        }).document;
+        var parsed = PaymentRequestBuilder.Parse(original)!;
+        var decision = XDocument.Parse(PaymentRequestResponseBuilder.Build(new() { From="BANKSOSIXXX", To="PAPSS", Original=parsed, Status="ACCP" }));
+        var header = decision.Descendants().Single(x => x.Name.LocalName == "AppHdr");
+        header.Elements().Single(x => x.Name.LocalName == "MsgDefIdr").AddAfterSelf(new XElement(header.Name.Namespace + "BizSvc", Options().SecurityProfile));
+
+        var admission = await Client(directory).SubmitPaymentDecisionAsync(Binding(), decision.ToString(SaveOptions.DisableFormatting), CancellationToken.None);
+
+        Assert.True(admission.DurablyAdmitted);
+        Assert.Equal("/sips/messages", directory.Requests.Single().Path);
+    }
+
+    [Fact]
+    public async Task Rejected_payment_decision_requires_transaction_scoped_reason()
+    {
+        var original = PaymentRequestBuilder.Parse(PaymentRequestBuilder.Build(new()
+        {
+            From="PAPSS", To="BANKSOSIXXX", EndToEndId="E2E-1", TxId="TX-1", Amount=10, Currency="SOS", Ustrd="test",
+            LocalInstrument="INST", CategoryPurpose="CASH", Debtor=new() { Name="D", Account="D1", Address="A", AccountType="ACCT", AgentBIC="PAPSS", Issuer="I" },
+            Creditor=new() { Name="C", Account="C1", Address="A", AccountType="ACCT", AgentBIC="BANKSOSIXXX", Issuer="I" }
+        }).document)!;
+        var decision = XDocument.Parse(PaymentRequestResponseBuilder.Build(new() { From="BANKSOSIXXX", To="PAPSS", Original=original, Status="RJCT", Reason="MS03" }));
+        decision.Descendants().Where(x => x.Name.LocalName == "StsRsnInf").Remove();
+        var header = decision.Descendants().Single(x => x.Name.LocalName == "AppHdr");
+        header.Elements().Single(x => x.Name.LocalName == "MsgDefIdr").AddAfterSelf(new XElement(header.Name.Namespace + "BizSvc", Options().SecurityProfile));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => Client(new()).SubmitPaymentDecisionAsync(Binding(), decision.ToString(SaveOptions.DisableFormatting), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task All_seven_operations_use_the_single_signed_wp_sips_ingress()
     {
         var directory = new DirectoryScenario(); var client = Client(directory); var binding = Binding();

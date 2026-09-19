@@ -390,6 +390,8 @@ public static class DI
         services.AddSingleton<IParticipantOperationRouter, ParticipantOperationRouter>();
         services.AddSingleton<IPapssHealthState, PapssHealthState>();
         services.AddScoped<IPapssCallbackGuard, PapssCallbackGuard>();
+        services.AddScoped<IPapssPaymentDecisionPublisher, PapssPaymentDecisionPublisher>();
+        services.AddHostedService<PapssPaymentDecisionOutboxWorker>();
         services.AddSingleton<IParticipantCallbackContext, ParticipantCallbackContext>();
         services.AddHttpClient<IPapssFacingSipsClient, PapssFacingSipsClient>();
 
