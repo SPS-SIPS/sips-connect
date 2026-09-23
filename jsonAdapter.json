@@ -468,6 +468,11 @@
           "Type": "string"
         },
         {
+          "InternalField": "TxId",
+          "UserField": "txId",
+          "Type": "string"
+        },
+        {
           "InternalField": "Amount",
           "UserField": "amount",
           "Type": "double"
@@ -1096,6 +1101,16 @@
         {
           "InternalField": "ToBIC",
           "UserField": "toBIC",
+          "Type": "string"
+        },
+        {
+          "InternalField": "LocalInstrument",
+          "UserField": "lclInstrument",
+          "Type": "string"
+        },
+        {
+          "InternalField": "CategoryPurpose",
+          "UserField": "ctgPurp",
           "Type": "string"
         },
         {

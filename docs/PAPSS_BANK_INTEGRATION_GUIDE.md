@@ -86,6 +86,7 @@ For PAPSS, a successful request is acknowledged with:
   "lclInstrument": "<LOCAL_INSTRUMENT>",
   "ctgPurp": "<CATEGORY_PURPOSE>",
   "localId": "<UNIQUE_END_TO_END_ID>",
+  "txId": "<UNIQUE_TRANSACTION_ID>",
   "amount": 125.50,
   "currency": "<SETTLEMENT_CURRENCY>",
   "drName": "<DEBTOR_NAME>",
@@ -132,6 +133,8 @@ The response uses the common PAPSS admission shape. Final or subsequent status m
 {
   "rail": "PAPSS",
   "toBIC": "<DESTINATION_BIC>",
+  "lclInstrument": "<ORIGINAL_LOCAL_INSTRUMENT>",
+  "ctgPurp": "<ORIGINAL_CATEGORY_PURPOSE>",
   "originalAmount": 125.50,
   "originalCurrency": "<ISO_4217>",
   "txId": "<ORIGINAL_TRANSACTION_ID>",
