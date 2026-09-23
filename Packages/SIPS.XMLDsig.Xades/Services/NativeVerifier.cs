@@ -331,7 +331,10 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             return (false, null, null);
         }
 
-        return (true, SigningCert, certificate.Owner);
+        var ownershipIdentity = profile == XadesProfile.WpSipsPapss
+            ? certificate.RepresentedParticipant
+            : certificate.Owner;
+        return (true, SigningCert, ownershipIdentity);
     }
 
     private static byte[] CanonicalizeElement(XmlElement element, XadesProfile profile)
