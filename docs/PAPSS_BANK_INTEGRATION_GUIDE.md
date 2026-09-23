@@ -202,7 +202,7 @@ The response contains `rates`, calculated amount objects where applicable, or `e
 
 `GET /api/v1/Gateway/PAPSS/Positions?limit=20`
 
-The response is newest-first and contains PAPSS `rcon.001` snapshots for the authenticated bank: opening and closing balance, currency, sent/received/total amounts, transaction counts, fees, PAPSS processing time, and queue metadata. The closing balance is PAPSS's reported position as of `processedAt`; it is not an SPS ledger balance or a guarantee of funds after that timestamp. The request deliberately has no BIC or PAPSS participant-ID parameter: SIPS Connect signs with its configured bank identity, and the technical connector binds that identity first to the local SPS whitelist and then to PAPSS's current participant directory.
+The response is newest-first and contains PAPSS `rcon.001` snapshots for the authenticated bank: opening and closing balance, currency, sent/received/total amounts, transaction counts, fees, PAPSS processing time, and queue metadata where PAPSS supplied those summary fields. The raw snapshot is retained even when PAPSS sends a position variant without the optional summary. The closing balance is PAPSS's reported position as of `processedAt`; it is not an SPS ledger balance or a guarantee of funds after that timestamp. The request deliberately has no BIC or PAPSS participant-ID parameter: SIPS Connect signs with its configured bank identity, and the technical connector binds that identity first to the local SPS whitelist and then to PAPSS's current participant directory.
 
 ## Errors and retry behavior
 

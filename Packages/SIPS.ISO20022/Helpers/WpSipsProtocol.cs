@@ -137,8 +137,8 @@ public static class WpSipsInformationMessageBuilder
             new XElement(n + "MessageSequence", p.MessageSequence), new XElement(n + "MessageId", p.MessageId),
             new XElement(n + "ProcessedAt", p.ProcessedAt.ToUniversalTime().ToString("O")), new XElement(n + "ReceivedAt", p.ReceivedAt.ToUniversalTime().ToString("O")),
             new XElement(n + "PossibleDuplicate", p.PossibleDuplicate), p.RemainingOutputs is null ? null : new XElement(n + "RemainingOutputs", p.RemainingOutputs),
-            Total(n, "TotalSent", p.TotalSent), Total(n, "TotalReceived", p.TotalReceived), Total(n, "Total", p.Total),
-            Balance(n, "OpeningBalance", p.OpeningBalance), Balance(n, "ClosingBalance", p.ClosingBalance))) : [Error(n, x.Error)]);
+            p.TotalSent is null ? null : Total(n, "TotalSent", p.TotalSent), p.TotalReceived is null ? null : Total(n, "TotalReceived", p.TotalReceived), p.Total is null ? null : Total(n, "Total", p.Total),
+            p.OpeningBalance is null ? null : Balance(n, "OpeningBalance", p.OpeningBalance), p.ClosingBalance is null ? null : Balance(n, "ClosingBalance", p.ClosingBalance))) : [Error(n, x.Error)]);
         return Report(header, responseId, requestId, root);
     }
 
@@ -308,7 +308,7 @@ public static class WpSipsInformationMessageParser
             if (p.Element(n+"Error") is {} pe) return new PositionResponse([],Err(pe));
             PositionTotal T(XElement e)=>new(WpSipsXml.Number(e),(string)e.Attribute("Ccy")!,ulong.Parse((string)e.Attribute("Count")!,CultureInfo.InvariantCulture),e.Attribute("Fee") is{} f?decimal.Parse(f.Value,CultureInfo.InvariantCulture):null);
             PositionBalance B(XElement e)=>new(WpSipsXml.Number(e),(string)e.Attribute("Ccy")!);
-            return new PositionResponse(p.Elements(n+"Position").Select(x=>new PositionSnapshot(ulong.Parse(V(x,"MessageSequence"),CultureInfo.InvariantCulture),V(x,"MessageId"),DateTimeOffset.Parse(V(x,"ProcessedAt"),CultureInfo.InvariantCulture),DateTimeOffset.Parse(V(x,"ReceivedAt"),CultureInfo.InvariantCulture),bool.Parse(V(x,"PossibleDuplicate")),x.Element(n+"RemainingOutputs") is{} ro?ulong.Parse(ro.Value,CultureInfo.InvariantCulture):null,T(x.Element(n+"TotalSent")!),T(x.Element(n+"TotalReceived")!),T(x.Element(n+"Total")!),B(x.Element(n+"OpeningBalance")!),B(x.Element(n+"ClosingBalance")!))).ToArray());
+            return new PositionResponse(p.Elements(n+"Position").Select(x=>new PositionSnapshot(ulong.Parse(V(x,"MessageSequence"),CultureInfo.InvariantCulture),V(x,"MessageId"),DateTimeOffset.Parse(V(x,"ProcessedAt"),CultureInfo.InvariantCulture),DateTimeOffset.Parse(V(x,"ReceivedAt"),CultureInfo.InvariantCulture),bool.Parse(V(x,"PossibleDuplicate")),x.Element(n+"RemainingOutputs") is{} ro?ulong.Parse(ro.Value,CultureInfo.InvariantCulture):null,x.Element(n+"TotalSent") is{} ts?T(ts):null,x.Element(n+"TotalReceived") is{} tr?T(tr):null,x.Element(n+"Total") is{} tt?T(tt):null,x.Element(n+"OpeningBalance") is{} ob?B(ob):null,x.Element(n+"ClosingBalance") is{} cb?B(cb):null)).ToArray());
         }
         return p;
     }

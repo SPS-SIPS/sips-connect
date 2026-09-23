@@ -124,7 +124,7 @@ public sealed record ReadinessResponse(Participant? Observation, ServiceError? E
 public sealed record PositionRequest(int Limit = 20);
 public sealed record PositionTotal(decimal Amount, string Currency, ulong Count, decimal? Fee);
 public sealed record PositionBalance(decimal Amount, string Currency);
-public sealed record PositionSnapshot(ulong MessageSequence, string MessageId, DateTimeOffset ProcessedAt, DateTimeOffset ReceivedAt, bool PossibleDuplicate, ulong? RemainingOutputs, PositionTotal TotalSent, PositionTotal TotalReceived, PositionTotal Total, PositionBalance OpeningBalance, PositionBalance ClosingBalance);
+public sealed record PositionSnapshot(ulong MessageSequence, string MessageId, DateTimeOffset ProcessedAt, DateTimeOffset ReceivedAt, bool PossibleDuplicate, ulong? RemainingOutputs, PositionTotal? TotalSent, PositionTotal? TotalReceived, PositionTotal? Total, PositionBalance? OpeningBalance, PositionBalance? ClosingBalance);
 public sealed record PositionResponse(IReadOnlyList<PositionSnapshot> Positions, ServiceError? Error = null);
 public sealed record ServiceError(string Authority, string Code, string? Description);
 
