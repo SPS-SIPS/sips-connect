@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.Xml;
 using System.Xml;
 using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Security;
 using System.Text;
 using Org.BouncyCastle.X509;
@@ -244,7 +245,13 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         var issuerSerial=signature.GetElementsByTagName("IssuerSerial","http://uri.etsi.org/01903/v1.3.2#").Cast<XmlElement>().SingleOrDefault()??throw new CryptographicException("SigningCertificate IssuerSerial is missing.");
         var issuer=issuerSerial.GetElementsByTagName("X509IssuerName",SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().SingleOrDefault()?.InnerText;
         var serial=issuerSerial.GetElementsByTagName("X509SerialNumber",SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().SingleOrDefault()?.InnerText;
-        if(!certificate.IssuerDN.ToString().Equals(issuer,StringComparison.Ordinal)||certificate.SerialNumber.ToString()!=serial)throw new CryptographicException("SigningCertificate IssuerSerial does not bind the downloaded certificate.");
+        if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(serial))
+            throw new CryptographicException("SigningCertificate IssuerSerial is incomplete.");
+        X509Name signedIssuer;
+        try { signedIssuer = new X509Name(issuer); }
+        catch (ArgumentException ex) { throw new CryptographicException("SigningCertificate issuer is invalid.", ex); }
+        if (!signedIssuer.Equivalent(certificate.IssuerDN) || certificate.SerialNumber.ToString() != serial.Trim())
+            throw new CryptographicException("SigningCertificate IssuerSerial does not bind the downloaded certificate.");
     }
 
     private bool VerifyReferences(XmlDocument envelope, XmlNamespaceManager ns, XmlElement signatureElement, XmlElement signedInfoElement, XadesProfile profile, VerboseResult vr)
