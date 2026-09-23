@@ -17,6 +17,15 @@ public sealed class PapssFacingOptions
     public string[] SendingCurrencies { get; set; } = [];
     public string? CallbackMappingProfile { get; set; }
     public string? CallbackUrl { get; set; }
+    public PapssResponderTrust ResponderTrust { get; set; } = new();
+}
+
+public sealed class PapssResponderTrust
+{
+    public string CertificateSha256 { get; set; } = string.Empty;
+    public string Authority { get; set; } = string.Empty;
+    public string TrustProfileVersion { get; set; } = string.Empty;
+    public string RequiredExtendedKeyUsageOid { get; set; } = string.Empty;
 }
 
 public sealed class PapssSpsPolicy

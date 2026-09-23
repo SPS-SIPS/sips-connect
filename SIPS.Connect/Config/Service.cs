@@ -15,6 +15,7 @@ using SIPS.Core.Options;
 using SIPS.Core.Services;
 using SIPS.ISO20022.Options;
 using SIPS.XMLDsig.Xades.Options;
+using SIPS.XMLDsig.Xades.Interfaces;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SIPS.Adapter;
@@ -398,6 +399,9 @@ public static class DI
         services.AddSingleton<ILogService, LogService>();
         
         services.AddCore(configuration);
+        services.RemoveAll<ICertificateDownloadService>();
+        services.AddSingleton<CertificateDownloadService>();
+        services.AddSingleton<ICertificateDownloadService, PapssResponderCertificateDownloadService>();
         services.RemoveAll<IJsonAdapter>();
         services.AddSingleton<JsonAdapter>();
         services.AddSingleton<IJsonAdapter, ParticipantCallbackJsonAdapter>();
@@ -419,6 +423,13 @@ public static class DI
             throw new InvalidOperationException("PapssFacing:IsoIngressUrl host must be explicitly allowed.");
         if (string.IsNullOrWhiteSpace(options.Environment) || string.IsNullOrWhiteSpace(options.RemoteWpSipsIdentity) || string.IsNullOrWhiteSpace(options.SecurityProfile))
             throw new InvalidOperationException("PapssFacing responder identity, environment and security profile are required when PAPSS is enabled.");
+        if (options.ResponderTrust is null ||
+            options.ResponderTrust.CertificateSha256.Length != 64 ||
+            !options.ResponderTrust.CertificateSha256.All(Uri.IsHexDigit) ||
+            string.IsNullOrWhiteSpace(options.ResponderTrust.Authority) ||
+            string.IsNullOrWhiteSpace(options.ResponderTrust.TrustProfileVersion) ||
+            string.IsNullOrWhiteSpace(options.ResponderTrust.RequiredExtendedKeyUsageOid))
+            throw new InvalidOperationException("PapssFacing requires a complete, SHA-256-pinned responder trust binding when enabled.");
         if (options.RequestTimeoutSeconds is < 1 or > 120 || options.MaximumResponseBytes is < 1024 or > 10_000_000)
             throw new InvalidOperationException("PapssFacing timeout or response-size limit is invalid.");
         if (options.ReadinessStaleSeconds is < 10 or > 86400)

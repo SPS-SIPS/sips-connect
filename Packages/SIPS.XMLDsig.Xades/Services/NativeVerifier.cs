@@ -312,7 +312,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         {
             if (certificate.Revoked) return (false, null, null);
             var commonNames=SigningCert.SubjectDN.GetValueList(Org.BouncyCastle.Asn1.X509.X509Name.CN).Cast<object>().Select(x=>x.ToString()).ToArray();
-            if(commonNames.Length!=1||!StringComparer.Ordinal.Equals(commonNames[0],certificate.Owner))return(false,null,null);
+            if(commonNames.Length!=1||!StringComparer.OrdinalIgnoreCase.Equals(commonNames[0],certificate.Owner))return(false,null,null);
             var eku=SigningCert.GetExtendedKeyUsage()?.Cast<object>().Select(x=>x.ToString()).ToArray();
             if(eku is null||!eku.Contains(certificate.RequiredExtendedKeyUsageOid,StringComparer.Ordinal))return(false,null,null);
             var fingerprint=Convert.ToHexString(SHA256.HashData(SigningCert.GetEncoded())).ToLowerInvariant();if(!StringComparer.OrdinalIgnoreCase.Equals(fingerprint,certificate.CertificateSha256))return(false,null,null);

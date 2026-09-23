@@ -42,6 +42,10 @@ services:
       - PapssFacing__AllowedHosts__0=${PAPSS_ALLOWED_HOST:-}
       - PapssFacing__Environment=${PAPSS_ENVIRONMENT:-}
       - PapssFacing__RemoteWpSipsIdentity=${PAPSS_REMOTE_IDENTITY:-}
+      - PapssFacing__ResponderTrust__CertificateSha256=${PAPSS_RESPONDER_CERTIFICATE_SHA256:-}
+      - PapssFacing__ResponderTrust__Authority=${PAPSS_RESPONDER_AUTHORITY:-}
+      - PapssFacing__ResponderTrust__TrustProfileVersion=${PAPSS_RESPONDER_TRUST_PROFILE_VERSION:-}
+      - PapssFacing__ResponderTrust__RequiredExtendedKeyUsageOid=${PAPSS_RESPONDER_REQUIRED_EKU_OID:-}
       - PapssFacing__SecurityProfile=${PAPSS_SECURITY_PROFILE:-}
       - PapssFacing__RequestTimeoutSeconds=${PAPSS_REQUEST_TIMEOUT_SECONDS:-30}
       - PapssFacing__MaximumResponseBytes=${PAPSS_MAXIMUM_RESPONSE_BYTES:-2000000}
