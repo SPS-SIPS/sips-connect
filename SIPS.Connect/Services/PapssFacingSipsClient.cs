@@ -23,6 +23,7 @@ public interface IPapssFacingSipsClient
     Task<ReadinessResponse> GetReadinessAsync(PapssParticipantBinding participant, ReadinessRequest request, CancellationToken ct);
     Task<ParticipantDiscoveryResponse> DiscoverAsync(PapssParticipantBinding participant, ParticipantDiscoveryRequest request, CancellationToken ct);
     Task<FxRateResponse> GetFxAsync(PapssParticipantBinding participant, FxRateRequest request, CancellationToken ct);
+    Task<PositionResponse> GetPositionsAsync(PapssParticipantBinding participant, PositionRequest request, CancellationToken ct);
 }
 
 public sealed record PapssAdmissionResponse(string RequestMessageId, string Code, bool DurablyAdmitted);
@@ -106,6 +107,8 @@ public sealed class PapssFacingSipsClient(
         => Payload<ParticipantDiscoveryResponse>(await Information(participant, WpSipsProfiles.Participant, (h, id) => WpSipsInformationMessageBuilder.BuildParticipantRequest(h, id, request), ct));
     public async Task<FxRateResponse> GetFxAsync(PapssParticipantBinding participant, FxRateRequest request, CancellationToken ct)
         => Payload<FxRateResponse>(await Information(participant, WpSipsProfiles.Fx, (h, id) => WpSipsInformationMessageBuilder.BuildFxRequest(h, id, request), ct));
+    public async Task<PositionResponse> GetPositionsAsync(PapssParticipantBinding participant, PositionRequest request, CancellationToken ct)
+        => Payload<PositionResponse>(await Information(participant, WpSipsProfiles.Position, (h, id) => WpSipsInformationMessageBuilder.BuildPositionRequest(h, id, request), ct));
 
     private async Task<WpSipsMessage<object>> Information(PapssParticipantBinding participant, string profile, Func<BusinessHeader, string, string> build, CancellationToken ct)
     {

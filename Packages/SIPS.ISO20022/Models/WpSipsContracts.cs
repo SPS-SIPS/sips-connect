@@ -15,6 +15,8 @@ public static class WpSipsNamespaces
     public const string ParticipantResponse = "urn:sps:papss:participant:001:response";
     public const string ReadinessRequest = "urn:sps:papss:readiness:001:request";
     public const string ReadinessResponse = "urn:sps:papss:readiness:001:response";
+    public const string PositionRequest = "urn:sps:papss:position:001:request";
+    public const string PositionResponse = "urn:sps:papss:position:001:response";
 }
 
 public static class WpSipsProfiles
@@ -22,7 +24,8 @@ public static class WpSipsProfiles
     public const string Fx = "SPS.PAPSS.FX.001";
     public const string Participant = "SPS.PAPSS.PARTICIPANT.001";
     public const string Readiness = "SPS.PAPSS.READINESS.001";
-    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { Fx, Participant, Readiness };
+    public const string Position = "SPS.PAPSS.POSITION.001";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { Fx, Participant, Readiness, Position };
 }
 
 [XmlRoot("Document", Namespace = WpSipsNamespaces.Admi009)]
@@ -118,6 +121,11 @@ public sealed record Participant(string PapssId, string? Bic, string Name, strin
 public sealed record ParticipantDiscoveryResponse(IReadOnlyList<Participant> Participants, ServiceError? Error = null);
 public sealed record ReadinessRequest(string? PapssId, string? Bic);
 public sealed record ReadinessResponse(Participant? Observation, ServiceError? Error = null);
+public sealed record PositionRequest(int Limit = 20);
+public sealed record PositionTotal(decimal Amount, string Currency, ulong Count, decimal? Fee);
+public sealed record PositionBalance(decimal Amount, string Currency);
+public sealed record PositionSnapshot(ulong MessageSequence, string MessageId, DateTimeOffset ProcessedAt, DateTimeOffset ReceivedAt, bool PossibleDuplicate, ulong? RemainingOutputs, PositionTotal TotalSent, PositionTotal TotalReceived, PositionTotal Total, PositionBalance OpeningBalance, PositionBalance ClosingBalance);
+public sealed record PositionResponse(IReadOnlyList<PositionSnapshot> Positions, ServiceError? Error = null);
 public sealed record ServiceError(string Authority, string Code, string? Description);
 
 public sealed record BusinessHeader(string From, string To, string BusinessMessageId, string MessageDefinitionId, string BusinessService, DateTimeOffset CreatedAt, string? RelatedBusinessMessageId = null, string? RelatedMessageDefinitionId = null, string? RelatedBusinessService = null, DateTimeOffset? RelatedCreatedAt = null);

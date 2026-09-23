@@ -5,7 +5,7 @@ namespace SIPS.Connect.Services;
 using SIPS.XMLDsig.Xades.Options;
 
 public enum DownstreamRail { Sips, Papss }
-public enum ParticipantOperation { Verification, Payment, Status, Return, Readiness, Discovery, Fx }
+public enum ParticipantOperation { Verification, Payment, Status, Return, Readiness, Discovery, Fx, Position }
 
 public sealed class ParticipantRailException(string code, string message) : Exception(message)
 {
@@ -28,7 +28,7 @@ public sealed class ParticipantOperationRouter(PapssFacingOptions options, Xades
         var rail = requestedRail?.Trim();
         if (string.IsNullOrEmpty(rail))
         {
-            if (operation is ParticipantOperation.Readiness or ParticipantOperation.Discovery or ParticipantOperation.Fx)
+            if (operation is ParticipantOperation.Readiness or ParticipantOperation.Discovery or ParticipantOperation.Fx or ParticipantOperation.Position)
                 throw new ParticipantRailException("RAIL_REQUIRED", "Rail=PAPSS is required for this operation.");
             logger.LogInformation("Local SIPS Connect selected rail SIPS for {Operation}", operation);
             return DownstreamRail.Sips;
@@ -36,7 +36,7 @@ public sealed class ParticipantOperationRouter(PapssFacingOptions options, Xades
 
         if (rail.Equals("SIPS", StringComparison.OrdinalIgnoreCase))
         {
-            if (operation is ParticipantOperation.Readiness or ParticipantOperation.Discovery or ParticipantOperation.Fx)
+            if (operation is ParticipantOperation.Readiness or ParticipantOperation.Discovery or ParticipantOperation.Fx or ParticipantOperation.Position)
                 throw new ParticipantRailException("OPERATION_NOT_SUPPORTED", "The operation is not available on the SIPS rail.");
             logger.LogInformation("Local SIPS Connect selected rail SIPS for {Operation}", operation);
             return DownstreamRail.Sips;

@@ -93,6 +93,13 @@ public static class WpSipsInformationMessageBuilder
         return Request(header, serviceRequestId, new XElement(n + "ParticipantReadinessRequest", x.PapssId is not null ? new XElement(n + "PapssId", x.PapssId) : new XElement(n + "Bic", x.Bic)));
     }
 
+    public static string BuildPositionRequest(BusinessHeader header, string serviceRequestId, PositionRequest x)
+    {
+        ValidateRequestHeader(header, WpSipsProfiles.Position); XNamespace n = WpSipsNamespaces.PositionRequest;
+        if (x.Limit is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(x), "Position history limit must be between 1 and 100.");
+        return Request(header, serviceRequestId, new XElement(n + "PositionRequest", new XElement(n + "Limit", x.Limit)));
+    }
+
     public static string BuildFxResponse(BusinessHeader header, string responseId, string requestId, FxRateResponse x)
     {
         ValidateResponseHeader(header, WpSipsProfiles.Fx); XNamespace n = WpSipsNamespaces.FxResponse;
@@ -123,6 +130,18 @@ public static class WpSipsInformationMessageBuilder
         return Report(header, responseId, requestId, root);
     }
 
+    public static string BuildPositionResponse(BusinessHeader header, string responseId, string requestId, PositionResponse x)
+    {
+        ValidateResponseHeader(header, WpSipsProfiles.Position); XNamespace n = WpSipsNamespaces.PositionResponse;
+        var root = new XElement(n + "PositionResponse", x.Error is null ? x.Positions.Select(p => new XElement(n + "Position",
+            new XElement(n + "MessageSequence", p.MessageSequence), new XElement(n + "MessageId", p.MessageId),
+            new XElement(n + "ProcessedAt", p.ProcessedAt.ToUniversalTime().ToString("O")), new XElement(n + "ReceivedAt", p.ReceivedAt.ToUniversalTime().ToString("O")),
+            new XElement(n + "PossibleDuplicate", p.PossibleDuplicate), p.RemainingOutputs is null ? null : new XElement(n + "RemainingOutputs", p.RemainingOutputs),
+            Total(n, "TotalSent", p.TotalSent), Total(n, "TotalReceived", p.TotalReceived), Total(n, "Total", p.Total),
+            Balance(n, "OpeningBalance", p.OpeningBalance), Balance(n, "ClosingBalance", p.ClosingBalance))) : [Error(n, x.Error)]);
+        return Report(header, responseId, requestId, root);
+    }
+
     private static string Request(BusinessHeader h, string id, XElement payload)
     {
         WpSipsXml.Required(id, nameof(id));
@@ -145,6 +164,8 @@ public static class WpSipsInformationMessageBuilder
 
     private static XElement Supplement(XNamespace iso, string place, XElement payload) => new(iso + "SplmtryData", new XElement(iso + "PlcAndNm", place), new XElement(iso + "Envlp", payload));
     private static XElement Amount(XNamespace n, string name, CurrencyAmount x) => new(n + name, new XAttribute("Ccy", x.Currency), WpSipsXml.Decimal(x.Value));
+    private static XElement Total(XNamespace n, string name, PositionTotal x) => new(n + name, new XAttribute("Ccy", x.Currency), new XAttribute("Count", x.Count), x.Fee is null ? null : new XAttribute("Fee", WpSipsXml.Decimal(x.Fee.Value)), WpSipsXml.Decimal(x.Amount));
+    private static XElement Balance(XNamespace n, string name, PositionBalance x) => new(n + name, new XAttribute("Ccy", x.Currency), WpSipsXml.Decimal(x.Amount));
     private static XElement Error(XNamespace n, ServiceError x) => new(n + "Error", new XAttribute("authority", x.Authority), new XElement(n + "Code", x.Code), x.Description is null ? null : new XElement(n + "Description", x.Description));
     private static XElement ParticipantElement(XNamespace n, string name, Participant p) => new(n + name, new XElement(n + "PapssId", p.PapssId), p.Bic is null ? null : new XElement(n + "Bic", p.Bic), new XElement(n + "Name", p.Name),
         new XElement(n + "CountryCode", p.CountryCode), new XElement(n + "Status", p.Status), p.PaymentSchemas.Select(x => new XElement(n + "PaymentSchema", x)), p.Currencies.Select(x => new XElement(n + "Currency", x)), new XElement(n + "Online", p.Online), new XElement(n + "NonInstant", p.NonInstant));
@@ -228,7 +249,9 @@ public static class WpSipsProtocolValidator
         (WpSipsProfiles.Participant, WpSipsMessageTypes.StaticDataRequest) => (WpSipsNamespaces.ParticipantRequest, "SPS.PAPSS.PARTICIPANT.001.request.xsd"),
         (WpSipsProfiles.Participant, _) => (WpSipsNamespaces.ParticipantResponse, "SPS.PAPSS.PARTICIPANT.001.response.xsd"),
         (WpSipsProfiles.Readiness, WpSipsMessageTypes.StaticDataRequest) => (WpSipsNamespaces.ReadinessRequest, "SPS.PAPSS.READINESS.001.request.xsd"),
-        _ => (WpSipsNamespaces.ReadinessResponse, "SPS.PAPSS.READINESS.001.response.xsd")
+        (WpSipsProfiles.Readiness, _) => (WpSipsNamespaces.ReadinessResponse, "SPS.PAPSS.READINESS.001.response.xsd"),
+        (WpSipsProfiles.Position, WpSipsMessageTypes.StaticDataRequest) => (WpSipsNamespaces.PositionRequest, "SPS.PAPSS.POSITION.001.request.xsd"),
+        _ => (WpSipsNamespaces.PositionResponse, "SPS.PAPSS.POSITION.001.response.xsd")
     };
 
     private static void ValidateElement(XElement element, string ns, string file, string stage, List<ProtocolDiagnostic> errors)
@@ -271,6 +294,7 @@ public static class WpSipsInformationMessageParser
         if (p.Name.LocalName == "FxRateRequest") return new FxRateRequest(V(p,"SenderCountry"),V(p,"ReceiverCountry"),V(p,"SenderCurrency"),V(p,"ReceiverCurrency"),V(p,"ReceiverBank"),V(p,"LocalInstrument"),WpSipsXml.Number(p.Element(n+"Amount")!),bool.Parse(V(p,"IsInvoice")),p.Element(n+"InvoiceCurrency")?.Value);
         if (p.Name.LocalName == "ParticipantDiscoveryRequest") { var q=p.Elements().Single(); return new ParticipantDiscoveryRequest(q.Element(n+"Online") is{}o?bool.Parse(o.Value):null,q.Element(n+"Type")?.Value,q.Name.LocalName=="ByBic"?q.Value:null,q.Name.LocalName=="ByPapssId"?q.Value:null); }
         if (p.Name.LocalName == "ParticipantReadinessRequest") return new ReadinessRequest(p.Element(n+"PapssId")?.Value,p.Element(n+"Bic")?.Value);
+        if (p.Name.LocalName == "PositionRequest") return new PositionRequest(int.Parse(V(p,"Limit"),CultureInfo.InvariantCulture));
         if (p.Name.LocalName == "FxRateResponse")
         {
             if (p.Element(n+"Error") is {} e) return new FxRateResponse([],new(0,"XXX"),new(0,"XXX"),new(0,"XXX"),null,null,Err(e));
@@ -279,6 +303,13 @@ public static class WpSipsInformationMessageParser
         }
         if (p.Name.LocalName == "ParticipantDiscoveryResponse") return p.Element(n+"Error") is{} de ? new ParticipantDiscoveryResponse([],Err(de)) : new ParticipantDiscoveryResponse(p.Elements(n+"Participant").Select(Participant).ToArray());
         if (p.Name.LocalName == "ParticipantReadinessResponse") return p.Element(n+"Error") is{} re ? new ReadinessResponse(null,Err(re)) : new ReadinessResponse(Participant(p.Element(n+"Observation")!),null);
+        if (p.Name.LocalName == "PositionResponse")
+        {
+            if (p.Element(n+"Error") is {} pe) return new PositionResponse([],Err(pe));
+            PositionTotal T(XElement e)=>new(WpSipsXml.Number(e),(string)e.Attribute("Ccy")!,ulong.Parse((string)e.Attribute("Count")!,CultureInfo.InvariantCulture),e.Attribute("Fee") is{} f?decimal.Parse(f.Value,CultureInfo.InvariantCulture):null);
+            PositionBalance B(XElement e)=>new(WpSipsXml.Number(e),(string)e.Attribute("Ccy")!);
+            return new PositionResponse(p.Elements(n+"Position").Select(x=>new PositionSnapshot(ulong.Parse(V(x,"MessageSequence"),CultureInfo.InvariantCulture),V(x,"MessageId"),DateTimeOffset.Parse(V(x,"ProcessedAt"),CultureInfo.InvariantCulture),DateTimeOffset.Parse(V(x,"ReceivedAt"),CultureInfo.InvariantCulture),bool.Parse(V(x,"PossibleDuplicate")),x.Element(n+"RemainingOutputs") is{} ro?ulong.Parse(ro.Value,CultureInfo.InvariantCulture):null,T(x.Element(n+"TotalSent")!),T(x.Element(n+"TotalReceived")!),T(x.Element(n+"Total")!),B(x.Element(n+"OpeningBalance")!),B(x.Element(n+"ClosingBalance")!))).ToArray());
+        }
         return p;
     }
     private static ServiceError Err(XElement e)=>new((string)e.Attribute("authority")!,V(e,"Code"),e.Element(e.Name.Namespace+"Description")?.Value);
