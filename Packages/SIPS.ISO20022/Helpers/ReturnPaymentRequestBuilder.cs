@@ -104,7 +104,7 @@ public static class ReturnPaymentRequestBuilder
                     {
                         LclInstrm = new LocalInstrument2Choice
                         {
-                            Prtry = request.LocalInstrument
+                            Cd = request.LocalInstrument
                         },
                         CtgyPurp = new CategoryPurpose1Choice
                         {
@@ -181,7 +181,9 @@ public static class ReturnPaymentRequestBuilder
             NumberOfTransactions = int.Parse(document?.PmtRtr?.GrpHdr?.NbOfTxs ?? "0"),
             SettlementMethod = document?.PmtRtr?.GrpHdr?.SttlmInf?.SttlmMtd ?? SettlementMethod1Code.CLRG,
             ClearingSystem = document?.PmtRtr?.GrpHdr?.SttlmInf?.ClrSys?.Prtry ?? "FP",
-            LocalInstrument = document?.PmtRtr?.GrpHdr?.PmtTpInf?.LclInstrm?.Prtry ?? "",
+            LocalInstrument = document?.PmtRtr?.GrpHdr?.PmtTpInf?.LclInstrm?.Cd
+                ?? document?.PmtRtr?.GrpHdr?.PmtTpInf?.LclInstrm?.Prtry
+                ?? "",
             CategoryPurpose = document?.PmtRtr?.GrpHdr?.PmtTpInf?.CtgyPurp?.Prtry ?? "",
 
 

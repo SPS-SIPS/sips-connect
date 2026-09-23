@@ -97,6 +97,60 @@ public sealed class PapssFinancialCorrelationTests
     }
 
     [Fact]
+    public async Task Usd_payment_instrument_is_recognized_from_the_papss_payment_schema()
+    {
+        var directory = new DirectoryScenario
+        {
+            Country = "SO",
+            Currencies = ["USD"],
+            PaymentSchemas = ["PS-SO-USD-USD-SSA_3-USDP"]
+        };
+        var payment = Payment();
+        payment.Currency = "USD";
+        payment.SenderCurrency = "USD";
+        payment.ReceiverCurrency = "USD";
+        payment.ReceiverCountry = "SO";
+        payment.LocalInstrument = "USDP";
+
+        var response = await Client(directory).PayAsync(Binding() with { SendingCurrencies = ["USD"] }, payment, CancellationToken.None);
+
+        Assert.True(response.DurablyAdmitted);
+        var localInstrument = XDocument.Parse(directory.FinancialRequest!).Descendants().Single(x => x.Name.LocalName == "LclInstrm");
+        Assert.Equal("USDP", localInstrument.Descendants().Single(x => x.Name.LocalName == "Cd").Value);
+    }
+
+    [Fact]
+    public async Task Lcy_payment_instrument_is_recognized_from_the_papss_payment_schema()
+    {
+        var directory = new DirectoryScenario { PaymentSchemas = ["PS-KE-KES-KE0001NP-KE-KES-SSA_3-DEF-SSA3"] };
+        var payment = Payment(); payment.LocalInstrument = "SSA3";
+
+        var response = await Client(directory).PayAsync(Binding(), payment, CancellationToken.None);
+
+        Assert.True(response.DurablyAdmitted);
+    }
+
+    [Fact]
+    public async Task Internal_ssa_3_schema_segment_does_not_authorize_ssa3_for_usd_payments()
+    {
+        var directory = new DirectoryScenario
+        {
+            Country = "SO",
+            Currencies = ["USD"],
+            PaymentSchemas = ["PS-SO-USD-USD-SSA_3-USDP"]
+        };
+        var payment = Payment();
+        payment.Currency = "USD";
+        payment.SenderCurrency = "USD";
+        payment.ReceiverCurrency = "USD";
+        payment.ReceiverCountry = "SO";
+        payment.LocalInstrument = "SSA3";
+
+        await Assert.ThrowsAsync<ArgumentException>(() => Client(directory).PayAsync(Binding() with { SendingCurrencies = ["USD"] }, payment, CancellationToken.None));
+        Assert.Null(directory.FinancialRequest);
+    }
+
+    [Fact]
     public async Task Cryptographically_valid_admission_for_another_message_is_rejected()
     {
         var directory = new DirectoryScenario { WrongAdmissionCorrelation = true };
@@ -196,6 +250,7 @@ public sealed class PapssFinancialCorrelationTests
         public bool Online { get; set; } = true;
         public string Country { get; set; } = "KE";
         public string[] Currencies { get; set; } = ["KES"];
+        public string[] PaymentSchemas { get; set; } = ["INST"];
         public bool WrongAdmissionCorrelation { get; set; }
         public string? FinancialRequest { get; set; }
         public List<(string Path, string Profile)> Requests { get; } = [];
@@ -212,7 +267,7 @@ public sealed class PapssFinancialCorrelationTests
                 var requestMessageId = Header("BizMsgIdr"); var serviceRequestId = parsed.Descendants().Single(x => x.Name.LocalName == "MsgId").Value;
                 var responseId = "RSP-" + Guid.NewGuid().ToString("N")[..20];
                 var responseHeader = new BusinessHeader("PAPSS", "BANKSOSIXXX", responseId, WpSipsMessageTypes.StaticDataReport, profile, ObservedAt, requestMessageId);
-                var participant = new Participant("PAPSS-BANK-1", "BANKKE00XXX", "Remote Bank", Country, Status, ["INST"], Currencies, Online, false);
+                var participant = new Participant("PAPSS-BANK-1", "BANKKE00XXX", "Remote Bank", Country, Status, PaymentSchemas, Currencies, Online, false);
                 response = profile switch
                 {
                     WpSipsProfiles.Participant => WpSipsInformationMessageBuilder.BuildParticipantResponse(responseHeader, responseId, serviceRequestId, new(Enumerable.Repeat(participant, DiscoveryCount).ToArray())),

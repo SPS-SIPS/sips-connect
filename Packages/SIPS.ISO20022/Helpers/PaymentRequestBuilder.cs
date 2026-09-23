@@ -105,7 +105,7 @@ public static class PaymentRequestBuilder
                     {
                         LclInstrm = new LocalInstrument2Choice
                         {
-                            Prtry = request.LocalInstrument
+                            Cd = request.LocalInstrument
                         },
                         CtgyPurp = new CategoryPurpose1Choice
                         {
@@ -260,7 +260,11 @@ public static class PaymentRequestBuilder
             MsgId = document.FIToFICstmrCdtTrf.GrpHdr.MsgId,
             SettlementMethod = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf?.SttlmMtd ?? SettlementMethod1Code.CLRG,
             ClearingSystem = document.FIToFICstmrCdtTrf.GrpHdr.SttlmInf?.ClrSys?.Prtry ?? string.Empty,
-            LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.LclInstrm?.Prtry ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.LclInstrm?.Prtry ?? string.Empty,
+            LocalInstrument = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.LclInstrm?.Cd
+                ?? document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.LclInstrm?.Prtry
+                ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.LclInstrm?.Cd
+                ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.LclInstrm?.Prtry
+                ?? string.Empty,
             CategoryPurpose = document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf?.CtgyPurp?.Prtry ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtTpInf?.CtgyPurp?.Prtry ?? string.Empty,
             TxId = document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtId?.TxId ?? string.Empty,
             InstrId = document.FIToFICstmrCdtTrf.CdtTrfTxInf?[0]?.PmtId?.InstrId,
