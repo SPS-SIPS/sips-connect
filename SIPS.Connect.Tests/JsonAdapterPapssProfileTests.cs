@@ -52,6 +52,17 @@ public sealed class JsonAdapterPapssProfileTests
                 Assert.Equal("decimal", amount.GetProperty("Type").GetString());
             }
         }
+
+        var callbackMappings = endpoints.EnumerateObject()
+            .Where(x => x.Name.StartsWith("CB_", StringComparison.Ordinal))
+            .ToArray();
+        Assert.NotEmpty(callbackMappings);
+        foreach (var callback in callbackMappings)
+        {
+            var profiledName = $"papss-callback-v1.{callback.Name}";
+            Assert.True(endpoints.TryGetProperty(profiledName, out var profiled), $"{profile} is missing {profiledName}");
+            Assert.Equal(callback.Value.GetRawText(), profiled.GetRawText());
+        }
     }
 
     public static TheoryData<string> ProfileNames()
