@@ -268,11 +268,23 @@ public sealed class PapssFacingSipsClient(
         if (x.SenderCurrency == "USD" && x.ReceiverCurrency != "USD")
             throw new ParticipantRailException("PAPSS_FX_FEE_NOT_READY", "USD-to-local-currency PAPSS payments remain disabled until the FX and fee contract is closed. FX enquiry is indicative only.");
         if (!x.LocalInstrument.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') || x.LocalInstrument.Length > 35) throw new ArgumentException("PAPSS local instrument is invalid.");
-        if (!destination.PaymentSchemas.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The PAPSS destination does not support the selected local instrument.");
+        if (!SupportsLocalInstrument(destination.PaymentSchemas, x.LocalInstrument)) throw new ArgumentException("The PAPSS destination does not support the selected local instrument.");
         var policyInstruments = options.SpsPolicy.AllowedLocalInstruments.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
         if (policyInstruments.Length != 0 && !policyInstruments.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The selected local instrument is restricted by SPS policy.");
         if (!string.Equals(x.DebtorAgentBIC?.Trim(), participant.Bic, StringComparison.OrdinalIgnoreCase)) throw new ParticipantRailException("PARTICIPANT_BIC_MISMATCH", "The payment debtor agent does not match the authenticated participant BIC.");
         if (!string.Equals(x.CreditorAgentBIC?.Trim(), x.ToBIC, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("The payment creditor agent does not match the transaction destination BIC.");
+    }
+
+    private static bool SupportsLocalInstrument(IEnumerable<string> paymentSchemas, string localInstrument)
+    {
+        static string Normalize(string value) => new(value.Where(char.IsAsciiLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
+        var requested = Normalize(localInstrument);
+        return paymentSchemas.Any(schema =>
+        {
+            if (string.Equals(schema.Trim(), localInstrument, StringComparison.OrdinalIgnoreCase)) return true;
+            var segments = schema.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return segments.Length != 0 && Normalize(segments[^1]) == requested;
+        });
     }
 
     private void EnsureFresh(DateTimeOffset observedAt, string observation)
