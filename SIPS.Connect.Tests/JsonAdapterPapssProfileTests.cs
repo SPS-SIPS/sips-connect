@@ -15,9 +15,9 @@ public sealed class JsonAdapterPapssProfileTests
     private static readonly Dictionary<string, string[]> RequiredFields = new()
     {
         ["VerificationRequest"] = ["Rail", "Alias", "Type", "ToBIC"],
-        ["PaymentRequest"] = ["Rail", "SenderCountry", "ReceiverCountry", "SenderCurrency", "ReceiverCurrency", "ToBIC", "LocalInstrument", "EndToEndId"],
+        ["PaymentRequest"] = ["Rail", "SenderCountry", "ReceiverCountry", "SenderCurrency", "ReceiverCurrency", "ToBIC", "LocalInstrument", "CategoryPurpose", "EndToEndId", "TxId"],
         ["StatusRequest"] = ["Rail", "EndToEnd", "TxId", "ToBIC"],
-        ["ReturnRequest"] = ["Rail", "ToBIC", "OriginalAmount", "OriginalCurrency", "OriginalTxId", "OriginalEndToEndId", "ReturnId"],
+        ["ReturnRequest"] = ["Rail", "ToBIC", "LocalInstrument", "CategoryPurpose", "OriginalAmount", "OriginalCurrency", "OriginalTxId", "OriginalEndToEndId", "ReturnId"],
         ["PapssAdmissionResponse"] = ["RequestMessageId", "Code", "DurablyAdmitted"],
         ["ReadinessRequest"] = ["Rail", "PapssId", "Bic"],
         ["ReadinessResponse"] = ["Observation", "Error"],
@@ -25,6 +25,12 @@ public sealed class JsonAdapterPapssProfileTests
         ["ParticipantDiscoveryResponse"] = ["Participants", "Error"],
         ["FxRequest"] = ["Rail", "SenderCountry", "ReceiverCountry", "SenderCurrency", "ReceiverCurrency", "ReceiverBank", "LocalInstrument", "Amount", "IsInvoice", "InvoiceCurrency"],
         ["FxResponse"] = ["Rates", "SenderAmount", "ExchangeAmount", "ReceiverAmount", "NationalFeeAmount", "FeeAmount", "Error"]
+    };
+
+    private static readonly Dictionary<string, Dictionary<string, string>> RequiredUserFields = new()
+    {
+        ["PaymentRequest"] = new() { ["TxId"] = "txId" },
+        ["ReturnRequest"] = new() { ["LocalInstrument"] = "lclInstrument", ["CategoryPurpose"] = "ctgPurp" }
     };
 
     [Theory]
@@ -44,6 +50,16 @@ public sealed class JsonAdapterPapssProfileTests
 
             foreach (var required in requiredFields)
                 Assert.Contains(required, actual);
+
+            if (RequiredUserFields.TryGetValue(mapping, out var requiredUserFields))
+            {
+                var fields = endpoint.GetProperty("FieldMappings").EnumerateArray().ToArray();
+                foreach (var (internalField, userField) in requiredUserFields)
+                {
+                    var field = fields.Single(x => x.GetProperty("InternalField").GetString() == internalField);
+                    Assert.Equal(userField, field.GetProperty("UserField").GetString());
+                }
+            }
 
             if (mapping == "FxResponse") Assert.DoesNotContain("InvoiceAmount", actual);
             if (mapping == "FxRequest")
