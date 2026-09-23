@@ -43,4 +43,9 @@ public class WpSipsProtocolTests
         var reject=AdminMessageBuilder.BuildForRejectedEnvelope(request,"REJECT-1",Now,AdminRejectReasonCodes.DuplicateMessageConflict,description:"conflict");
         WpSipsProtocolValidator.Validate(reject);var parsed=System.Xml.Linq.XDocument.Parse(reject);Assert.Equal("MSG-REQ-1",parsed.Descendants().Single(x=>x.Name.LocalName=="Ref").Value);Assert.Contains("DUPLICATE_CONFLICT",reject);
     }
+    [Fact] public void Payee_verification_uses_the_supplied_verification_identifier()
+    {
+        var built=PayeeVerificationBuilder.Build(new(){From="SPS-A",To="SPS-B",MsgId="MSG-1",SIPSRequestId="VERIFY-1",Alias="123",Type="BBAN"}).document;
+        Assert.Equal("VERIFY-1",PayeeVerificationBuilder.Parse(built).SIPSRequestId);
+    }
 }

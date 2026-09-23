@@ -61,6 +61,7 @@ public static class PayeeVerificationBuilder
         var messageType = SupportedMessageTypes.VerificationRequest;
         var bizMsgIdr = Transformers.GenerateId(request.From);
         var appHdr = AppHeader(request.From, request.To, messageType, bizMsgIdr);
+        var msgId = !string.IsNullOrWhiteSpace(request.MsgId) ? request.MsgId : Transformers.GenerateId(request.From);
 
         var document = new Document
         {
@@ -68,7 +69,7 @@ public static class PayeeVerificationBuilder
             {
                 Assgnmt = new IdentificationAssignment3
                 {
-                    MsgId = !string.IsNullOrWhiteSpace(request.MsgId) ? request.MsgId : Transformers.GenerateId(request.From),
+                    MsgId = msgId,
                     CreDtTm = DateTime.UtcNow,
                     Assgnr = new Party40Choice
                     {
@@ -99,7 +100,7 @@ public static class PayeeVerificationBuilder
                 },
                 Vrfctn = [
                     new IdentificationVerification4 {
-                        Id = "FP",
+                        Id = !string.IsNullOrWhiteSpace(request.SIPSRequestId) ? request.SIPSRequestId : msgId,
                         PtyAndAcctId = new IdentificationInformation4 {
                             Acct = new CashAccount40 {
                                 Id = new AccountIdentification4Choice {
