@@ -87,7 +87,7 @@ public static class XmlSecurityHelpers
             ?? throw new InvalidOperationException("A unique top-level BAH From is required.");
         var fromId = from.GetElementsByTagName("Id", headerNs).Cast<XmlElement>().SingleOrDefault()
             ?? throw new InvalidOperationException("A unique BAH From identifier is required.");
-        if (!StringComparer.Ordinal.Equals(fromId.InnerText.Trim(), certificateOwner.Trim())) return false;
+        if (!StringComparer.OrdinalIgnoreCase.Equals(fromId.InnerText.Trim(), certificateOwner.Trim())) return false;
 
         var ns = new XmlNamespaceManager(envelope.NameTable);
         ns.AddNamespace("document", GetDocumentNamespace(envelope, "document"));
@@ -96,25 +96,25 @@ public static class XmlSecurityHelpers
         if (messageType == "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.10")
         {
             var instgAgt = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "document:InstgAgt");
-            return instgAgt.InnerText.Trim() == certificateOwner;
+            return StringComparer.OrdinalIgnoreCase.Equals(instgAgt.InnerText.Trim(), certificateOwner.Trim());
         }
 
         if (messageType == "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12")
         {
             var instdAgt = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "document:InstdAgt");
-            return instdAgt.InnerText.Trim() == certificateOwner;
+            return StringComparer.OrdinalIgnoreCase.Equals(instdAgt.InnerText.Trim(), certificateOwner.Trim());
         }
 
         if (messageType == "urn:iso:std:iso:20022:tech:xsd:acmt.023.001.03")
         {
             var assgnr = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "document:Assgnr");
-            return assgnr.InnerText.Trim() == certificateOwner;
+            return StringComparer.OrdinalIgnoreCase.Equals(assgnr.InnerText.Trim(), certificateOwner.Trim());
         }
 
         if (messageType == "urn:iso:std:iso:20022:tech:xsd:acmt.024.001.03")
         {
             var assgne = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "document:Assgne");
-            return assgne.InnerText.Trim() == certificateOwner;
+            return StringComparer.OrdinalIgnoreCase.Equals(assgne.InnerText.Trim(), certificateOwner.Trim());
         }
 
         if (messageType is "urn:iso:std:iso:20022:tech:xsd:admi.009.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.010.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.002.001.01" or "urn:iso:std:iso:20022:tech:xsd:pacs.028.001.05" or "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.11")
