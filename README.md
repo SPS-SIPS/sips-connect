@@ -189,7 +189,7 @@ Content-Type: application/xml
 signed ISO 20022 using WpSipsPapss
 ```
 
-The existing `/Verify`, `/Payment`, `/Status`, and `/Return` JSON mappings accept an optional `rail` field. Omitting it preserves domestic IPS behavior. `/Readiness`, `/Discovery`, and `/FX` are PAPSS-only and require `rail=PAPSS`.
+The existing `/Verify`, `/Payment`, `/Status`, and `/Return` JSON mappings accept an optional `rail` field. Omitting it preserves domestic IPS behavior. `/Readiness`, `/Discovery`, and `/FX` are PAPSS-only and require `rail=PAPSS`. `GET /api/v1/Gateway/PAPSS/Positions?limit=20` returns only the authenticated bank's PAPSS reconciliation position history and never accepts a participant identity from the caller.
 
 ### Safe enablement
 

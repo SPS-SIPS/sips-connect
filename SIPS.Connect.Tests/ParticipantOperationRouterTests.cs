@@ -24,6 +24,7 @@ public sealed class ParticipantOperationRouterTests
     [InlineData(ParticipantOperation.Readiness)]
     [InlineData(ParticipantOperation.Discovery)]
     [InlineData(ParticipantOperation.Fx)]
+    [InlineData(ParticipantOperation.Position)]
     public void Enabled_deployment_can_select_every_PAPSS_operation(ParticipantOperation operation)
         => Assert.Equal(DownstreamRail.Papss, Router(Options()).Select(operation, "PAPSS"));
 

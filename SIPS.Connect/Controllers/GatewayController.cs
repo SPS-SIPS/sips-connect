@@ -157,6 +157,14 @@ public class GatewayController(
         return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.GetFxAsync(Binding(), new(mapped.SenderCountry, mapped.ReceiverCountry, mapped.SenderCurrency, mapped.ReceiverCurrency, mapped.ReceiverBank, mapped.LocalInstrument, mapped.Amount, mapped.IsInvoice, mapped.InvoiceCurrency), ct), Constants.FxResponse)));
     }
 
+    [HttpGet("PAPSS/Positions")]
+    [Authorize(Roles = Gateway + "," + Recon)]
+    public async Task<ActionResult> PapssPositions([FromQuery] int limit = 20, CancellationToken ct = default)
+    {
+        Select(ParticipantOperation.Position, "PAPSS");
+        return await Papss(async () => Ok(await _papssClient.GetPositionsAsync(Binding(), new(limit), ct)));
+    }
+
     private DownstreamRail Select(ParticipantOperation operation, string? rail)
         => _operationRouter.Select(operation, rail);
 

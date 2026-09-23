@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:sps:papss:position:001:request" xmlns="urn:sps:papss:position:001:request" elementFormDefault="qualified">
+  <xs:element name="PositionRequest"><xs:complexType><xs:sequence><xs:element name="Limit"><xs:simpleType><xs:restriction base="xs:positiveInteger"><xs:maxInclusive value="100"/></xs:restriction></xs:simpleType></xs:element></xs:sequence></xs:complexType></xs:element>
+</xs:schema>

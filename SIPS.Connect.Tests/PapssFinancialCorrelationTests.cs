@@ -208,7 +208,7 @@ public sealed class PapssFinancialCorrelationTests
     }
 
     [Fact]
-    public async Task All_seven_operations_use_the_single_signed_wp_sips_ingress()
+    public async Task All_operations_use_the_single_signed_wp_sips_ingress()
     {
         var directory = new DirectoryScenario(); var client = Client(directory); var binding = Binding();
         await client.VerifyAsync(binding, new() { ToBIC="BANKKE00XXX", Alias="A1", Type="BBAN" }, CancellationToken.None);
@@ -218,7 +218,9 @@ public sealed class PapssFinancialCorrelationTests
         await client.GetReadinessAsync(binding, new("PAPSS-BANK-1", null), CancellationToken.None);
         await client.DiscoverAsync(binding, new(null, null, "BANKKE00XXX", null), CancellationToken.None);
         await client.GetFxAsync(binding, new("SO", "KE", "SOS", "KES", "BANKKE00XXX", "INST", 10, false, null), CancellationToken.None);
-        Assert.Equal(9, directory.Requests.Count);
+        var positions=await client.GetPositionsAsync(binding,new(20),CancellationToken.None);
+        Assert.Equal(100m,Assert.Single(positions.Positions).ClosingBalance.Amount);
+        Assert.Equal(10, directory.Requests.Count);
         Assert.All(directory.Requests, x => Assert.Equal("/sips/messages", x.Path));
     }
 
@@ -272,6 +274,7 @@ public sealed class PapssFinancialCorrelationTests
                 {
                     WpSipsProfiles.Participant => WpSipsInformationMessageBuilder.BuildParticipantResponse(responseHeader, responseId, serviceRequestId, new(Enumerable.Repeat(participant, DiscoveryCount).ToArray())),
                     WpSipsProfiles.Readiness => WpSipsInformationMessageBuilder.BuildReadinessResponse(responseHeader, responseId, serviceRequestId, new(participant)),
+                    WpSipsProfiles.Position => WpSipsInformationMessageBuilder.BuildPositionResponse(responseHeader,responseId,serviceRequestId,new([new(1,"RCON-1",ObservedAt,ObservedAt,false,0,new(10,"USD",1,0),new(5,"USD",1,null),new(15,"USD",2,0),new(85,"USD"),new(100,"USD"))])),
                     _ => WpSipsInformationMessageBuilder.BuildFxResponse(responseHeader, responseId, serviceRequestId, new([new(130, "MID", ObservedAt)], new(10, "SOS"), new(1300, "KES"), new(1300, "KES"), null, null))
                 };
             }
