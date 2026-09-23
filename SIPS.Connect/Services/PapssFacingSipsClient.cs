@@ -148,7 +148,16 @@ public sealed class PapssFacingSipsClient(
         if (parsed.Header.RelatedBusinessMessageId != requestMsgId || parsed.Payload is not AdminReject admission || admission.RejectedBusinessMessageId != requestMsgId)
             throw new InvalidDataException("The technical admission response does not correlate to the request.");
         if (admission.ReasonCode is not ("RECEIVED_AND_DURABLY_ADMITTED" or "EXACT_REPLAY"))
-            throw new ParticipantRailException(MapAdmissionCode(admission.ReasonCode), "The WP-SIPS request was not durably admitted: " + admission.ReasonCode);
+        {
+            var description = SafeAdmissionDescription(admission.Description);
+            logger.LogWarning(
+                "WP-SIPS {Correlation} rejected before durable admission with {ReasonCode}: {Description}",
+                requestMsgId, admission.ReasonCode, description ?? "No reason description was supplied.");
+            throw new ParticipantRailException(
+                MapAdmissionCode(admission.ReasonCode),
+                "The WP-SIPS request was not durably admitted: " + admission.ReasonCode +
+                (description is null ? string.Empty : ": " + description));
+        }
         health.RecordSuccess();
         return new(requestMsgId, admission.ReasonCode, true);
     }
@@ -160,6 +169,13 @@ public sealed class PapssFacingSipsClient(
         "UNSUPPORTED_PROFILE" => "UNSUPPORTED_PROFILE",
         _ => "REJECTED_BEFORE_EXTERNAL_EFFECT"
     };
+
+    private static string? SafeAdmissionDescription(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description)) return null;
+        var singleLine = description.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return singleLine.Length <= 512 ? singleLine : singleLine[..512];
+    }
 
     private async Task<string> PostAsync(string signedXml, string correlation, CancellationToken ct)
     {

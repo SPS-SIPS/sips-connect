@@ -158,6 +158,22 @@ public sealed class PapssFinancialCorrelationTests
     }
 
     [Fact]
+    public async Task Signed_admission_rejection_preserves_the_remote_reason_for_diagnostics()
+    {
+        var directory = new DirectoryScenario
+        {
+            AdmissionCode = "AUTHORIZATION_REJECTED",
+            AdmissionDescription = "The signer does not represent the BAH sender."
+        };
+
+        var error = await Assert.ThrowsAsync<ParticipantRailException>(() =>
+            Client(directory).VerifyAsync(Binding(), new() { ToBIC="BANKKE00XXX", Alias="A1", Type="BBAN" }, CancellationToken.None));
+
+        Assert.Equal("AUTHORIZATION_REJECTED", error.Code);
+        Assert.Contains(directory.AdmissionDescription, error.Message);
+    }
+
+    [Fact]
     public async Task Usd_to_local_currency_payment_fails_closed_while_fx_is_indicative()
     {
         var directory = new DirectoryScenario { Currencies = ["KES"] };
@@ -254,6 +270,8 @@ public sealed class PapssFinancialCorrelationTests
         public string[] Currencies { get; set; } = ["KES"];
         public string[] PaymentSchemas { get; set; } = ["INST"];
         public bool WrongAdmissionCorrelation { get; set; }
+        public string AdmissionCode { get; set; } = "RECEIVED_AND_DURABLY_ADMITTED";
+        public string AdmissionDescription { get; set; } = "Technical admission only.";
         public string? FinancialRequest { get; set; }
         public List<(string Path, string Profile)> Requests { get; } = [];
 
@@ -282,7 +300,7 @@ public sealed class PapssFinancialCorrelationTests
             {
                 FinancialRequest = xml;
                 if (WrongAdmissionCorrelation) parsed.Descendants().Single(x => x.Name.LocalName == "BizMsgIdr").Value = "ANOTHER-MESSAGE";
-                response = AdminMessageBuilder.BuildForRejectedEnvelope(parsed.ToString(SaveOptions.DisableFormatting), "PAPSS-ADMISSION-1", DateTimeOffset.UtcNow, "RECEIVED_AND_DURABLY_ADMITTED", description: "Technical admission only.");
+                response = AdminMessageBuilder.BuildForRejectedEnvelope(parsed.ToString(SaveOptions.DisableFormatting), "PAPSS-ADMISSION-1", DateTimeOffset.UtcNow, AdmissionCode, description: AdmissionDescription);
             }
             return new(HttpStatusCode.OK) { Content = new StringContent(response, Encoding.UTF8, "application/xml") };
         }
