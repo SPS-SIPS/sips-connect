@@ -219,7 +219,7 @@ public sealed class PapssFinancialCorrelationTests
         await client.DiscoverAsync(binding, new(null, null, "BANKKE00XXX", null), CancellationToken.None);
         await client.GetFxAsync(binding, new("SO", "KE", "SOS", "KES", "BANKKE00XXX", "INST", 10, false, null), CancellationToken.None);
         var positions=await client.GetPositionsAsync(binding,new(20),CancellationToken.None);
-        Assert.Equal(100m,Assert.Single(positions.Positions).ClosingBalance.Amount);
+        Assert.Equal(100m,Assert.Single(positions.Positions).ClosingBalance!.Amount);
         Assert.Equal(10, directory.Requests.Count);
         Assert.All(directory.Requests, x => Assert.Equal("/sips/messages", x.Path));
     }
