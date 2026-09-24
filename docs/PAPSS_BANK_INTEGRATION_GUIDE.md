@@ -224,6 +224,30 @@ The bank supplies one HTTPS callback URL and a `CallbackMappingProfile`. SIPS Co
 
 The callback mapping keys are `<profile>.<callback-name>`, for example `bank-uat-v1.CB_PaymentRequest`. The profile must define every callback the participant enables. Callback authentication/signing is agreed during onboarding; secrets and private keys are deployed through the approved secret store, never in adapter JSON or this document.
 
+### Verification (name enquiry) result callback
+
+`POST /api/v1/Gateway/Verify` with `"rail": "PAPSS"` returns only a technical admission (`requestMessageId`, `code`, `durablyAdmitted`). The business result arrives later from PAPSS as a signed `acmt.024.001.03`; SIPS Connect validates it and delivers it to the callback URL using the mapping `<profile>.CB_VerificationResult` (for example `papss-callback-v1.CB_VerificationResult`). Baseline JSON:
+
+```json
+{
+  "requestMessageId": "SIPS-4f1c2d3e4f5a6b7c8d9e0f1a",
+  "originalMsgId": "SIPS-4f1c2d3e4f5a6b7c8d9e0f1a",
+  "verificationId": "SIPS-4f1c2d3e4f5a6b7c8d9e0f1a",
+  "verified": true,
+  "accountNumber": "0012030321735",
+  "accountType": "BBAN",
+  "accountName": "FORTRESS GLOBAL SECURITY PRINTERS(SL)LTD",
+  "currency": "SLE",
+  "reason": "MATCH",
+  "additionalInfo": null,
+  "fromBIC": "<RESPONDING-BIC>",
+  "toBIC": "<YOUR-BIC>",
+  "responseMessageId": "<acmt.024 BizMsgIdr>"
+}
+```
+
+Correlate on `requestMessageId` (the value returned by `/Verify`; for PAPSS verifications SIPS Connect uses one identifier for the request BizMsgIdr, MsgId and verification id). A `verified: false` result carries `reason` (for example `MISS`) and the enquired `accountNumber`/`accountType`; `accountName` and `currency` are then `null`. The request carries `X-Idempotency-Key: <verificationId>`; process redeliveries idempotently. A 2xx response acknowledges delivery; any other outcome makes SIPS Connect answer PAPSS with HTTP 502 so the result is redelivered.
+
 Callback receivers must:
 
 - use HTTPS and validate the configured SIPS Connect identity;

@@ -12,10 +12,13 @@ public interface IParticipantCallbackContext
     IDisposable Push(PapssParticipantBinding binding);
 }
 
-public sealed class ParticipantCallbackContext : IParticipantCallbackContext
+public sealed class ParticipantCallbackContext : IParticipantCallbackContext, SIPS.Core.Interfaces.IInboundAuthenticationContext
 {
     private readonly AsyncLocal<PapssParticipantBinding?> _binding = new();
     public PapssParticipantBinding? Binding => _binding.Value;
+    // A binding is only pushed after PapssCallbackGuard verified the WP-SIPS XAdES signature,
+    // signer provenance and local destination of the inbound PAPSS callback.
+    public bool IsPreAuthenticated => _binding.Value is not null;
     public IDisposable Push(PapssParticipantBinding binding)
     {
         var previous = _binding.Value; _binding.Value = binding;

@@ -224,6 +224,19 @@ public sealed class PapssFinancialCorrelationTests
     }
 
     [Fact]
+    public async Task Verification_request_uses_one_identifier_for_bah_msgid_and_verification_id()
+    {
+        var directory = new DirectoryScenario();
+        var admission = await Client(directory).VerifyAsync(Binding(), new() { ToBIC="BANKKE00XXX", Alias="A1", Type="BBAN" }, CancellationToken.None);
+
+        var request = XDocument.Parse(directory.FinancialRequest!);
+        string Single(string name) => request.Descendants().Single(x => x.Name.LocalName == name).Value;
+        Assert.Equal(admission.RequestMessageId, Single("BizMsgIdr"));
+        Assert.Equal(admission.RequestMessageId, request.Descendants().Single(x => x.Name.LocalName == "Assgnmt").Elements().Single(x => x.Name.LocalName == "MsgId").Value);
+        Assert.Equal(admission.RequestMessageId, request.Descendants().Single(x => x.Name.LocalName == "Vrfctn").Elements().Single(x => x.Name.LocalName == "Id").Value);
+    }
+
+    [Fact]
     public async Task All_operations_use_the_single_signed_wp_sips_ingress()
     {
         var directory = new DirectoryScenario(); var client = Client(directory); var binding = Binding();

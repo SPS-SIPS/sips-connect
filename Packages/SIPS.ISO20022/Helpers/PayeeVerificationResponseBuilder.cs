@@ -268,6 +268,22 @@ public static class PayeeVerificationResponseBuilder
             Reason = document.IdVrfctnRpt?.Rpt?[0]?.Rsn?.Prtry ?? "",
             VerificationId = document.IdVrfctnRpt?.Rpt?[0]?.OrgnlId ?? ""
         };
+        // Expose the identity of the original acmt.023 request (BAH Rltd, OrgnlAssgnmt and
+        // OrgnlPtyAndAcctId) so asynchronous receivers can correlate the report to it.
+        var related = appHeader.Rltd?.FirstOrDefault();
+        var originalAccount = document.IdVrfctnRpt?.Rpt?[0]?.OrgnlPtyAndAcctId?.Acct?.Id?.Othr;
+        response.Original = new PayeeVerificationBuilder.Request
+        {
+            From = related?.Fr?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            To = related?.To?.FIId?.FinInstnId?.Othr?.Id ?? "",
+            BizMsgIdr = related?.BizMsgIdr ?? "",
+            MsgDefIdr = related?.MsgDefIdr ?? "",
+            CreDt = related is null ? default : related.CreDt,
+            MsgId = response.MsgId,
+            SIPSRequestId = response.VerificationId,
+            Alias = originalAccount?.Id ?? "",
+            Type = originalAccount?.SchmeNm?.Prtry ?? ""
+        };
         if (response.Verified)
         {
             response.Name = document.IdVrfctnRpt?.Rpt?[0]?.UpdtdPtyAndAcctId?.Pty?.Nm ?? "";

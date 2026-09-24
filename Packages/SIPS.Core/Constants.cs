@@ -9,6 +9,8 @@ public static class Constants
     public const string CB_PaymentRequest = "CB_PaymentRequest";
     public const string CB_VerificationRequest = "CB_VerificationRequest";
     public const string CB_VerificationResponse = "CB_VerificationResponse";
+    /// <summary>Asynchronous payee-verification result (acmt.024) delivered to the bank, e.g. for PAPSS name enquiries.</summary>
+    public const string CB_VerificationResult = "CB_VerificationResult";
     public const string CB_CompletionNotification = "CB_CompletionNotification";
     public const string CB_CompletionNotificationResponse = "CB_CompletionNotificationResponse";
     public const string API_Key = "ApiKey";

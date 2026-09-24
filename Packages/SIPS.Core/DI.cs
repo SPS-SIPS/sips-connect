@@ -74,6 +74,8 @@ public static class DI
         services.AddScoped<IIncomingTransactionStatusHandler, IncomingTransactionStatusHandler>();
         services.AddScoped<IIncomingReturnTransactionHandler, IncomingReturnTransactionHandler>();
         services.AddScoped<IIncomingPaymentStatusReportHandler, IncomingPaymentStatusReportHandler>();
+        services.AddScoped<IIncomingVerificationResponseHandler, IncomingVerificationResponseHandler>();
+        services.AddSingleton<IInboundAuthenticationContext, NoInboundPreAuthentication>();
         services.AddScoped<IReturnRetryHandler, ReturnRetryHandler>();
 
         services.AddScoped<IOutgoingVerificationHandler, OutgoingVerificationHandler>();

@@ -1404,6 +1404,82 @@
         }
       ]
     },
+    "CB_VerificationResult": {
+      "FieldMappings": [
+        {
+          "InternalField": "RequestMessageId",
+          "UserField": "requestMessageId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "OriginalMsgId",
+          "UserField": "originalMsgId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "VerificationId",
+          "UserField": "verificationId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Verified",
+          "UserField": "verified",
+          "Type": "bool"
+        },
+        {
+          "InternalField": "AccountNumber",
+          "UserField": "accountNumber",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AccountType",
+          "UserField": "accountType",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AccountName",
+          "UserField": "accountName",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Address",
+          "UserField": "address",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "Currency",
+          "UserField": "currency",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Reason",
+          "UserField": "reason",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AdditionalInfo",
+          "UserField": "additionalInfo",
+          "Type": "string"
+        },
+        {
+          "InternalField": "FromBIC",
+          "UserField": "fromBIC",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ToBIC",
+          "UserField": "toBIC",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ResponseMessageId",
+          "UserField": "responseMessageId",
+          "Type": "string"
+        }
+      ]
+    },
     "papss-callback-v1.CB_VerificationRequest": {
       "FieldMappings": [
         {
@@ -2070,6 +2146,82 @@
         {
           "InternalField": "Status",
           "UserField": "status",
+          "Type": "string"
+        }
+      ]
+    },
+    "papss-callback-v1.CB_VerificationResult": {
+      "FieldMappings": [
+        {
+          "InternalField": "RequestMessageId",
+          "UserField": "requestMessageId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "OriginalMsgId",
+          "UserField": "originalMsgId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "VerificationId",
+          "UserField": "verificationId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Verified",
+          "UserField": "verified",
+          "Type": "bool"
+        },
+        {
+          "InternalField": "AccountNumber",
+          "UserField": "accountNumber",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AccountType",
+          "UserField": "accountType",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AccountName",
+          "UserField": "accountName",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Address",
+          "UserField": "address",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "Currency",
+          "UserField": "currency",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Reason",
+          "UserField": "reason",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AdditionalInfo",
+          "UserField": "additionalInfo",
+          "Type": "string"
+        },
+        {
+          "InternalField": "FromBIC",
+          "UserField": "fromBIC",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ToBIC",
+          "UserField": "toBIC",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ResponseMessageId",
+          "UserField": "responseMessageId",
           "Type": "string"
         }
       ]
