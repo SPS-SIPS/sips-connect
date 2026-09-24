@@ -8,6 +8,9 @@ public sealed class StorageBroker(DbContextOptions<StorageBroker> options) : DbC
     public DbSet<ISOMessage> ISOMessages { get; set; } = null!;
     public DbSet<Transaction> Transactions { get; set; } = null!;
     public DbSet<ISOMessageStatus> ISOMessageStatuses { get; set; } = null!;
+    public DbSet<PapssOperation> PapssOperations { get; set; } = null!;
+    public DbSet<PapssOperationEvent> PapssOperationEvents { get; set; } = null!;
+    public DbSet<PapssOutboundResponse> PapssOutboundResponses { get; set; } = null!;
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = new CancellationToken())
     {

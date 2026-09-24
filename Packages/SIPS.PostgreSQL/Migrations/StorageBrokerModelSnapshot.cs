@@ -98,17 +98,17 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("papssdecisionadmissioncode");
 
-                    b.Property<DateTimeOffset?>("PapssDecisionPublishedAt")
+                    b.Property<DateTimeOffset?>("PapssDecisionFailedAt")
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("papssdecisionpublishedat");
+                        .HasColumnName("papssdecisionfailedat");
 
                     b.Property<string>("PapssDecisionFailureCode")
                         .HasColumnType("text")
                         .HasColumnName("papssdecisionfailurecode");
 
-                    b.Property<DateTimeOffset?>("PapssDecisionFailedAt")
+                    b.Property<DateTimeOffset?>("PapssDecisionPublishedAt")
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("papssdecisionfailedat");
+                        .HasColumnName("papssdecisionpublishedat");
 
                     b.Property<string>("Reason")
                         .HasColumnType("text")
@@ -163,9 +163,6 @@ namespace SIPS.PostgreSQL.Migrations
                     b.HasIndex("UETR")
                         .HasDatabaseName("ix_iso_msg_uetr");
 
-                    b.HasIndex("BusinessService", "PapssDecisionPublishedAt", "PapssDecisionFailedAt", "Id")
-                        .HasDatabaseName("ix_iso_msg_papss_decision_pending");
-
                     b.HasIndex("MessageType", "MsgId")
                         .IsUnique()
                         .HasDatabaseName("ux_iso_msg_type_msgid")
@@ -188,6 +185,9 @@ namespace SIPS.PostgreSQL.Migrations
 
                     b.HasIndex("TxId", "MessageType")
                         .HasDatabaseName("ix_iso_msg_txid_msgtype");
+
+                    b.HasIndex("BusinessService", "PapssDecisionPublishedAt", "PapssDecisionFailedAt", "Id")
+                        .HasDatabaseName("ix_iso_msg_papss_decision_pending");
 
                     b.ToTable("isomessages", (string)null);
                 });
@@ -248,6 +248,317 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasDatabaseName("ux_iso_status_dedup");
 
                     b.ToTable("isomessagestatuses", (string)null);
+                });
+
+            modelBuilder.Entity("SIPS.PostgreSQL.Models.PapssOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccountId")
+                        .HasColumnType("text")
+                        .HasColumnName("accountid");
+
+                    b.Property<string>("AccountName")
+                        .HasColumnType("text")
+                        .HasColumnName("accountname");
+
+                    b.Property<string>("AccountType")
+                        .HasColumnType("text")
+                        .HasColumnName("accounttype");
+
+                    b.Property<string>("AdditionalInfo")
+                        .HasColumnType("text")
+                        .HasColumnName("additionalinfo");
+
+                    b.Property<string>("AdmissionCode")
+                        .HasColumnType("text")
+                        .HasColumnName("admissioncode");
+
+                    b.Property<string>("BankDeliveryState")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("bankdeliverystate");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completedat");
+
+                    b.Property<string>("CounterpartyBic")
+                        .HasColumnType("text")
+                        .HasColumnName("counterpartybic");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("createdat");
+
+                    b.Property<string>("Currency")
+                        .HasColumnType("text")
+                        .HasColumnName("currency");
+
+                    b.Property<DateTimeOffset?>("DeadlineAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deadlineat");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("direction");
+
+                    b.Property<string>("EndToEndId")
+                        .HasColumnType("text")
+                        .HasColumnName("endtoendid");
+
+                    b.Property<string>("GatewayState")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("gatewaystate");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("operation");
+
+                    b.Property<string>("PapssOutcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("papssoutcome");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ReasonCode")
+                        .HasColumnType("text")
+                        .HasColumnName("reasoncode");
+
+                    b.Property<DateTimeOffset?>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("receivedat");
+
+                    b.Property<string>("RequestMessageId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("requestmessageid");
+
+                    b.Property<byte[]>("SignedRequest")
+                        .HasColumnType("bytea")
+                        .HasColumnName("signedrequest");
+
+                    b.Property<byte[]>("SignedResponse")
+                        .HasColumnType("bytea")
+                        .HasColumnName("signedresponse");
+
+                    b.Property<DateTimeOffset?>("SourceCreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sourcecreatedat");
+
+                    b.Property<string>("TxId")
+                        .HasColumnType("text")
+                        .HasColumnName("txid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updatedat");
+
+                    b.Property<string>("VerificationId")
+                        .HasColumnType("text")
+                        .HasColumnName("verificationid");
+
+                    b.Property<bool?>("Verified")
+                        .HasColumnType("boolean")
+                        .HasColumnName("verified");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_papss_operations");
+
+                    b.HasIndex("CompletedAt")
+                        .HasDatabaseName("ix_papss_op_completed_at");
+
+                    b.HasIndex("VerificationId")
+                        .HasDatabaseName("ix_papss_op_verification_id");
+
+                    b.HasIndex("Direction", "RequestMessageId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_papss_op_direction_request_msg");
+
+                    b.ToTable("papss_operations", (string)null);
+                });
+
+            modelBuilder.Entity("SIPS.PostgreSQL.Models.PapssOperationEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("eventtype");
+
+                    b.Property<string>("MessageType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("messagetype");
+
+                    b.Property<Guid?>("OperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operationid");
+
+                    b.Property<int>("PushAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("pushattempts");
+
+                    b.Property<DateTimeOffset?>("PushDeliveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("pushdeliveredat");
+
+                    b.Property<string>("PushLastError")
+                        .HasColumnType("text")
+                        .HasColumnName("pushlasterror");
+
+                    b.Property<DateTimeOffset?>("PushNextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("pushnextattemptat");
+
+                    b.Property<string>("PushState")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("pushstate");
+
+                    b.Property<byte[]>("RawXml")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("rawxml");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("receivedat");
+
+                    b.Property<string>("SourceMessageId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("sourcemessageid");
+
+                    b.HasKey("Id")
+                        .HasName("pk_papss_operation_events");
+
+                    b.HasIndex("OperationId")
+                        .HasDatabaseName("ix_papss_event_operation");
+
+                    b.HasIndex("EventType", "SourceMessageId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_papss_event_type_source_msg");
+
+                    b.HasIndex("PushState", "PushNextAttemptAt")
+                        .HasDatabaseName("ix_papss_event_push_due");
+
+                    b.ToTable("papss_operation_events", (string)null);
+                });
+
+            modelBuilder.Entity("SIPS.PostgreSQL.Models.PapssOutboundResponse", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AdmissionCode")
+                        .HasColumnType("text")
+                        .HasColumnName("admissioncode");
+
+                    b.Property<DateTimeOffset?>("AdmittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("admittedat");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("BizMsgIdr")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("bizmsgidr");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("createdat");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("text")
+                        .HasColumnName("lasterror");
+
+                    b.Property<string>("MessageType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("messagetype");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("nextattemptat");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operationid");
+
+                    b.Property<byte[]>("SignedXml")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("signedxml");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("state");
+
+                    b.Property<DateTimeOffset?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("submittedat");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updatedat");
+
+                    b.HasKey("Id")
+                        .HasName("pk_papss_outbound_responses");
+
+                    b.HasIndex("BizMsgIdr")
+                        .IsUnique()
+                        .HasDatabaseName("ux_papss_response_biz_msg_idr");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_papss_response_operation");
+
+                    b.HasIndex("State", "NextAttemptAt")
+                        .HasDatabaseName("ix_papss_response_due");
+
+                    b.ToTable("papss_outbound_responses", (string)null);
                 });
 
             modelBuilder.Entity("SIPS.PostgreSQL.Models.Transaction", b =>
@@ -393,6 +704,29 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasConstraintName("fk_isomessagestatuses_isomessages_isomessageid");
 
                     b.Navigation("ISOMessage");
+                });
+
+            modelBuilder.Entity("SIPS.PostgreSQL.Models.PapssOperationEvent", b =>
+                {
+                    b.HasOne("SIPS.PostgreSQL.Models.PapssOperation", "Operation")
+                        .WithMany()
+                        .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_papss_operation_events_papss_operations_operationid");
+
+                    b.Navigation("Operation");
+                });
+
+            modelBuilder.Entity("SIPS.PostgreSQL.Models.PapssOutboundResponse", b =>
+                {
+                    b.HasOne("SIPS.PostgreSQL.Models.PapssOperation", "Operation")
+                        .WithMany()
+                        .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_papss_outbound_responses_papss_operations_operationid");
+
+                    b.Navigation("Operation");
                 });
 
             modelBuilder.Entity("SIPS.PostgreSQL.Models.Transaction", b =>
