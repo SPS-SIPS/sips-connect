@@ -408,6 +408,8 @@ public static class DI
         services.RemoveAll<ICallbackClient>();
         services.AddSingleton<CallbackClient>();
         services.AddSingleton<ICallbackClient, ParticipantCallbackClient>();
+        services.RemoveAll<SIPS.Core.Interfaces.IInboundAuthenticationContext>();
+        services.AddSingleton<SIPS.Core.Interfaces.IInboundAuthenticationContext>(sp => (ParticipantCallbackContext)sp.GetRequiredService<IParticipantCallbackContext>());
     }
 
     private static void ValidatePapssFacing(PapssFacingOptions options, IConfiguration configuration)

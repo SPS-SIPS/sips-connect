@@ -42,6 +42,10 @@ public sealed class PapssFacingSipsClient(
         var id = Id();
         var requestMsgId = request.MsgId ?? id;
         var unsigned = PayeeVerificationBuilder.Build(new() { From = participant.Bic, To = request.ToBIC, Alias = request.Alias, Type = request.Type, MsgId = requestMsgId, SIPSRequestId = requestMsgId }).document;
+        // The verification result arrives asynchronously (acmt.024 on /api/v1/Incoming) and echoes the
+        // original request identity. Use one identifier for BAH BizMsgIdr, Assgnmt/MsgId and Vrfctn/Id so
+        // the requestMessageId returned to the bank matches whichever reference the result carries.
+        unsigned = SetBusinessMessageId(unsigned, requestMsgId);
         return await SendAdmissionAsync(unsigned, participant, ct);
     }
 
@@ -224,6 +228,13 @@ public sealed class PapssFacingSipsClient(
         var existing = header.Elements().FirstOrDefault(x => x.Name.LocalName == "BizSvc");
         if (existing is not null) existing.Value = service;
         else header.Elements().Single(x => x.Name.LocalName == "MsgDefIdr").AddAfterSelf(new XElement(header.Name.Namespace + "BizSvc", service));
+        return document.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static string SetBusinessMessageId(string xml, string businessMessageId)
+    {
+        var document = SecureDocument(xml);
+        document.Descendants().Single(x => x.Name.LocalName == "AppHdr").Elements().Single(x => x.Name.LocalName == "BizMsgIdr").Value = businessMessageId;
         return document.ToString(SaveOptions.DisableFormatting);
     }
 

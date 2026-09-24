@@ -13,7 +13,8 @@ public class Incoming : IIncoming
         IIncomingTransactionHandler ith,
         IIncomingTransactionStatusHandler psh,
         IIncomingReturnTransactionHandler rh,
-        IIncomingPaymentStatusReportHandler psr)
+        IIncomingPaymentStatusReportHandler psr,
+        IIncomingVerificationResponseHandler vrr)
     {
         _handlers = new()
         {
@@ -21,7 +22,9 @@ public class Incoming : IIncoming
             ["pacs.008.001.10"] = ith.HandleAsync,
             ["pacs.028.001.05"] = psh.HandleAsync,
             ["pacs.004.001.11"] = rh.HandleAsync,
-            ["pacs.002.001.12"] = psr.HandleAsync
+            ["pacs.002.001.12"] = psr.HandleAsync,
+            // Asynchronous verification result (e.g. PAPSS name enquiry) delivered to the bank.
+            ["acmt.024.001.03"] = vrr.HandleAsync
         };
     }
 

@@ -2,6 +2,7 @@ using System.Text;
 using SIPS.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using SIPS.Connect.Services;
+using SIPS.Core.Services.Callback;
 using System.Xml.Linq;
 namespace SIPS.Connect.Controllers;
 [ApiController]
@@ -34,12 +35,27 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
         {
             return StatusCode(StatusCodes.Status401Unauthorized);
         }
+        catch (CallbackDeliveryException error)
+        {
+            // The result was valid but the bank callback did not acknowledge it: signal a retryable failure.
+            logger.LogWarning(error, "PAPSS callback could not be delivered to the participant callback");
+            return StatusCode(StatusCodes.Status502BadGateway, new { code = "CALLBACK_DELIVERY_FAILED", message = error.Message });
+        }
         catch (InvalidDataException error)
         {
             return BadRequest(new { code = "INVALID_PAPSS_CALLBACK", message = error.Message });
         }
 
-        var result = await _isoService.Handle(body, ct);
+        string result;
+        try
+        {
+            result = await _isoService.Handle(body, ct);
+        }
+        catch (CallbackDeliveryException error)
+        {
+            logger.LogWarning(error, "Incoming message could not be delivered to the participant callback");
+            return StatusCode(StatusCodes.Status502BadGateway, new { code = "CALLBACK_DELIVERY_FAILED", message = error.Message });
+        }
 
         return Content(result, "application/xml", Encoding.UTF8);
     }
