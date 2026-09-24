@@ -9,6 +9,10 @@ public interface IStorageBroker
     DbSet<Transaction> Transactions { get; set; }
     DbSet<ISOMessage> ISOMessages { get; set; }
     DbSet<ISOMessageStatus> ISOMessageStatuses { get; set; }
+    DbSet<PapssOperation> PapssOperations { get; set; }
+    DbSet<PapssOperationEvent> PapssOperationEvents { get; set; }
+    DbSet<PapssOutboundResponse> PapssOutboundResponses { get; set; }
+    Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
