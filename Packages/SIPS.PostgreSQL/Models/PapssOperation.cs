@@ -49,6 +49,31 @@ public class PapssOperation
     /// <summary>Only computed when a deadline is configured (PAPSS timeout rules are unresolved).</summary>
     public DateTimeOffset? DeadlineAt { get; set; }
 
+    // ---- Payments / returns / status enquiries (Phase 2) ----------------------------------------
+    /// <summary>GrpHdr MsgId of the pacs.008/pacs.004/pacs.028 this participant sent (OUTBOUND), or of the message received (INBOUND).
+    /// For OUTBOUND payments and returns this is the value the gateway echoes as pacs.002 OrgnlMsgId.</summary>
+    public string? MsgId { get; set; }
+    public string? ReturnId { get; set; }
+    /// <summary>RETURN -> the payment it returns; STATUS_ENQUIRY -> the payment it asks about.</summary>
+    public Guid? OriginalOperationId { get; set; }
+    public PapssOperation? OriginalOperation { get; set; }
+    /// <summary>RETURN / STATUS_ENQUIRY: the original payment TxId / EndToEndId as sent or received.</summary>
+    public string? OriginalTxId { get; set; }
+    public string? OriginalEndToEndId { get; set; }
+    public decimal? Amount { get; set; }
+    public string? LocalInstrument { get; set; }
+    /// <summary>Raw ISO status currently in effect (ACCP, ACSP, ACSC, PDNG, RJCT). Every received status is kept as an event.</summary>
+    public string? PaymentStatus { get; set; }
+    /// <summary>Reason code carried by the pacs.002 in effect (StsRsnInf/Rsn), kept apart from gateway/core-bank ReasonCode.</summary>
+    public string? StatusReasonCode { get; set; }
+    public DateTimeOffset? StatusAt { get; set; }
+    /// <summary>A different final status arrived after a final one. Operator attention; the first final status is kept.</summary>
+    public bool StatusConflict { get; set; }
+    /// <summary>SHA-256 of the bank request's business content: same TxId/ReturnId + different content = DUPLICATE_CONFLICT.</summary>
+    public string? RequestFingerprint { get; set; }
+    /// <summary>INBOUND payment: the isomessages row holding the bank decision and the PAPSS decision outbox state.</summary>
+    public int? IsoMessageId { get; set; }
+
     public uint xmin { get; private set; }
 }
 
@@ -70,6 +95,21 @@ public class PapssOperationEvent
     public DateTimeOffset? PushNextAttemptAt { get; set; }
     public string? PushLastError { get; set; }
     public DateTimeOffset? PushDeliveredAt { get; set; }
+
+    // Status history (pacs.002 / pacs.004 events). Null for verification events.
+    public string? Status { get; set; }
+    public string? ReasonCode { get; set; }
+    /// <summary>MSG_ID, TX_ID, NONE or MISMATCH (see PapssCorrelation).</summary>
+    public string? Correlation { get; set; }
+    /// <summary>APPLIED, NOT_ADVANCING, DUPLICATE_FINAL, CONFLICT, UNKNOWN_STATUS or UNCORRELATED (see PapssEventDisposition).</summary>
+    public string? Disposition { get; set; }
+    public string? OriginalMessageId { get; set; }
+    public string? OriginalMessageType { get; set; }
+    public string? OriginalTxId { get; set; }
+    public string? OriginalEndToEndId { get; set; }
+    public decimal? Amount { get; set; }
+    public string? Currency { get; set; }
+    public string? Note { get; set; }
 }
 
 /// <summary>Gateway-bound signed reply (e.g. acmt.024 answering an inbound acmt.023), re-submitted byte-identical on retry.</summary>
@@ -140,6 +180,30 @@ public sealed class PapssOperationConfiguration : IEntityTypeConfiguration<Papss
         builder.HasIndex(x => new { x.Direction, x.RequestMessageId }).IsUnique().HasDatabaseName("ux_papss_op_direction_request_msg");
         builder.HasIndex(x => x.VerificationId).HasDatabaseName("ix_papss_op_verification_id");
         builder.HasIndex(x => x.CompletedAt).HasDatabaseName("ix_papss_op_completed_at");
+
+        builder.Property(x => x.MsgId).HasMaxLength(128);
+        builder.Property(x => x.ReturnId).HasMaxLength(128);
+        builder.Property(x => x.OriginalTxId).HasMaxLength(128);
+        builder.Property(x => x.OriginalEndToEndId).HasMaxLength(128);
+        builder.Property(x => x.Amount).HasColumnType("numeric(18,5)");
+        builder.Property(x => x.LocalInstrument).HasMaxLength(35);
+        builder.Property(x => x.PaymentStatus).HasMaxLength(8);
+        builder.Property(x => x.StatusReasonCode).HasMaxLength(64);
+        builder.Property(x => x.StatusAt).HasColumnType("timestamp with time zone");
+        builder.Property(x => x.RequestFingerprint).HasMaxLength(64);
+        builder.HasOne(x => x.OriginalOperation).WithMany().HasForeignKey(x => x.OriginalOperationId).OnDelete(DeleteBehavior.SetNull);
+
+        // [SAFETY INVARIANT]: one payment per direction and TxId (bank TxId idempotency for OUTBOUND,
+        // redelivery de-duplication for INBOUND), one return per direction and ReturnId.
+        builder.HasIndex(x => new { x.Direction, x.Operation, x.TxId }).IsUnique()
+            .HasFilter("operation = 'PAYMENT' AND txid IS NOT NULL").HasDatabaseName("ux_papss_op_payment_txid");
+        builder.HasIndex(x => new { x.Direction, x.ReturnId }).IsUnique()
+            .HasFilter("operation = 'RETURN' AND returnid IS NOT NULL").HasDatabaseName("ux_papss_op_return_id");
+        builder.HasIndex(x => x.MsgId).HasDatabaseName("ix_papss_op_msg_id");
+        builder.HasIndex(x => x.TxId).HasDatabaseName("ix_papss_op_tx_id");
+        builder.HasIndex(x => x.EndToEndId).HasDatabaseName("ix_papss_op_end_to_end_id");
+        builder.HasIndex(x => x.OriginalOperationId).HasDatabaseName("ix_papss_op_original");
+        builder.HasIndex(x => x.IsoMessageId).HasDatabaseName("ix_papss_op_iso_message");
     }
 }
 
@@ -164,6 +228,20 @@ public sealed class PapssOperationEventConfiguration : IEntityTypeConfiguration<
         builder.HasIndex(x => new { x.EventType, x.SourceMessageId }).IsUnique().HasDatabaseName("ux_papss_event_type_source_msg");
         builder.HasIndex(x => new { x.PushState, x.PushNextAttemptAt }).HasDatabaseName("ix_papss_event_push_due");
         builder.HasIndex(x => x.OperationId).HasDatabaseName("ix_papss_event_operation");
+
+        builder.Property(x => x.Status).HasMaxLength(8);
+        builder.Property(x => x.ReasonCode).HasMaxLength(64);
+        builder.Property(x => x.Correlation).HasMaxLength(16);
+        builder.Property(x => x.Disposition).HasMaxLength(32);
+        builder.Property(x => x.OriginalMessageId).HasMaxLength(128);
+        builder.Property(x => x.OriginalMessageType).HasMaxLength(32);
+        builder.Property(x => x.OriginalTxId).HasMaxLength(128);
+        builder.Property(x => x.OriginalEndToEndId).HasMaxLength(128);
+        builder.Property(x => x.Amount).HasColumnType("numeric(18,5)");
+        builder.Property(x => x.Currency).HasMaxLength(3);
+        builder.Property(x => x.Note).HasMaxLength(512);
+        // Operators list uncorrelated / conflicting status events.
+        builder.HasIndex(x => new { x.EventType, x.Disposition }).HasDatabaseName("ix_papss_event_type_disposition");
     }
 }
 
