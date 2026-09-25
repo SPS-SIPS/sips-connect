@@ -115,7 +115,7 @@ public sealed class PapssFacingSipsClient(
         {
             From = participant.Bic, To = request.ToBIC, LocalInstrument = request.LocalInstrument,
             CategoryPurpose = request.CategoryPurpose, EndToEndId = request.EndToEndId, TxId = txId,
-            Amount = request.Amount, Currency = request.Currency, Ustrd = request.RemittanceInformation,
+            Amount = request.Amount, Currency = request.Currency, Ustrd = request.RemittanceInformation, PurposeCode = request.PurposeCode,
             Debtor = new() { Name = request.DebtorName, Account = request.DebtorAccount, Address = request.DebtorAddress, AccountType = request.DebtorAccountType, AgentBIC = request.DebtorAgentBIC, Issuer = request.DebtorIssuer },
             Creditor = new() { Name = request.CreditorName, Account = request.CreditorAccount, Address = request.CreditorAddress, AccountType = request.CreditorAccountType, AgentBIC = request.CreditorAgentBIC, Issuer = request.CreditorIssuer },
             PapssCorridor = new(request.SenderCountry!, request.ReceiverCountry!, request.SenderCurrency!, request.ReceiverCurrency!)
@@ -371,6 +371,8 @@ public sealed class PapssFacingSipsClient(
         if (x.SenderCurrency == "USD" && x.ReceiverCurrency != "USD")
             throw new ParticipantRailException("PAPSS_FX_FEE_NOT_READY", "USD-to-local-currency PAPSS payments remain disabled until the FX and fee contract is closed. FX enquiry is indicative only.");
         if (!x.LocalInstrument.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') || x.LocalInstrument.Length > 35) throw new ArgumentException("PAPSS local instrument is invalid.");
+        // ISO ExternalPurpose1Code shape only (1-4 characters); PAPSS publishes no permitted list, so no value list is enforced.
+        if (!string.IsNullOrWhiteSpace(x.PurposeCode)) { x.PurposeCode = x.PurposeCode.Trim().ToUpperInvariant(); if (x.PurposeCode.Length > 4 || !x.PurposeCode.All(char.IsAsciiLetterOrDigit)) throw new ArgumentException("PAPSS purpose code must be a 1-4 character ISO ExternalPurpose1Code."); }
         if (!SupportsLocalInstrument(destination.PaymentSchemas, x.LocalInstrument)) throw new ArgumentException("The PAPSS destination does not support the selected local instrument.");
         var policyInstruments = options.SpsPolicy.AllowedLocalInstruments.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
         if (policyInstruments.Length != 0 && !policyInstruments.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The selected local instrument is restricted by SPS policy.");

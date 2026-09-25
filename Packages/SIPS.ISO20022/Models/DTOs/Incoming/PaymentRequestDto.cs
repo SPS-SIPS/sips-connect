@@ -37,4 +37,7 @@ public sealed class PaymentRequestDto
     public string? Upr { get; set; }
     public string? BillReference { get; set; }
     public string? TxId { get; set; }
+    // Optional ISO 20022 purpose code (Purp/Cd) supplied by the bank. PAPSS requires one in its pacs.008 template but publishes
+    // no permitted list, so SIPS never defaults it.
+    public string? PurposeCode { get; set; }
 }

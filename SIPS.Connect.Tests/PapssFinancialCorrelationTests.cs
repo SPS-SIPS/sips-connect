@@ -47,6 +47,29 @@ public sealed class PapssFinancialCorrelationTests
     }
 
     [Fact]
+    public async Task Bank_supplied_purpose_code_is_carried_as_Purp_Cd_and_never_defaulted()
+    {
+        var directory = new DirectoryScenario();
+        var payment = Payment(); payment.PurposeCode = "gdds";
+        await Client(directory).PayAsync(Binding(), payment, CancellationToken.None);
+        var purp = XDocument.Parse(directory.FinancialRequest!).Descendants().Single(x => x.Name.LocalName == "Purp");
+        Assert.Equal("GDDS", purp.Elements().Single(x => x.Name.LocalName == "Cd").Value);
+
+        var withoutPurpose = new DirectoryScenario();
+        await Client(withoutPurpose).PayAsync(Binding(), Payment(), CancellationToken.None);
+        Assert.Empty(XDocument.Parse(withoutPurpose.FinancialRequest!).Descendants().Where(x => x.Name.LocalName == "Purp"));
+    }
+
+    [Theory]
+    [InlineData("TOOLONG")]
+    [InlineData("A-1")]
+    public async Task Purpose_code_must_have_the_ISO_code_shape(string code)
+    {
+        var payment = Payment(); payment.PurposeCode = code;
+        await Assert.ThrowsAsync<ArgumentException>(() => Client(new DirectoryScenario()).PayAsync(Binding(), payment, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Missing_debtor_agent_defaults_to_the_authenticated_participant_bic()
     {
         // No PaymentRequest jsonAdapter mapping carries a debtor agent (UAT probe was refused with PARTICIPANT_BIC_MISMATCH).

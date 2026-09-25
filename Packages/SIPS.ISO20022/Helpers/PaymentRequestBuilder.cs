@@ -31,6 +31,7 @@ public static class PaymentRequestBuilder
         public Person Debtor { get; set; } = new Person();
         public Person Creditor { get; set; } = new Person();
         public string? Ustrd { get; set; }
+        public string? PurposeCode { get; set; }
         public PapssCorridorData? PapssCorridor { get; set; }
     }
 
@@ -220,6 +221,7 @@ public static class PaymentRequestBuilder
                                 }
                             },
                         },
+                        Purp = string.IsNullOrWhiteSpace(request.PurposeCode) ? null : new Purpose2Choice { Cd = request.PurposeCode.Trim() },
                         RmtInf = new RemittanceInformation21
                         {
                             Ustrd = [request.Ustrd]
@@ -291,7 +293,8 @@ public static class PaymentRequestBuilder
                 Issuer = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAcct?.Id?.Othr?.Issr ?? string.Empty,
                 AgentBIC = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAgt?.FinInstnId?.Othr?.Id ?? document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].CdtrAgt?.FinInstnId?.BICFI ?? string.Empty
             },
-            Ustrd = string.Join(" ", document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].RmtInf.Ustrd)
+            Ustrd = string.Join(" ", document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].RmtInf.Ustrd),
+            PurposeCode = document.FIToFICstmrCdtTrf.CdtTrfTxInf[0].Purp?.Cd
         };
 
         request.PapssCorridor = ReadPapssCorridor(content, request);
