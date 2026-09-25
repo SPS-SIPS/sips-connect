@@ -1596,6 +1596,108 @@
           "InternalField": "AgeSeconds",
           "UserField": "ageSeconds",
           "Type": "int"
+        },
+        {
+          "InternalField": "TxId",
+          "UserField": "txId",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "EndToEndId",
+          "UserField": "endToEndId",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "MsgId",
+          "UserField": "msgId",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "Amount",
+          "UserField": "amount",
+          "Type": "decimal",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "LocalInstrument",
+          "UserField": "localInstrument",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "PaymentStatus",
+          "UserField": "paymentStatus",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "PaymentOutcome",
+          "UserField": "paymentOutcome",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "StatusReasonCode",
+          "UserField": "statusReasonCode",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "StatusAt",
+          "UserField": "statusAt",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "StatusConflict",
+          "UserField": "statusConflict",
+          "Type": "bool",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "ReturnId",
+          "UserField": "returnId",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "OriginalTxId",
+          "UserField": "originalTxId",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "OriginalEndToEndId",
+          "UserField": "originalEndToEndId",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "OriginalRequestMessageId",
+          "UserField": "originalRequestMessageId",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "Returns",
+          "UserField": "returns",
+          "Type": "object",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "DecisionState",
+          "UserField": "decisionState",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "StatusHistory",
+          "UserField": "statusHistory",
+          "Type": "object",
+          "OmitIfNull": true
         }
       ]
     },
