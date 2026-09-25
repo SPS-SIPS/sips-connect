@@ -84,7 +84,16 @@ SIPS Connect stores the verification in its PAPSS operation store before it call
 
 ### Look up a PAPSS operation
 
-`GET /api/v1/Gateway/Operations/{requestMessageId}` or `GET /api/v1/Gateway/Verify/{requestMessageId}`. Both need the same `Gateway` role as `POST /Verify`. `Verify/{id}` only matches bank-initiated verifications.
+All lookups need the `Gateway` role and return the same `OperationResult` payload:
+
+| Request | Finds |
+| --- | --- |
+| `GET /api/v1/Gateway/Operations/{requestMessageId}` | Any stored PAPSS operation by the `requestMessageId` returned to you (verification, payment, return, status enquiry), or an inbound one by its PAPSS source message id. |
+| `GET /api/v1/Gateway/Verify/{requestMessageId}` | Bank-initiated verifications only. |
+| `GET /api/v1/Gateway/Payment/{txId}` | The payment with this TxId. Your own (outbound) payment wins over a received one with the same TxId. |
+| `GET /api/v1/Gateway/Return/{returnId}` | The return with this `returnId` (outbound first, then received). |
+| `GET /api/v1/Gateway/Operations?endToEndId=...` | The payment with this EndToEndId (outbound first, newest first). |
+| `GET /api/v1/Gateway/Operations/Unresolved?limit=50` | Operator view (`Gateway` or `Recon` role): received pacs.002/pacs.004 that matched no operation, conflict with a final status, or carry an unknown status. |
 
 The lookup returns the stored state and result through the `OperationResult` JsonAdapter mapping:
 
@@ -132,6 +141,43 @@ The three state fields are:
 - `papssOutcome`: `PENDING`, `VERIFIED_MATCH`, `VERIFIED_NO_MATCH`, `REJECTED` or `UNKNOWN`.
 - `bankDeliveryState`: `NOT_REQUIRED`, `PENDING`, `DELIVERED` or `FAILED`, for the callback push.
 
+Payments and returns add these fields (they are absent for verifications):
+
+```json
+{
+  "requestMessageId": "ZKBASOS06268081234567890123",
+  "operation": "PAYMENT",
+  "direction": "OUTBOUND",
+  "status": "COMPLETED",
+  "gatewayState": "ADMITTED",
+  "papssOutcome": "SETTLED",
+  "bankDeliveryState": "DELIVERED",
+  "admissionCode": "RECEIVED_AND_DURABLY_ADMITTED",
+  "txId": "<TX_ID>",
+  "endToEndId": "<END_TO_END_ID>",
+  "msgId": "ZKBASOS06268081234567890456",
+  "amount": 125.5,
+  "currency": "USD",
+  "localInstrument": "USDP",
+  "paymentStatus": "ACSC",
+  "paymentOutcome": "SETTLED",
+  "statusReasonCode": null,
+  "statusAt": "2026-09-25T08:00:04.120Z",
+  "statusConflict": false,
+  "returns": ["OUTBOUND RTN-1 SETTLED"],
+  "statusHistory": [
+    { "receivedAt": "2026-09-25T08:00:01.020Z", "messageType": "pacs.002.001.12", "sourceMessageId": "<PAPSS id>", "status": "ACSP", "reasonCode": null, "correlation": "MSG_ID", "disposition": "APPLIED", "pushState": "DELIVERED", "note": null },
+    { "receivedAt": "2026-09-25T08:00:04.120Z", "messageType": "pacs.002.001.12", "sourceMessageId": "<PAPSS id>", "status": "ACSC", "reasonCode": null, "correlation": "MSG_ID", "disposition": "APPLIED", "pushState": "DELIVERED", "note": null }
+  ]
+}
+```
+
+- `paymentStatus` is the raw ISO status in effect (`ACCP`, `ACSP`, `ACSC`, `PDNG`, `RJCT`); `paymentOutcome` (same as `papssOutcome`) is `PENDING`, `ACCEPTED` (ACCP/ACSP), `SETTLED` (ACSC), `REJECTED` (RJCT), `RETURNED` (a return settled against the payment) or `UNKNOWN`. `SETTLED`, `REJECTED` and `RETURNED` are final and never go back.
+- `statusConflict: true` means PAPSS reported a different final status after a final one. The first final status is kept; contact SPS operations before acting on either.
+- A return shows `returnId`, `originalTxId`, `originalEndToEndId` and `originalRequestMessageId` (the payment it returns). A payment lists its `returns`.
+- A received (INBOUND) payment shows your decision (`paymentStatus` `ACCP` or `RJCT`) and `decisionState` (`NOT_QUEUED`, `PENDING`, `PUBLISHED`, `FAILED`) for the signed decision SIPS Connect sends to PAPSS; a later PAPSS final status updates `paymentStatus`/`paymentOutcome`.
+- `statusHistory` lists every status message received for the operation, including the ones that did not change it (`NOT_ADVANCING`, `DUPLICATE_FINAL`, `CONFLICT`).
+
 An unknown id returns `404` with `OPERATION_NOT_FOUND`. The optional `?waitSeconds=N` parameter long-polls while the status is `PENDING`. It is capped by `PapssFacing:Lookup:MaxWaitSeconds`, which defaults to `0`, meaning long-polling is off. Use the lookup as a fallback or for reconciliation. The push callback is still the primary channel.
 
 ### Submit a payment
@@ -167,7 +213,14 @@ An unknown id returns `404` with `OPERATION_NOT_FOUND`. The optional `?waitSecon
 
 The debtor-agent, sender country and sender currency authority comes from the authenticated local participant configuration; contradictory legacy JSON values are rejected. Destination BIC is transaction data. Receiver country, supported receiver currencies and payment schemas are resolved through signed, correlated, freshness-checked Discovery and Readiness calls. Select receiver currency when more than one is available. Reuse neither `localId` nor another transaction's references.
 
-The response uses the same admission shape shown for `/Verify`.
+The response uses the same admission shape shown for `/Verify`; its `requestMessageId` is the lookup key of the payment (`GET /api/v1/Gateway/Operations/{requestMessageId}` or `GET /api/v1/Gateway/Payment/{txId}`).
+
+`txId` is the idempotency key. SIPS Connect stores the payment and its signed pacs.008 before contacting WP-SIPS:
+- Sending the same `txId` with the same content again never creates a second payment. You get the stored admission back, or, if the earlier attempt ended ambiguously (`503`/timeout), SIPS Connect re-submits the identical signed message and WP-SIPS answers `EXACT_REPLAY`.
+- Sending the same `txId` with different content returns `400` `DUPLICATE_CONFLICT`; nothing is sent.
+- A request refused by validation (`422`) or directory checks is not stored; correct it and retry with the same `txId`.
+
+Status results (ACCP/ACSP/ACSC/PDNG/RJCT) arrive later on the payment status callback (see [Callback contract](#payment-and-return-status-callback)); several may arrive for one payment.
 
 ### Query payment status
 
@@ -182,7 +235,31 @@ The response uses the same admission shape shown for `/Verify`.
 }
 ```
 
-The response uses the common PAPSS admission shape. Final or subsequent status may also arrive through the configured callback channel.
+SIPS Connect answers from its operation store, which is authoritative:
+- **Final payment** (`SETTLED`, `REJECTED`, `RETURNED`): the stored state is returned and no pacs.028 is sent.
+- **Non-final payment of yours** (`PENDING`, `ACCEPTED`, `UNKNOWN`): SIPS Connect sends one pacs.028 status enquiry to PAPSS, records it (operation `STATUS_ENQUIRY`, linked to the payment) and returns the stored state together with the enquiry admission. The answer arrives as an ordinary status callback. An operator may set `PapssFacing:Status:EnquiryMinimumAgeSeconds` to answer young payments from the store only; by default it is unset.
+- **Payment you received** (INBOUND): the stored state; SIPS Connect does not enquire.
+- **TxId not in the store**: unchanged behaviour. A pacs.028 is sent and the admission shape (`requestMessageId`, `code`, `durablyAdmitted`) is returned.
+
+A stored payment is returned with the `PaymentResponse` mapping plus stored fields:
+
+```json
+{
+  "localId": "<END_TO_END_ID>",
+  "status": "ACSP",
+  "reason": null,
+  "additionalInfo": null,
+  "acceptanceDate": null,
+  "acceptedAtUtc": null,
+  "transactionId": "<TX_ID>",
+  "requestMessageId": "<requestMessageId of the payment>",
+  "paymentOutcome": "ACCEPTED",
+  "operation": { "...": "the OperationResult of the payment, as on the lookup API" },
+  "statusEnquiry": { "requestMessageId": "<requestMessageId of the pacs.028>", "code": "RECEIVED_AND_DURABLY_ADMITTED", "durablyAdmitted": true }
+}
+```
+
+`status` is `null` until PAPSS has reported a status. `statusEnquiry` is `null` when no pacs.028 was sent; when one was attempted but not admitted, `code` carries the reason (for example `WP_SIPS_UNAVAILABLE`) and the stored state is still returned. An `endToEnd` that does not match the stored payment returns `422`.
 
 ### Return a payment
 
@@ -205,6 +282,8 @@ The response uses the common PAPSS admission shape. Final or subsequent status m
 ```
 
 Unsupported recall semantics are refused. The response uses the common PAPSS admission shape.
+
+`returnId` is the idempotency key, with the same rules as `txId` for payments (same content = stored admission or identical re-submission; different content = `400` `DUPLICATE_CONFLICT`). The return is linked to the payment it returns when that payment is in the store; a payment you received is the usual case. Its result arrives on the payment status callback with `X-Return-Id`; once it settles, the returned payment shows `paymentOutcome: "RETURNED"`. Which status settles a return (ACSC, or also ACSP) is not settled by PAPSS; SIPS Connect uses `PapssFacing:Returns:SettledStatuses` (default `ACSC`).
 
 ### Check PAPSS readiness
 
@@ -317,6 +396,31 @@ The callback is pushed asynchronously, from a durable outbox:
 
 If a result arrives for a `requestMessageId` that SIPS Connect does not hold, it is still stored and pushed. An example is a verification submitted before the operation store was deployed. A second, different result for an operation that is already completed is stored for audit and is not pushed.
 
+### Payment and return status callback
+
+Every PAPSS status that advances one of your payments or returns is pushed with the mapping `<profile>.CB_CompletionNotification` (baseline):
+
+```json
+{ "txId": "<ORIGINAL_PAYMENT_TX_ID>", "endToEndId": "<END_TO_END_ID>", "status": "ACSC", "reason": null, "additionalInfo": null }
+```
+
+- `status` is the ISO status: `ACCP` or `ACSP` (accepted, not final), `ACSC` (settled, final), `RJCT` (rejected, final, `reason` carries the code), `PDNG` (pending).
+- Several callbacks may arrive for one payment, for example `ACSP` then `ACSC`. The order and number are not fixed by PAPSS; SIPS Connect never sends a status that would move a payment backwards and never sends a second, different final status.
+- Headers: `X-Idempotency-Key: <txId>:<status>` (a return uses `<returnId>:<status>`), `X-Transaction-Id`, `X-Papss-Operation` (`PAYMENT` or `RETURN`), `X-Return-Id` for a return, and `X-Papss-Source-Message-Id`.
+- For a return, `txId` is the **original payment's** TxId (PAPSS reports it that way); use `X-Return-Id` to tell the return's result from the payment's.
+- A status for a payment received by your bank (INBOUND) is pushed the same way.
+- Delivery works like the verification result callback: stored first, pushed from an outbox with retries, at-least-once.
+
+### Return received from PAPSS
+
+When a payment you sent is returned, PAPSS delivers a pacs.004. SIPS Connect stores it, marks your payment `RETURNED` and pushes it with `<profile>.CB_ReturnRequest`:
+
+```json
+{ "txId": "<YOUR_ORIGINAL_TX_ID>", "endToEndId": "<YOUR_END_TO_END_ID>", "agent": "<RETURNING_AGENT>", "reason": "<RETURN_REASON>", "additionalInfo": "<TEXT>", "returnId": "<RTR_ID>" }
+```
+
+Headers: `X-Idempotency-Key: <returnId>`, `X-Return-Id`, `X-Transaction-Id`. The return is pushed even if SIPS Connect does not hold the original payment. No pacs.002 is sent back to PAPSS for a received return.
+
 ### Verification enquiries from other PAPSS countries
 
 When a participant in another country verifies one of your accounts:
@@ -348,9 +452,11 @@ Required mapping names are:
 ```text
 VerificationRequest
 PaymentRequest
+PaymentResponse
 StatusRequest
 ReturnRequest
 PapssAdmissionResponse
+OperationResult
 ReadinessRequest
 ReadinessResponse
 ParticipantDiscoveryRequest
@@ -358,6 +464,8 @@ ParticipantDiscoveryResponse
 FxRequest
 FxResponse
 ```
+
+Callback mappings used on the PAPSS profile: `CB_VerificationRequest`, `CB_VerificationResponse`, `CB_VerificationResult`, `CB_PaymentRequest`, `CB_PaymentResponse`, `CB_CompletionNotification` and `CB_ReturnRequest`.
 
 The current `FxResponse` fields are `Rates`, `SenderAmount`, `ExchangeAmount`, `ReceiverAmount`, `NationalFeeAmount`, `FeeAmount`, and `Error`. `InvoiceAmount` is obsolete. FX rates and amounts use decimal-safe values and must never pass through binary `double` arithmetic.
 

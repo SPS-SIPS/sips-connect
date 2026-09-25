@@ -68,6 +68,8 @@ services:
       - PapssFacing__Delivery__PollIntervalSeconds=${PAPSS_DELIVERY_POLL_INTERVAL_SECONDS:-5}
       - PapssFacing__Delivery__ClaimLeaseSeconds=${PAPSS_DELIVERY_CLAIM_LEASE_SECONDS:-120}
       - PapssFacing__Lookup__MaxWaitSeconds=${PAPSS_LOOKUP_MAX_WAIT_SECONDS:-0}
+      - PapssFacing__Status__EnquiryMinimumAgeSeconds=${PAPSS_STATUS_ENQUIRY_MIN_AGE_SECONDS:-}
+      - PapssFacing__Returns__SettledStatuses=${PAPSS_RETURN_SETTLED_STATUSES:-ACSC}
       - ISO20022__SIPS=${SIPS_PEER_URL:?SIPS_PEER_URL is required}
       - ISO20022__Agent=${BANK_CODE:?BANK_CODE is required}
       - ISO20022__BIC=${BANK_CODE:?BANK_CODE is required}
