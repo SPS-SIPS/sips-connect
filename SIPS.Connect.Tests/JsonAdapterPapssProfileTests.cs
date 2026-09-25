@@ -19,6 +19,7 @@ public sealed class JsonAdapterPapssProfileTests
         ["StatusRequest"] = ["Rail", "EndToEnd", "TxId", "ToBIC"],
         ["ReturnRequest"] = ["Rail", "ToBIC", "LocalInstrument", "CategoryPurpose", "OriginalAmount", "OriginalCurrency", "OriginalTxId", "OriginalEndToEndId", "ReturnId"],
         ["PapssAdmissionResponse"] = ["RequestMessageId", "Code", "DurablyAdmitted"],
+        ["OperationResult"] = ["RequestMessageId", "Operation", "Direction", "Status", "GatewayState", "PapssOutcome", "BankDeliveryState", "Verified", "AccountName", "AccountNumber", "AccountType", "Currency", "Reason", "AdmissionCode", "CreatedAt", "CompletedAt", "DeadlineAt"],
         ["ReadinessRequest"] = ["Rail", "PapssId", "Bic"],
         ["ReadinessResponse"] = ["Observation", "Error"],
         ["ParticipantDiscoveryRequest"] = ["Rail", "Online", "Type", "Bic", "PapssId"],

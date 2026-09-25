@@ -18,5 +18,6 @@
     <ProjectReference Include="../Packages/SIPS.Adapter/SIPS.Adapter.csproj" />
     <ProjectReference Include="../Packages/SIPS.XMLDsig.Xades/SIPS.XMLDsig.Xades.csproj" />
     <ProjectReference Include="../Packages/SIPS.ISO20022/SIPS.ISO20022.csproj" />
+    <ProjectReference Include="../Packages/SIPS.PostgreSQL/SIPS.PostgreSQL.csproj" />
   </ItemGroup>
 </Project>
