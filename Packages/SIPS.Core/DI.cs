@@ -75,6 +75,17 @@ public static class DI
         services.AddScoped<IIncomingReturnTransactionHandler, IncomingReturnTransactionHandler>();
         services.AddScoped<IIncomingPaymentStatusReportHandler, IncomingPaymentStatusReportHandler>();
         services.AddScoped<IIncomingVerificationResponseHandler, IncomingVerificationResponseHandler>();
+        services.AddScoped<IVerificationResultDelivery, IncomingVerificationResponseHandler>();
+        // Hosts with a durable result store (SIPS Connect / PAPSS) replace this.
+        services.AddScoped<IVerificationResultInbox, NoVerificationResultInbox>();
+        services.AddScoped<ICoreBankVerificationClient>(sp => new CoreBankVerificationClient(
+            sp.GetRequiredService<SIPS.ISO20022.Options.ISO20022Options>(),
+            sp.GetRequiredService<IJsonAdapter>(),
+            sp.GetRequiredService<ICallbackOrchestrator>(),
+            sp.GetRequiredService<ICorrelationService>(),
+            sp.GetRequiredService<ICallbackClient>(),
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CoreOptions>>(),
+            sp.GetRequiredService<ILogger<CoreBankVerificationClient>>()));
         services.AddSingleton<IInboundAuthenticationContext, NoInboundPreAuthentication>();
         services.AddScoped<IReturnRetryHandler, ReturnRetryHandler>();
 

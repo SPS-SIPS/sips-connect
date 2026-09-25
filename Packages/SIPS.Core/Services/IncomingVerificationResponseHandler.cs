@@ -31,7 +31,8 @@ public sealed class IncomingVerificationResponseHandler(
     ICorrelationService correlation,
     ICallbackClient callback,
     ICallbackOrchestrator callbacks,
-    IInboundAuthenticationContext authentication) : IIncomingVerificationResponseHandler
+    IInboundAuthenticationContext authentication,
+    IVerificationResultInbox? inbox = null) : IIncomingVerificationResponseHandler, IVerificationResultDelivery
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -72,6 +73,29 @@ public sealed class IncomingVerificationResponseHandler(
             return signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.MandatoryElementMissing, "The verification report does not reference the original request."));
         }
 
+        if (authentication.IsPreAuthenticated && inbox is not null)
+        {
+            // PAPSS: store durably first and acknowledge; the bank is notified from the push outbox
+            // (with retries), so a slow or failing bank callback can no longer make the gateway
+            // believe SIPS Connect did not receive the result.
+            var outcome = await inbox.AcceptAsync(message, report, dto, ct);
+            if (outcome != VerificationResultInboxOutcome.NotHandled)
+            {
+                logger.LogInformation(
+                    "[{CorrelationId}] Verification result {ResponseMessageId} for RequestMessageId={RequestMessageId} {Outcome}; bank delivery is asynchronous.",
+                    cid, dto.ResponseMessageId, dto.RequestMessageId, outcome == VerificationResultInboxOutcome.Duplicate ? "was a duplicate" : "stored");
+                return string.Empty;
+            }
+        }
+
+        await DeliverAsync(dto, cid, ct);
+        return string.Empty;
+    }
+
+    public Task DeliverAsync(CBVerificationResultDto dto, CancellationToken ct) => DeliverAsync(dto, correlation.Create(), ct);
+
+    private async Task DeliverAsync(CBVerificationResultDto dto, string cid, CancellationToken ct)
+    {
         var headers = new Dictionary<string, string>
         {
             // One result per verification: lets the bank de-duplicate redeliveries.
@@ -117,10 +141,9 @@ public sealed class IncomingVerificationResponseHandler(
         }
 
         logger.LogInformation("[{CorrelationId}] Verification result {RequestMessageId} delivered with status {StatusCode}.", cid, dto.RequestMessageId, result.StatusCode);
-        return string.Empty;
     }
 
-    internal static CBVerificationResultDto Map(PayeeVerificationResponseBuilder.Request report)
+    public static CBVerificationResultDto Map(PayeeVerificationResponseBuilder.Request report)
     {
         var original = report.Original ?? new PayeeVerificationBuilder.Request();
         return new CBVerificationResultDto
