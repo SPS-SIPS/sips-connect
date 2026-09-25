@@ -1356,6 +1356,125 @@
         }
       ]
     },
+    "OperationResult": {
+      "FieldMappings": [
+        {
+          "InternalField": "RequestMessageId",
+          "UserField": "requestMessageId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Operation",
+          "UserField": "operation",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Direction",
+          "UserField": "direction",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Status",
+          "UserField": "status",
+          "Type": "string"
+        },
+        {
+          "InternalField": "GatewayState",
+          "UserField": "gatewayState",
+          "Type": "string"
+        },
+        {
+          "InternalField": "PapssOutcome",
+          "UserField": "papssOutcome",
+          "Type": "string"
+        },
+        {
+          "InternalField": "BankDeliveryState",
+          "UserField": "bankDeliveryState",
+          "Type": "string"
+        },
+        {
+          "InternalField": "VerificationId",
+          "UserField": "verificationId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "CounterpartyBic",
+          "UserField": "counterpartyBic",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Verified",
+          "UserField": "verified",
+          "Type": "bool"
+        },
+        {
+          "InternalField": "AccountName",
+          "UserField": "accountName",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AccountNumber",
+          "UserField": "accountNumber",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AccountType",
+          "UserField": "accountType",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Currency",
+          "UserField": "currency",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Reason",
+          "UserField": "reason",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AdditionalInfo",
+          "UserField": "additionalInfo",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AdmissionCode",
+          "UserField": "admissionCode",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ReasonCode",
+          "UserField": "reasonCode",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ReplyState",
+          "UserField": "replyState",
+          "Type": "string"
+        },
+        {
+          "InternalField": "CreatedAt",
+          "UserField": "createdAt",
+          "Type": "string"
+        },
+        {
+          "InternalField": "CompletedAt",
+          "UserField": "completedAt",
+          "Type": "string"
+        },
+        {
+          "InternalField": "DeadlineAt",
+          "UserField": "deadlineAt",
+          "Type": "string"
+        },
+        {
+          "InternalField": "AgeSeconds",
+          "UserField": "ageSeconds",
+          "Type": "int"
+        }
+      ]
+    },
     "CB_CompletionNotification": {
       "FieldMappings": [
         {

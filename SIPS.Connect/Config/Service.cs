@@ -38,6 +38,7 @@ public static class DI
         {
             var options = new PapssFacingOptions();
             configuration.GetSection(PapssFacingOptions.SectionName).Bind(options);
+            ValidatePapssStore(options);
             ValidatePapssFacing(options, configuration);
             return options;
         });
@@ -393,6 +394,14 @@ public static class DI
         services.AddScoped<IPapssCallbackGuard, PapssCallbackGuard>();
         services.AddScoped<IPapssPaymentDecisionPublisher, PapssPaymentDecisionPublisher>();
         services.AddHostedService<PapssPaymentDecisionOutboxWorker>();
+        // PAPSS operation store: durable operations, bank push outbox and gateway reply outbox.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<PapssOperationStore>();
+        services.AddSingleton<IPapssOutboxSignal, PapssOutboxSignal>();
+        services.AddScoped<IPapssInboundVerificationService, PapssInboundVerificationService>();
+        services.AddHostedService<PapssBankPushWorker>();
+        services.AddHostedService<PapssResponseOutboxWorker>();
+        services.AddHostedService<PapssStoreRetentionWorker>();
         services.AddSingleton<IParticipantCallbackContext, ParticipantCallbackContext>();
         services.AddHttpClient<IPapssFacingSipsClient, PapssFacingSipsClient>();
 
@@ -410,6 +419,30 @@ public static class DI
         services.AddSingleton<ICallbackClient, ParticipantCallbackClient>();
         services.RemoveAll<SIPS.Core.Interfaces.IInboundAuthenticationContext>();
         services.AddSingleton<SIPS.Core.Interfaces.IInboundAuthenticationContext>(sp => (ParticipantCallbackContext)sp.GetRequiredService<IParticipantCallbackContext>());
+        services.RemoveAll<SIPS.Core.Interfaces.IVerificationResultInbox>();
+        services.AddScoped<SIPS.Core.Interfaces.IVerificationResultInbox, PapssVerificationResultInbox>();
+    }
+
+    /// <summary>Validates the optional PAPSS operation store settings (all unset by default).</summary>
+    public static void ValidatePapssStore(PapssFacingOptions options)
+    {
+        var acmt023 = options.Inbound.Acmt023;
+        if (acmt023.ResponseDeadlineSeconds is <= 0)
+            throw new InvalidOperationException("PapssFacing:Inbound:Acmt023:ResponseDeadlineSeconds must be positive when set.");
+        if (acmt023.ResponseDeadlineSeconds.HasValue != acmt023.DeadlineClock.HasValue)
+            throw new InvalidOperationException("PapssFacing:Inbound:Acmt023:ResponseDeadlineSeconds and DeadlineClock must be configured together (both unset = no deadline).");
+        if (options.Outbound.VerificationResultExpirySeconds is <= 0)
+            throw new InvalidOperationException("PapssFacing:Outbound:VerificationResultExpirySeconds must be positive when set.");
+        if (options.Store.RetentionDays is <= 0)
+            throw new InvalidOperationException("PapssFacing:Store:RetentionDays must be positive when set.");
+        if (options.Store.PurgeIntervalMinutes < 1)
+            throw new InvalidOperationException("PapssFacing:Store:PurgeIntervalMinutes must be at least 1.");
+        var delivery = options.Delivery;
+        if (delivery.MaxAttempts < 1 || delivery.InitialBackoffSeconds < 1 || delivery.MaxBackoffSeconds < delivery.InitialBackoffSeconds ||
+            delivery.PollIntervalSeconds < 1 || delivery.ClaimLeaseSeconds < 10)
+            throw new InvalidOperationException("PapssFacing:Delivery settings are invalid (MaxAttempts>=1, InitialBackoffSeconds>=1, MaxBackoffSeconds>=InitialBackoffSeconds, PollIntervalSeconds>=1, ClaimLeaseSeconds>=10).");
+        if (options.Lookup.MaxWaitSeconds is < 0 or > 300)
+            throw new InvalidOperationException("PapssFacing:Lookup:MaxWaitSeconds must be between 0 and 300.");
     }
 
     private static void ValidatePapssFacing(PapssFacingOptions options, IConfiguration configuration)
