@@ -374,6 +374,9 @@ public sealed class PapssFacingSipsClient(
         if (!SupportsLocalInstrument(destination.PaymentSchemas, x.LocalInstrument)) throw new ArgumentException("The PAPSS destination does not support the selected local instrument.");
         var policyInstruments = options.SpsPolicy.AllowedLocalInstruments.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
         if (policyInstruments.Length != 0 && !policyInstruments.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The selected local instrument is restricted by SPS policy.");
+        // No PaymentRequest mapping carries a debtor agent: like the domestic path, the sending participant is the
+        // debtor agent. A request that names a different debtor agent is still refused.
+        if (string.IsNullOrWhiteSpace(x.DebtorAgentBIC)) x.DebtorAgentBIC = participant.Bic;
         if (!string.Equals(x.DebtorAgentBIC?.Trim(), participant.Bic, StringComparison.OrdinalIgnoreCase)) throw new ParticipantRailException("PARTICIPANT_BIC_MISMATCH", "The payment debtor agent does not match the authenticated participant BIC.");
         if (!string.Equals(x.CreditorAgentBIC?.Trim(), x.ToBIC, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("The payment creditor agent does not match the transaction destination BIC.");
     }
