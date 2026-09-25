@@ -37,10 +37,24 @@ public interface IPapssFacingSipsClient
     /// Throws <see cref="ParticipantRailException"/> on a terminal admission rejection.
     /// </summary>
     Task<PapssAdmissionResponse> SubmitSignedAsync(PapssParticipantBinding participant, string signedXml, CancellationToken ct);
+
+    /// <summary>
+    /// Resolves and validates the destination (directory discovery + readiness + corridor), builds and signs the
+    /// pacs.008.001.10 without sending it, so it can be stored before submission.
+    /// </summary>
+    Task<PapssSignedMessage> PreparePaymentAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct)
+        => throw new NotSupportedException("This PAPSS client cannot prepare payments.");
+    /// <summary>Builds and signs the pacs.004.001.11 without sending it.</summary>
+    PapssSignedMessage PrepareReturn(PapssParticipantBinding participant, ReturnPaymentRequestDto request)
+        => throw new NotSupportedException("This PAPSS client cannot prepare returns.");
+    /// <summary>Builds and signs the pacs.028.001.05 without sending it.</summary>
+    PapssSignedMessage PrepareStatus(PapssParticipantBinding participant, StatusRequestDto request)
+        => throw new NotSupportedException("This PAPSS client cannot prepare status enquiries.");
 }
 
 public sealed record PapssAdmissionResponse(string RequestMessageId, string Code, bool DurablyAdmitted);
-public sealed record PapssSignedMessage(string BusinessMessageId, string SignedXml, DateTimeOffset CreatedAt);
+/// <param name="MessageId">GrpHdr MsgId of the signed message (what the gateway echoes as OrgnlMsgId), when it differs from BizMsgIdr.</param>
+public sealed record PapssSignedMessage(string BusinessMessageId, string SignedXml, DateTimeOffset CreatedAt, string? MessageId = null);
 
 public sealed class PapssFacingSipsClient(
     PapssFacingOptions options,
@@ -90,6 +104,9 @@ public sealed class PapssFacingSipsClient(
     }
 
     public async Task<PapssAdmissionResponse> PayAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct)
+        => await SendPreparedAsync(await PreparePaymentAsync(participant, request, ct), participant, ct);
+
+    public async Task<PapssSignedMessage> PreparePaymentAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct)
     {
         var destination = await ResolveDestinationAsync(participant, request, ct);
         ValidateAndApplyCorridor(participant, destination, request);
@@ -103,7 +120,7 @@ public sealed class PapssFacingSipsClient(
             Creditor = new() { Name = request.CreditorName, Account = request.CreditorAccount, Address = request.CreditorAddress, AccountType = request.CreditorAccountType, AgentBIC = request.CreditorAgentBIC, Issuer = request.CreditorIssuer },
             PapssCorridor = new(request.SenderCountry!, request.ReceiverCountry!, request.SenderCurrency!, request.ReceiverCurrency!)
         });
-        return await SendAdmissionAsync(built.document, participant, ct);
+        return Sign(built.document, built.msgId);
     }
 
     public async Task<PapssAdmissionResponse> SubmitPaymentDecisionAsync(PapssParticipantBinding participant, string signedPacs002, CancellationToken ct)
@@ -131,18 +148,24 @@ public sealed class PapssFacingSipsClient(
     }
 
     public async Task<PapssAdmissionResponse> GetStatusAsync(PapssParticipantBinding participant, StatusRequestDto request, CancellationToken ct)
+        => await SendPreparedAsync(PrepareStatus(participant, request), participant, ct);
+
+    public PapssSignedMessage PrepareStatus(PapssParticipantBinding participant, StatusRequestDto request)
     {
         Required(request.TxId, "transaction identifier"); Required(request.EndToEnd, "end-to-end identifier"); Required(request.ToBIC, "destination institution");
         var requestMsgId = Id();
         var unsigned = PaymentStatusRequestBuilder.Build(new() { From = participant.Bic, To = request.ToBIC, MsgId = requestMsgId, CreDt = DateTime.UtcNow, OrgnlTxId = request.TxId, OriginalEndToEnd = request.EndToEnd });
-        return await SendAdmissionAsync(unsigned, participant, ct);
+        return Sign(unsigned, requestMsgId);
     }
 
     public async Task<PapssAdmissionResponse> ReturnAsync(PapssParticipantBinding participant, ReturnPaymentRequestDto request, CancellationToken ct)
+        => await SendPreparedAsync(PrepareReturn(participant, request), participant, ct);
+
+    public PapssSignedMessage PrepareReturn(PapssParticipantBinding participant, ReturnPaymentRequestDto request)
     {
         Required(request.OriginalTxId, "original transaction identifier"); Required(request.OriginalEndToEndId, "original end-to-end identifier"); Required(request.ReturnId, "return identifier"); Required(request.ToBIC, "destination institution"); Required(request.LocalInstrument, "local instrument"); Required(request.CategoryPurpose, "category purpose");
         var built = ReturnPaymentRequestBuilder.Build(new() { From = participant.Bic, To = request.ToBIC, MsgId = Id(), CreDt = DateTime.UtcNow, NumberOfTransactions = 1, LocalInstrument = request.LocalInstrument, CategoryPurpose = request.CategoryPurpose, ReturnId = request.ReturnId, OrgnlTxId = request.OriginalTxId, OriginalEndToEnd = request.OriginalEndToEndId, OriginalCurrency = Required(request.OriginalCurrency, "original currency"), OriginalAmount = request.OriginalAmount, ReturnReason = request.Reason, AdditionalInfo = request.AdditionalInfo, DebtorAgent = participant.Bic, CreditorAgent = request.ToBIC });
-        return await SendAdmissionAsync(built.document, participant, ct);
+        return Sign(built.document, built.msgId);
     }
 
     public async Task<ReadinessResponse> GetReadinessAsync(PapssParticipantBinding participant, ReadinessRequest request, CancellationToken ct)
@@ -170,14 +193,24 @@ public sealed class PapssFacingSipsClient(
         catch (Exception error) { health.RecordFailure(error); throw; }
     }
 
-    private async Task<PapssAdmissionResponse> SendAdmissionAsync(string unsigned, PapssParticipantBinding participant, CancellationToken ct)
+    /// <summary>Applies the rail header (To = WP-SIPS, BizSvc) and signs; BizMsgIdr stays the builder's.</summary>
+    private PapssSignedMessage Sign(string unsigned, string? messageId)
     {
         try
         {
             var profiled = SetBusinessService(unsigned, options.SecurityProfile);
             var requestMsgId = Value(SecureDocument(profiled).Descendants().Single(x => x.Name.LocalName == "AppHdr"), "BizMsgIdr");
-            var signed = signer.SignEnvelope(profiled, XadesProfile.WpSipsPapss); var response = await PostAsync(signed, requestMsgId, ct);
-            return await ParseAdmissionAsync(response, requestMsgId, participant, ct);
+            return new(requestMsgId, signer.SignEnvelope(profiled, XadesProfile.WpSipsPapss), DateTimeOffset.UtcNow, messageId);
+        }
+        catch (Exception error) { health.RecordFailure(error); throw; }
+    }
+
+    private async Task<PapssAdmissionResponse> SendPreparedAsync(PapssSignedMessage prepared, PapssParticipantBinding participant, CancellationToken ct)
+    {
+        try
+        {
+            var response = await PostAsync(prepared.SignedXml, prepared.BusinessMessageId, ct);
+            return await ParseAdmissionAsync(response, prepared.BusinessMessageId, participant, ct);
         }
         catch (Exception error) { health.RecordFailure(error); throw; }
     }
