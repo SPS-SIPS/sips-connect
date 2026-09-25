@@ -209,12 +209,22 @@ public sealed partial class PapssOperationStore
             ? PapssEventDisposition.Uncorrelated
             : Rules.Evaluate(operation.PapssOutcome, operation.PaymentStatus, report.Status, operation.Operation == PapssOperationType.Return, settledReturn);
 
+        // Only an amount PAPSS reported (or one from an older gateway that did not say, UNSPECIFIED_LEGACY: unchanged behaviour)
+        // is compared with, or fills, the stored amount. A LOCAL_RECONSTRUCTION amount is the gateway echoing the original
+        // payment back: comparing it proves nothing and it must never look like a PAPSS-reported amount.
+        var amountSource = report.AmountSource;
+        var reportedAmount = PapssFieldProvenance.IsReportedAmount(amountSource);
         if (operation is not null)
         {
-            if (report.Amount is { } amount && operation.Amount is { } stored && amount != stored)
-                note = Append(note, $"reported amount {amount} differs from stored {stored}");
-            if (report.Currency is { } currency && operation.Currency is { } storedCurrency && !string.Equals(currency, storedCurrency, StringComparison.OrdinalIgnoreCase))
-                note = Append(note, $"reported currency {currency} differs from stored {storedCurrency}");
+            if (!reportedAmount)
+                note = Append(note, $"amount not reported by PAPSS ({amountSource}: the gateway supplied the original payment amount); not compared");
+            else
+            {
+                if (report.Amount is { } amount && operation.Amount is { } stored && amount != stored)
+                    note = Append(note, $"reported amount {amount} differs from stored {stored}");
+                if (report.Currency is { } currency && operation.Currency is { } storedCurrency && !string.Equals(currency, storedCurrency, StringComparison.OrdinalIgnoreCase))
+                    note = Append(note, $"reported currency {currency} differs from stored {storedCurrency}");
+            }
 
             switch (disposition)
             {
@@ -225,8 +235,11 @@ public sealed partial class PapssOperationStore
                     operation.StatusReasonCode = Truncate(report.ReasonCode, 64);
                     operation.AdditionalInfo = report.AdditionalInfo;
                     operation.StatusAt = now;
-                    operation.Amount ??= report.Amount;
-                    operation.Currency ??= report.Currency;
+                    if (reportedAmount)
+                    {
+                        operation.Amount ??= report.Amount;
+                        operation.Currency ??= report.Currency;
+                    }
                     if (Rules.IsFinal(next)) operation.CompletedAt ??= now;
                     // A PAPSS status proves the gateway admitted our message even if the submission outcome was ambiguous.
                     if (operation.Direction == PapssDirection.Outbound && operation.GatewayState is PapssGatewayState.Submitting or PapssGatewayState.SubmissionUnknown)
@@ -265,6 +278,9 @@ public sealed partial class PapssOperationStore
             OriginalEndToEndId = Truncate(report.OriginalEndToEndId, 128),
             Amount = report.Amount,
             Currency = report.Currency,
+            AmountSource = amountSource,
+            RawEvidenceReference = Truncate(report.Provenance?.RawEvidenceReference, 128),
+            FieldProvenance = ProvenanceJson(report.Provenance),
             Note = Truncate(note, 512)
         });
 
@@ -302,8 +318,8 @@ public sealed partial class PapssOperationStore
                     report.SourceMessageId, operation!.RequestMessageId, note);
                 break;
             default:
-                logger.LogInformation("PAPSS pacs.002 {SourceMessageId} {Status} for {Operation} {RequestMessageId}: {Disposition} via {Correlation}",
-                    report.SourceMessageId, report.Status, operation!.Operation, operation.RequestMessageId, disposition, correlation);
+                logger.LogInformation("PAPSS pacs.002 {SourceMessageId} {Status} for {Operation} {RequestMessageId}: {Disposition} via {Correlation}; amount source {AmountSource}",
+                    report.SourceMessageId, report.Status, operation!.Operation, operation.RequestMessageId, disposition, correlation, amountSource);
                 break;
         }
         return new PapssIngestResult(false, operation, correlation, disposition, pushed, note);
@@ -395,8 +411,9 @@ public sealed partial class PapssOperationStore
                 OriginalTxId = message.OriginalTxId,
                 OriginalEndToEndId = message.OriginalEndToEndId,
                 CounterpartyBic = message.InstructingAgent,
-                Amount = message.Amount,
-                Currency = message.Currency,
+                // The returned amount is what PAPSS reported; one the gateway reconstructed never becomes the operation amount.
+                Amount = PapssFieldProvenance.IsReportedAmount(message.AmountSource) ? message.Amount : null,
+                Currency = PapssFieldProvenance.IsReportedAmount(message.AmountSource) ? message.Currency : null,
                 LocalInstrument = Truncate(message.LocalInstrument, 35),
                 StatusReasonCode = Truncate(message.ReasonCode, 64),
                 AdditionalInfo = message.AdditionalInfo,
@@ -433,6 +450,10 @@ public sealed partial class PapssOperationStore
                 OriginalEndToEndId = Truncate(message.OriginalEndToEndId, 128),
                 Amount = message.Amount,
                 Currency = message.Currency,
+                AmountSource = message.AmountSource,
+                CategoryPurposeSource = message.CategoryPurposeSource,
+                RawEvidenceReference = Truncate(message.Provenance?.RawEvidenceReference, 128),
+                FieldProvenance = ProvenanceJson(message.Provenance),
                 Note = Truncate(note, 512)
             });
             try
@@ -479,6 +500,10 @@ public sealed partial class PapssOperationStore
             ReasonCode = Truncate(message.ReasonCode, 64),
             Amount = message.Amount,
             Currency = message.Currency,
+            AmountSource = message.AmountSource,
+            CategoryPurposeSource = message.CategoryPurposeSource,
+            RawEvidenceReference = Truncate(message.Provenance?.RawEvidenceReference, 128),
+            FieldProvenance = ProvenanceJson(message.Provenance),
             Note = $"RtrId {message.ReturnId} already received as {existing.RequestMessageId}"
         });
         try { await db.SaveChangesAsync(ct); }
@@ -709,8 +734,15 @@ public sealed partial class PapssOperationStore
         OriginalEndToEndId = x.OriginalEndToEndId,
         Amount = x.Amount,
         Currency = x.Currency,
-        Note = x.Note
+        Note = x.Note,
+        AmountSource = x.AmountSource,
+        CategoryPurposeSource = x.CategoryPurposeSource,
+        RawEvidenceReference = x.RawEvidenceReference,
+        FieldProvenance = x.FieldProvenance
     });
+
+    private static string? ProvenanceJson(PapssProvenance? provenance)
+        => provenance is null ? null : System.Text.Json.JsonSerializer.Serialize(provenance.Fields);
 
     private static string? Append(string? note, string? addition)
         => string.IsNullOrEmpty(addition) ? note : string.IsNullOrEmpty(note) ? addition : note + "; " + addition;

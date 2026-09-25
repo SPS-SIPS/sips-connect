@@ -19,7 +19,15 @@ public sealed record PapssStatusReport(
     string? AdditionalInfo,
     decimal? Amount,
     string? Currency,
-    DateTimeOffset? AcceptedAt);
+    DateTimeOffset? AcceptedAt,
+    PapssProvenance? Provenance = null)
+{
+    /// <summary>
+    /// Where the gateway got OrgnlTxRef/IntrBkSttlmAmt: NETWORK_REPORTED (PAPSS sent it) or LOCAL_RECONSTRUCTION (borrowed from
+    /// the original payment; never a PAPSS-reported amount). UNSPECIFIED_LEGACY when the gateway did not say.
+    /// </summary>
+    public string AmountSource => Provenance?.SourceOf(PapssFieldProvenance.StatusAmountPath) ?? PapssFieldProvenance.UnspecifiedLegacy;
+}
 
 /// <summary>pacs.004.001.11 delivered by the gateway: a return of a payment this participant sent.</summary>
 public sealed record PapssReturnMessage(
@@ -36,7 +44,47 @@ public sealed record PapssReturnMessage(
     string? ReasonCode,
     string? AdditionalInfo,
     string? LocalInstrument,
-    string? InstructingAgent);
+    string? InstructingAgent,
+    PapssProvenance? Provenance = null)
+{
+    public string AmountSource => Provenance?.SourceOf(PapssFieldProvenance.ReturnAmountPath) ?? PapssFieldProvenance.UnspecifiedLegacy;
+    /// <summary>PAPSS pacs.004 carries no CtgyPurp: LOCAL_RECONSTRUCTION means the gateway took it from the original payment.</summary>
+    public string CategoryPurposeSource => Provenance?.SourceOf(PapssFieldProvenance.ReturnCategoryPurposePath) ?? PapssFieldProvenance.UnspecifiedLegacy;
+}
+
+/// <summary>
+/// The gateway's signed SPS provenance supplement (TxInfAndSts/TxInf SplmtryData, urn:sps:papss:provenance:001). Links the
+/// three evidence layers: the raw PAPSS message (<see cref="SourceMessageId"/> and <see cref="RawEvidenceReference"/>, the
+/// SHA-256 of the signed PAPSS bytes the gateway keeps in custody), the normalized event SIPS Connect stores, and the per-field
+/// origin of every value the gateway did not simply relay (<see cref="Fields"/>, path relative to FIToFIPmtStsRpt / PmtRtr).
+/// </summary>
+public sealed record PapssProvenance(string SourceMessageId, string RawEvidenceReference, IReadOnlyDictionary<string, string> Fields)
+{
+    public string? SourceOf(string path) => Fields.TryGetValue(path, out var source) ? source : null;
+}
+
+/// <summary>Per-field provenance vocabulary shared with the gateway (CallbackFieldProvenance).</summary>
+public static class PapssFieldProvenance
+{
+    public const string Namespace = "urn:sps:papss:provenance:001";
+    /// <summary>PAPSS transmitted the value: eligible for the reported-vs-stored amount comparison.</summary>
+    public const string NetworkReported = "NETWORK_REPORTED";
+    /// <summary>The gateway reconstructed the value from its stored state; PAPSS did not report it.</summary>
+    public const string LocalReconstruction = "LOCAL_RECONSTRUCTION";
+    public const string IdentifierTranslation = "IDENTIFIER_TRANSLATION";
+    public const string DefaultFiller = "DEFAULT_FILLER";
+    /// <summary>SIPS Connect only: the callback carried no provenance for the field (older gateway or legacy effect).</summary>
+    public const string UnspecifiedLegacy = "UNSPECIFIED_LEGACY";
+    public const string StatusAmountPath = "TxInfAndSts/OrgnlTxRef/IntrBkSttlmAmt";
+    public const string ReturnAmountPath = "TxInf/RtrdIntrBkSttlmAmt";
+    public const string ReturnCategoryPurposePath = "GrpHdr/PmtTpInf/CtgyPurp";
+    private static readonly HashSet<string> Transmitted = new(StringComparer.Ordinal) { NetworkReported, LocalReconstruction, IdentifierTranslation, DefaultFiller };
+
+    /// <summary>Whether an amount of this origin may be compared with (or fill) the stored operation amount.</summary>
+    public static bool IsReportedAmount(string source) => source is NetworkReported or UnspecifiedLegacy;
+
+    internal static bool IsKnown(string source) => Transmitted.Contains(source);
+}
 
 /// <summary>pacs.008.001.10 delivered by the gateway: a credit transfer received from PAPSS.</summary>
 public sealed record PapssPaymentMessage(
@@ -83,7 +131,8 @@ public static class PapssPaymentMessages
             Text(reason, "AddtlInf"),
             Amount(amount),
             Currency(amount),
-            Timestamp(Text(t, "AccptncDtTm")));
+            Timestamp(Text(t, "AccptncDtTm")),
+            Provenance(header, t));
     }
 
     public static PapssReturnMessage ParseReturn(string xml)
@@ -110,7 +159,8 @@ public static class PapssPaymentMessages
             ReasonCode(Child(reason, "Rsn")),
             Text(reason, "AddtlInf"),
             ReasonCode(instrument),
-            Agent(Child(group, "InstgAgt")));
+            Agent(Child(group, "InstgAgt")),
+            Provenance(header, t));
     }
 
     public static PapssPaymentMessage ParsePayment(string xml)
@@ -156,6 +206,34 @@ public static class PapssPaymentMessages
         var header = parsed.Descendants().SingleOrDefault(x => x.Name.LocalName == "AppHdr") ?? throw new InvalidDataException("The PAPSS message has no AppHdr.");
         var document = parsed.Descendants().SingleOrDefault(x => x.Name.LocalName == documentRoot) ?? throw new InvalidDataException($"The PAPSS message has no {documentRoot}.");
         return (header, document);
+    }
+
+    /// <summary>
+    /// The provenance supplement, only where the gateway puts it (the transaction's SplmtryData/Envlp) and only once. It must
+    /// name the same PAPSS source message as the AppHdr; an unknown source value is refused rather than guessed.
+    /// </summary>
+    private static PapssProvenance? Provenance(XElement header, XElement transaction)
+    {
+        XNamespace p = PapssFieldProvenance.Namespace;
+        var all = header.Document!.Descendants(p + "PapssProvenance").ToList();
+        if (all.Count == 0) return null;
+        if (all.Count > 1) throw new InvalidDataException("The PAPSS callback carries more than one provenance supplement.");
+        var envelope = all[0];
+        if (envelope.Parent?.Name.LocalName != "Envlp" || envelope.Parent.Parent?.Name.LocalName != "SplmtryData" || envelope.Parent.Parent.Parent != transaction)
+            throw new InvalidDataException("The PAPSS provenance supplement is not in the transaction's SplmtryData.");
+        string Value(XElement parent, string name) => NullIfEmpty(parent.Element(p + name)?.Value) ?? throw new InvalidDataException($"The PAPSS provenance supplement is missing {name}.");
+        var source = Value(envelope, "SourceMessageId");
+        if (!string.Equals(source, Text(header, "BizMsgIdr"), StringComparison.Ordinal))
+            throw new InvalidDataException("The PAPSS provenance supplement names another source message than the AppHdr.");
+        var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var field in envelope.Elements(p + "Field"))
+        {
+            var path = Value(field, "Path");
+            var origin = Value(field, "Source");
+            if (!PapssFieldProvenance.IsKnown(origin)) throw new InvalidDataException($"Unknown PAPSS field provenance '{origin}' for {path}.");
+            if (!fields.TryAdd(path, origin)) throw new InvalidDataException($"The PAPSS provenance supplement repeats {path}.");
+        }
+        return new PapssProvenance(source, Value(envelope, "RawEvidenceReference"), fields);
     }
 
     private static IEnumerable<XElement> Children(XElement? parent, string name) => parent?.Elements().Where(x => x.Name.LocalName == name) ?? [];

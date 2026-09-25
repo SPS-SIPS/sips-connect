@@ -110,6 +110,9 @@ public class GatewayController(
             originalEndToEndId = e.OriginalEndToEndId,
             amount = e.Amount,
             currency = e.Currency,
+            amountSource = e.AmountSource,
+            categoryPurposeSource = e.CategoryPurposeSource,
+            rawEvidenceReference = e.RawEvidenceReference,
             attached = e.OperationId is not null,
             note = e.Note
         }));

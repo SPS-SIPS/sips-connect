@@ -110,6 +110,15 @@ public class PapssOperationEvent
     public decimal? Amount { get; set; }
     public string? Currency { get; set; }
     public string? Note { get; set; }
+
+    // Provenance (gateway SplmtryData PapssProvenance). RawEvidenceReference links the event to the raw signed PAPSS message the
+    // gateway keeps (SHA-256); FieldProvenance is the per-field origin map as JSON ({"path":"SOURCE"}).
+    /// <summary>NETWORK_REPORTED, LOCAL_RECONSTRUCTION (not a PAPSS-reported amount) or UNSPECIFIED_LEGACY. Null for pacs.008/verification events.</summary>
+    public string? AmountSource { get; set; }
+    /// <summary>pacs.004 only: NETWORK_REPORTED, LOCAL_RECONSTRUCTION (gateway took it from the original payment) or UNSPECIFIED_LEGACY.</summary>
+    public string? CategoryPurposeSource { get; set; }
+    public string? RawEvidenceReference { get; set; }
+    public string? FieldProvenance { get; set; }
 }
 
 /// <summary>Gateway-bound signed reply (e.g. acmt.024 answering an inbound acmt.023), re-submitted byte-identical on retry.</summary>
@@ -240,6 +249,10 @@ public sealed class PapssOperationEventConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.Amount).HasColumnType("numeric(18,5)");
         builder.Property(x => x.Currency).HasMaxLength(3);
         builder.Property(x => x.Note).HasMaxLength(512);
+        builder.Property(x => x.AmountSource).HasMaxLength(32);
+        builder.Property(x => x.CategoryPurposeSource).HasMaxLength(32);
+        builder.Property(x => x.RawEvidenceReference).HasMaxLength(128);
+        builder.Property(x => x.FieldProvenance).HasColumnType("text");
         // Operators list uncorrelated / conflicting status events.
         builder.HasIndex(x => new { x.EventType, x.Disposition }).HasDatabaseName("ix_papss_event_type_disposition");
     }

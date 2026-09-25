@@ -166,8 +166,11 @@ Payments and returns add these fields (they are absent for verifications):
   "statusConflict": false,
   "returns": ["OUTBOUND RTN-1 SETTLED"],
   "statusHistory": [
-    { "receivedAt": "2026-09-25T08:00:01.020Z", "messageType": "pacs.002.001.12", "sourceMessageId": "<PAPSS id>", "status": "ACSP", "reasonCode": null, "correlation": "MSG_ID", "disposition": "APPLIED", "pushState": "DELIVERED", "note": null },
-    { "receivedAt": "2026-09-25T08:00:04.120Z", "messageType": "pacs.002.001.12", "sourceMessageId": "<PAPSS id>", "status": "ACSC", "reasonCode": null, "correlation": "MSG_ID", "disposition": "APPLIED", "pushState": "DELIVERED", "note": null }
+    { "receivedAt": "2026-09-25T08:00:01.020Z", "messageType": "pacs.002.001.12", "sourceMessageId": "<PAPSS id>", "status": "ACSP", "reasonCode": null, "correlation": "MSG_ID", "disposition": "APPLIED", "pushState": "DELIVERED", "note": "amount not reported by PAPSS (LOCAL_RECONSTRUCTION: the gateway supplied the original payment amount); not compared",
+      "amount": 10.0, "currency": "USD", "amountSource": "LOCAL_RECONSTRUCTION", "categoryPurposeSource": null, "rawEvidenceReference": "sha256:<hex>",
+      "fieldProvenance": { "TxInfAndSts/OrgnlTxRef/IntrBkSttlmAmt": "LOCAL_RECONSTRUCTION", "TxInfAndSts/OrgnlTxId": "IDENTIFIER_TRANSLATION", "TxInfAndSts/TxSts": "NETWORK_REPORTED" } },
+    { "receivedAt": "2026-09-25T08:00:04.120Z", "messageType": "pacs.002.001.12", "sourceMessageId": "<PAPSS id>", "status": "ACSC", "reasonCode": null, "correlation": "MSG_ID", "disposition": "APPLIED", "pushState": "DELIVERED", "note": null,
+      "amount": 10.0, "currency": "USD", "amountSource": "NETWORK_REPORTED", "categoryPurposeSource": null, "rawEvidenceReference": "sha256:<hex>", "fieldProvenance": { "TxInfAndSts/OrgnlTxRef/IntrBkSttlmAmt": "NETWORK_REPORTED" } }
   ]
 }
 ```
@@ -177,6 +180,7 @@ Payments and returns add these fields (they are absent for verifications):
 - A return shows `returnId`, `originalTxId`, `originalEndToEndId` and `originalRequestMessageId` (the payment it returns). A payment lists its `returns`.
 - A received (INBOUND) payment shows your decision (`paymentStatus` `ACCP` or `RJCT`) and `decisionState` (`NOT_QUEUED`, `PENDING`, `PUBLISHED`, `FAILED`) for the signed decision SIPS Connect sends to PAPSS; a later PAPSS final status updates `paymentStatus`/`paymentOutcome`.
 - `statusHistory` lists every status message received for the operation, including the ones that did not change it (`NOT_ADVANCING`, `DUPLICATE_FINAL`, `CONFLICT`).
+- Each `statusHistory` entry links three evidence layers: the raw PAPSS message (`sourceMessageId`, `rawEvidenceReference` = SHA-256 of the signed PAPSS message the gateway keeps), the normalized event (`status`, `reasonCode`, `amount`, `currency`, ...) and the gateway's per-field provenance (`amountSource`, `categoryPurposeSource`, `fieldProvenance`). Sources: `NETWORK_REPORTED` (PAPSS sent it), `LOCAL_RECONSTRUCTION` (the gateway filled it from the original payment it stored; PAPSS did not report it), `IDENTIFIER_TRANSLATION` (your own MsgId/TxId/EndToEndId restored), `DEFAULT_FILLER` (a message-builder placeholder such as `NA`) and `UNSPECIFIED_LEGACY` (the callback carried no provenance). An amount marked `LOCAL_RECONSTRUCTION` is not a PAPSS confirmation of the amount: SIPS Connect does not compare it with your payment and never stores it as the payment amount.
 
 An unknown id returns `404` with `OPERATION_NOT_FOUND`. The optional `?waitSeconds=N` parameter long-polls while the status is `PENDING`. It is capped by `PapssFacing:Lookup:MaxWaitSeconds`, which defaults to `0`, meaning long-polling is off. Use the lookup as a fallback or for reconciliation. The push callback is still the primary channel.
 

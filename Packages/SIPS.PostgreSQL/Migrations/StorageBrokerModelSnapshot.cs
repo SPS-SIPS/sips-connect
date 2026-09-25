@@ -496,6 +496,16 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("numeric(18,5)")
                         .HasColumnName("amount");
 
+                    b.Property<string>("AmountSource")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("amountsource");
+
+                    b.Property<string>("CategoryPurposeSource")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("categorypurposesource");
+
                     b.Property<string>("Correlation")
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
@@ -516,6 +526,10 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("eventtype");
+
+                    b.Property<string>("FieldProvenance")
+                        .HasColumnType("text")
+                        .HasColumnName("fieldprovenance");
 
                     b.Property<string>("MessageType")
                         .IsRequired()
@@ -573,6 +587,11 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("pushstate");
+
+                    b.Property<string>("RawEvidenceReference")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("rawevidencereference");
 
                     b.Property<byte[]>("RawXml")
                         .IsRequired()

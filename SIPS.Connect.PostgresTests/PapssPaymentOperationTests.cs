@@ -15,7 +15,9 @@ using SIPS.ISO20022.Interfaces;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
 using SIPS.PostgreSQL.Models;
+using SIPS.Connect.Tests;
 using Xunit;
+using P = SIPS.Connect.Services.PapssFieldProvenance;
 
 namespace SIPS.Connect.PostgresTests;
 
@@ -33,6 +35,80 @@ public sealed class PapssPaymentOperationTests
         Assert.Equal(1L, (long)(await history.ExecuteScalarAsync())!);
         await using var unique = new NpgsqlCommand("SELECT count(*) FROM pg_indexes WHERE indexname IN ('ux_papss_op_payment_txid','ux_papss_op_return_id') AND indexdef LIKE 'CREATE UNIQUE INDEX%'", connection);
         Assert.Equal(2L, (long)(await unique.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Migration_adds_the_event_provenance_columns()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var connection = new NpgsqlConnection(harness.ConnectionString);
+        await connection.OpenAsync();
+        await using var history = new NpgsqlCommand("SELECT count(*) FROM \"__EFMigrationsHistory\" WHERE migrationid LIKE '%_AddPapssEventProvenance'", connection);
+        Assert.Equal(1L, (long)(await history.ExecuteScalarAsync())!);
+        await using var columns = new NpgsqlCommand("SELECT string_agg(column_name || ':' || data_type, ',' ORDER BY column_name) FROM information_schema.columns WHERE table_name = 'papss_operation_events' AND column_name IN ('amountsource','categorypurposesource','rawevidencereference','fieldprovenance')", connection);
+        Assert.Equal("amountsource:character varying,categorypurposesource:character varying,fieldprovenance:text,rawevidencereference:character varying", (string)(await columns.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Reconstructed_status_amount_is_stored_with_its_source_and_never_treated_as_reported()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        await Pay(harness, provider, Payment("TX-PV1"));
+        var payment = await Stored(harness, "TX-PV1");
+        const string raw = "sha256:aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233";
+
+        // PAPSS sent no amount: the gateway echoed a (here deliberately different) amount from its stored original.
+        var reconstructed = await Status(provider, harness, GatewayProvenanceXml.Add(PostgresHarness.StatusReport("PAPSS-PV-1", payment.MsgId!, "pacs.008.001.10", "TX-PV1", "E2E-TX-PV1", "ACSP", amount: 99m), raw,
+            (P.StatusAmountPath, P.LocalReconstruction), ("TxInfAndSts/OrgnlTxId", P.IdentifierTranslation), ("TxInfAndSts/OrgnlTxRef/Dbtr", P.DefaultFiller)));
+        Assert.Equal(PapssEventDisposition.Applied, reconstructed.Disposition);
+        Assert.DoesNotContain("differs", reconstructed.Note);
+        Assert.Contains("amount not reported by PAPSS (LOCAL_RECONSTRUCTION", reconstructed.Note);
+        Assert.Equal(10m, (await Stored(harness, "TX-PV1")).Amount);
+
+        // A PAPSS-reported amount is still compared.
+        var reported = await Status(provider, harness, GatewayProvenanceXml.Add(PostgresHarness.StatusReport("PAPSS-PV-2", payment.MsgId!, "pacs.008.001.10", "TX-PV1", "E2E-TX-PV1", "ACSC", amount: 99m), raw, (P.StatusAmountPath, P.NetworkReported)));
+        Assert.Contains("reported amount 99", reported.Note);
+        // An older gateway (no supplement) keeps the current behaviour, recorded as UNSPECIFIED_LEGACY.
+        var legacy = await Status(provider, harness, PostgresHarness.StatusReport("PAPSS-PV-3", payment.MsgId!, "pacs.008.001.10", "TX-PV1", "E2E-TX-PV1", "ACSC", amount: 99m));
+        Assert.Contains("reported amount 99", legacy.Note);
+
+        var events = await harness.WithStorageAsync(db => db.PapssOperationEvents.AsNoTracking().Where(x => x.OperationId == payment.Id).OrderBy(x => x.Id).ToListAsync());
+        Assert.Equal([P.LocalReconstruction, P.NetworkReported, P.UnspecifiedLegacy], events.Select(x => x.AmountSource));
+        Assert.All(events, x => Assert.Equal(99m, x.Amount));
+        Assert.Equal(new string?[] { raw, raw, null }, events.Select(x => x.RawEvidenceReference));
+        Assert.Null(events[2].FieldProvenance);
+
+        // Lookup: raw evidence link, normalized fields and per-field provenance side by side.
+        var history = (await Lookup(harness, provider, c => c.GetPayment("TX-PV1", null, CancellationToken.None)))["statusHistory"]!.AsArray();
+        Assert.Equal(["PAPSS-PV-1", "PAPSS-PV-2", "PAPSS-PV-3"], history.Select(h => h!["sourceMessageId"]!.GetValue<string>()));
+        Assert.Equal([P.LocalReconstruction, P.NetworkReported, P.UnspecifiedLegacy], history.Select(h => h!["amountSource"]!.GetValue<string>()));
+        Assert.Equal(raw, history[0]!["rawEvidenceReference"]!.GetValue<string>());
+        Assert.Equal(99m, history[0]!["amount"]!.GetValue<decimal>());
+        Assert.Equal(P.IdentifierTranslation, history[0]!["fieldProvenance"]!["TxInfAndSts/OrgnlTxId"]!.GetValue<string>());
+        Assert.Equal(P.DefaultFiller, history[0]!["fieldProvenance"]!["TxInfAndSts/OrgnlTxRef/Dbtr"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Inbound_return_records_category_purpose_and_amount_provenance()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        await Pay(harness, provider, Payment("TX-PV2"));
+        const string raw = "sha256:0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
+        await InboundReturn(provider, harness, GatewayProvenanceXml.Add(PostgresHarness.InboundReturn("CT02-RTN-PV2", "RTN-PV2", "TX-PV2", "E2E-TX-PV2"), raw,
+            (P.ReturnAmountPath, P.NetworkReported), (P.ReturnCategoryPurposePath, P.LocalReconstruction)));
+        var e = await harness.WithStorageAsync(db => db.PapssOperationEvents.AsNoTracking().SingleAsync(x => x.SourceMessageId == "CT02-RTN-PV2"));
+        Assert.Equal((P.NetworkReported, P.LocalReconstruction, raw), (e.AmountSource, e.CategoryPurposeSource, e.RawEvidenceReference));
+        Assert.Equal(10m, (await harness.WithStorageAsync(db => db.PapssOperations.AsNoTracking().SingleAsync(x => x.ReturnId == "RTN-PV2"))).Amount);
+
+        // A reconstructed return amount is kept on the event only, never as the return's amount.
+        await InboundReturn(provider, harness, GatewayProvenanceXml.Add(PostgresHarness.InboundReturn("CT02-RTN-PV3", "RTN-PV3", "TX-NONE", "E2E-NONE"), raw, (P.ReturnAmountPath, P.LocalReconstruction)));
+        Assert.Null((await harness.WithStorageAsync(db => db.PapssOperations.AsNoTracking().SingleAsync(x => x.ReturnId == "RTN-PV3"))).Amount);
+
+        await InboundReturn(provider, harness, PostgresHarness.InboundReturn("CT02-RTN-PV4", "RTN-PV4", "TX-NONE-2", "E2E-NONE-2"));
+        var legacy = await harness.WithStorageAsync(db => db.PapssOperationEvents.AsNoTracking().SingleAsync(x => x.SourceMessageId == "CT02-RTN-PV4"));
+        Assert.Equal((P.UnspecifiedLegacy, P.UnspecifiedLegacy), (legacy.AmountSource, legacy.CategoryPurposeSource));
     }
 
     [Fact]

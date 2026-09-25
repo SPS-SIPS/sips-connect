@@ -26,4 +26,7 @@
     <ProjectReference Include="../Packages/SIPS.XMLDsig.Xades/SIPS.XMLDsig.Xades.csproj" />
     <ProjectReference Include="../Packages/SIPS.ISO20022/SIPS.ISO20022.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../SIPS.Connect.Tests/GatewayProvenanceXml.cs" Link="GatewayProvenanceXml.cs" />
+  </ItemGroup>
 </Project>
