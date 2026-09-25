@@ -4,6 +4,7 @@ using System.Xml.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SIPS.Connect.Config;
@@ -40,6 +41,20 @@ public sealed class PapssOperationStoreUnitTests
         Assert.Null(defaults.Store.RetentionDays);
         Assert.Equal(0, defaults.Lookup.MaxWaitSeconds);
         DI.ValidatePapssStore(defaults);
+
+        // docker-compose passes unset optional values as empty strings: they must stay "unset".
+        var empty = Bind(new Dictionary<string, string?>
+        {
+            ["PapssFacing:Inbound:Acmt023:ResponseDeadlineSeconds"] = "",
+            ["PapssFacing:Inbound:Acmt023:DeadlineClock"] = "",
+            ["PapssFacing:Outbound:VerificationResultExpirySeconds"] = "",
+            ["PapssFacing:Store:RetentionDays"] = ""
+        });
+        Assert.Null(empty.Inbound.Acmt023.ResponseDeadlineSeconds);
+        Assert.Null(empty.Inbound.Acmt023.DeadlineClock);
+        Assert.Null(empty.Outbound.VerificationResultExpirySeconds);
+        Assert.Null(empty.Store.RetentionDays);
+        DI.ValidatePapssStore(empty);
 
         // Environment variables PapssFacing__Inbound__Acmt023__DeadlineClock etc. arrive with ':' separators.
         var configured = Bind(new Dictionary<string, string?>
@@ -244,4 +259,39 @@ public sealed class PapssOperationStoreUnitTests
     }
 
     private static T Parse<T>(string value) where T : struct, Enum => Enum.Parse<T>(value.Replace("_", string.Empty), true);
+}
+
+public sealed class PapssOperationStoreRegistrationTests
+{
+    [Fact]
+    public void Application_container_resolves_the_operation_store_services()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:db"] = "Host=localhost;Database=unused;Username=postgres",
+            ["Xades:WithoutPKI"] = "true",
+            ["Xades:BIC"] = "ZKBASOS0",
+            ["Keycloak:Realm:Audience"] = "sips",
+            ["Core:SAFExpression"] = "*/5 * * * *",
+            ["Core:SAFTimeZoneInfo"] = "UTC"
+        }).Build();
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddHttpClient();
+        services.AddDistributedMemoryCache();
+        DI.Register(services, configuration);
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        Assert.IsType<PapssVerificationResultInbox>(scope.ServiceProvider.GetRequiredService<IVerificationResultInbox>());
+        Assert.IsType<IncomingVerificationResponseHandler>(scope.ServiceProvider.GetRequiredService<IVerificationResultDelivery>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IPapssInboundVerificationService>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<PapssOperationStore>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<ICoreBankVerificationClient>());
+        var hosted = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().Select(x => x.GetType()).ToArray();
+        Assert.Contains(typeof(PapssBankPushWorker), hosted);
+        Assert.Contains(typeof(PapssResponseOutboxWorker), hosted);
+        Assert.Contains(typeof(PapssStoreRetentionWorker), hosted);
+    }
 }
