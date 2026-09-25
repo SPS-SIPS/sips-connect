@@ -57,6 +57,7 @@ public sealed class IncomingVerificationHandler(
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
     private readonly CoreOptions _core = coreOptions.Value;
+    private readonly CoreBankVerificationClient _coreBank = new(options, jsonAdapter, callbacks, correlation, callback, coreOptions, (ILogger)logger);
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -265,54 +266,9 @@ public sealed class IncomingVerificationHandler(
             };
 
             // Step 5: Send callback and parse result via orchestrator
-            var headers = new Dictionary<string, string>() {
-                { API_Key, _callbackLinks.Key! },
-                { API_Secret, _callbackLinks.Secret! }
-            };
-            if (!string.IsNullOrWhiteSpace(request!.SIPSRequestId))
-                headers["X-Idempotency-Key"] = request.SIPSRequestId;
-            // Normalize alias and type prior to CoreBank matching
-            var normalizedAlias = request.Alias ?? string.Empty;
-            var requestedType = request.Type;
-            var normalizedType = requestedType ?? string.Empty;
-
-            // [BUSINESS COMPLIANCE]: Strip legacy 'USD:' prefix and auto-detect IBAN for Somalia ISO standards.
-            if (normalizedAlias.StartsWith("USD:", StringComparison.OrdinalIgnoreCase))
-            {
-                normalizedAlias = normalizedAlias.Substring(4);
-            }
-            if (normalizedAlias.StartsWith("SO", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(normalizedType, "ACCT", StringComparison.OrdinalIgnoreCase))
-            {
-                normalizedType = "IBAN";
-            }
-
-            var isMdaAccountLookup = !string.IsNullOrWhiteSpace(requestedType) && !IsBillLookupType(requestedType);
-            var verificationRequestId = request.SIPSRequestId
-                ?? request.MsgId
-                ?? Guid.NewGuid().ToString("N");
-            var callbackAgent = !string.IsNullOrWhiteSpace(_callbackLinks.Agent)
-                ? _callbackLinks.Agent!
-                : request.From;
-            var payerBankCode = !string.IsNullOrWhiteSpace(_callbackLinks.PayerBankCode)
-                ? _callbackLinks.PayerBankCode!
-                : request.From;
-
-            var dto = new CBVerificationRequestDto
-            {
-                Alias = normalizedAlias,
-                Type = isMdaAccountLookup ? normalizedType : null,
-                FromBIC = request.From,
-                VerificationId = verificationRequestId,
-                InvoiceIdOrUpr = isMdaAccountLookup ? null : normalizedAlias,
-                AccountNo = isMdaAccountLookup ? normalizedAlias : null,
-                Agent = callbackAgent,
-                VerificationRequestId = verificationRequestId,
-                PayerBankCode = isMdaAccountLookup ? null : payerBankCode,
-                PayerChannel = isMdaAccountLookup
-                    ? null
-                    : string.IsNullOrWhiteSpace(_callbackLinks.PayerChannel) ? "SIPS_CONNECT" : _callbackLinks.PayerChannel
-            };
+            // Core-bank request construction/answer parsing is shared with the PAPSS inbound enquiry path.
+            var headers = _coreBank.BuildHeaders(request!);
+            var dto = _coreBank.BuildRequest(request!);
 
             // Create a bounded cancellation token for CoreBank callback
             using var coreBankCts = CancellationTokenSource.CreateLinkedTokenSource(gct);
@@ -338,7 +294,7 @@ public sealed class IncomingVerificationHandler(
             var coreBankVerificationIndeterminate = IsIndeterminateCoreBankVerification(responseMessage);
             if (responseMessage != null && responseMessage.StatusCode == HttpStatusCode.OK && responseMessage.Data != null)
             {
-                ParseCallbackResult(responseMessage.Data, response);
+                _coreBank.ApplyResult(responseMessage.Data, response);
             }
             else if (coreBankVerificationIndeterminate)
             {
@@ -489,80 +445,6 @@ public sealed class IncomingVerificationHandler(
         };
     }
 
-
-    private void ParseCallbackResult(JsonObject data, PayeeVerificationResponseBuilder.Request response)
-    {
-        _logger.LogInformation("Callback Response: {Response}", data.ToJsonString(_jsonSerializerOptions));
-
-        // First, transform the raw callback payload using our configured mapping
-        // so fields like accountNo/accountType map to AccountNo/AccountType regardless of casing.
-        JsonObject mapped;
-        try
-        {
-            mapped = _jsonAdapter.Transform(data, CB_VerificationResponse);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to transform callback payload using mapping '{MappingKey}'. Falling back to raw payload.", CB_VerificationResponse);
-            mapped = data;
-        }
-
-        // Deserialize into our DTO with case-insensitive property matching
-        var deserializedContent = _jsonAdapter.ToObject<VerificationResponseDto>(mapped);
-        _logger.LogInformation("[ParseCallbackResult] Verification result for {Alias}: Verified={Verified}", response.Original?.Alias, deserializedContent?.IsVerified);
-
-        response.Verified = deserializedContent?.IsVerified ?? false;
-        var businessReason = FirstNonEmpty(
-            deserializedContent?.Reason,
-            deserializedContent?.Status,
-            deserializedContent?.Message);
-        response.Reason = response.Verified
-            ? FirstNonEmpty(businessReason, SUCC)
-            : FirstNonEmpty(businessReason, MISS);
-        response.AdditionalInfo = FirstNonEmpty(
-            deserializedContent?.Message,
-            deserializedContent?.Reason,
-            deserializedContent?.Status);
-        response.Id = deserializedContent?.AccountNo ?? string.Empty;
-        // Map Type from callback; default to IBAN only if unspecified
-        response.Type = string.IsNullOrWhiteSpace(deserializedContent?.AccountType) ? IBAN : deserializedContent.AccountType;
-        response.Name = FirstNonEmpty(
-            deserializedContent?.Name,
-            deserializedContent?.CreditorName,
-            deserializedContent?.Address,
-            deserializedContent?.Mda);
-        response.Address = deserializedContent?.Address ?? string.Empty;
-        response.Currency = FirstNonEmpty(deserializedContent?.Currency, deserializedContent?.PaymentCurrency);
-        response.InvoiceId = deserializedContent?.InvoiceId;
-        response.Upr = deserializedContent?.Upr;
-        response.BillReference = FirstNonEmpty(
-            deserializedContent?.BillReference,
-            deserializedContent?.Upr,
-            deserializedContent?.InvoiceId,
-            response.Original?.Alias);
-        response.Mda = deserializedContent?.Mda;
-        response.MdaId = deserializedContent?.MdaId;
-        response.MdaCode = deserializedContent?.MdaCode;
-        response.AmountPayable = deserializedContent?.AmountPayable;
-    }
-
-    private static string FirstNonEmpty(params string?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return string.Empty;
-    }
-
-    private static bool IsBillLookupType(string value) =>
-        string.Equals(value, "BILL", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "INVOICE", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "UPR", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsIndeterminateCoreBankVerification(Response<JsonObject?>? responseMessage)
     {
