@@ -24,9 +24,23 @@ public interface IPapssFacingSipsClient
     Task<ParticipantDiscoveryResponse> DiscoverAsync(PapssParticipantBinding participant, ParticipantDiscoveryRequest request, CancellationToken ct);
     Task<FxRateResponse> GetFxAsync(PapssParticipantBinding participant, FxRateRequest request, CancellationToken ct);
     Task<PositionResponse> GetPositionsAsync(PapssParticipantBinding participant, PositionRequest request, CancellationToken ct);
+
+    /// <summary>Builds and signs an outbound acmt.023 without sending it, so it can be stored before submission.</summary>
+    PapssSignedMessage PrepareVerification(PapssParticipantBinding participant, VerificationRequestDto request);
+    /// <summary>
+    /// Applies the PAPSS rail header (BizMsgIdr, To = remote WP-SIPS identity, BizSvc = security profile)
+    /// to an unsigned participant message and signs it with the WP-SIPS XAdES profile.
+    /// </summary>
+    string SignForSubmission(string unsignedXml, string businessMessageId);
+    /// <summary>
+    /// Submits already-signed bytes unchanged (byte-identical on retry) and parses the signed admi.002 admission.
+    /// Throws <see cref="ParticipantRailException"/> on a terminal admission rejection.
+    /// </summary>
+    Task<PapssAdmissionResponse> SubmitSignedAsync(PapssParticipantBinding participant, string signedXml, CancellationToken ct);
 }
 
 public sealed record PapssAdmissionResponse(string RequestMessageId, string Code, bool DurablyAdmitted);
+public sealed record PapssSignedMessage(string BusinessMessageId, string SignedXml, DateTimeOffset CreatedAt);
 
 public sealed class PapssFacingSipsClient(
     PapssFacingOptions options,
@@ -37,6 +51,9 @@ public sealed class PapssFacingSipsClient(
     ILogger<PapssFacingSipsClient> logger) : IPapssFacingSipsClient
 {
     public async Task<PapssAdmissionResponse> VerifyAsync(PapssParticipantBinding participant, VerificationRequestDto request, CancellationToken ct)
+        => await SubmitSignedAsync(participant, PrepareVerification(participant, request).SignedXml, ct);
+
+    public PapssSignedMessage PrepareVerification(PapssParticipantBinding participant, VerificationRequestDto request)
     {
         Required(request.ToBIC, "destination institution"); Required(request.Alias, "account identifier"); Required(request.Type, "account type");
         var id = Id();
@@ -45,8 +62,31 @@ public sealed class PapssFacingSipsClient(
         // The verification result arrives asynchronously (acmt.024 on /api/v1/Incoming) and echoes the
         // original request identity. Use one identifier for BAH BizMsgIdr, Assgnmt/MsgId and Vrfctn/Id so
         // the requestMessageId returned to the bank matches whichever reference the result carries.
-        unsigned = SetBusinessMessageId(unsigned, requestMsgId);
-        return await SendAdmissionAsync(unsigned, participant, ct);
+        try
+        {
+            return new(requestMsgId, SignForSubmission(unsigned, requestMsgId), DateTimeOffset.UtcNow);
+        }
+        catch (Exception error) { health.RecordFailure(error); throw; }
+    }
+
+    public string SignForSubmission(string unsignedXml, string businessMessageId)
+        => signer.SignEnvelope(SetBusinessService(SetBusinessMessageId(unsignedXml, businessMessageId), options.SecurityProfile), XadesProfile.WpSipsPapss);
+
+    public async Task<PapssAdmissionResponse> SubmitSignedAsync(PapssParticipantBinding participant, string signedXml, CancellationToken ct)
+    {
+        try
+        {
+            var header = SecureDocument(signedXml).Descendants().Single(x => x.Name.LocalName == "AppHdr");
+            var requestMsgId = Value(header, "BizMsgIdr");
+            if (Value(header, "BizSvc") != options.SecurityProfile)
+                throw new InvalidDataException("The stored PAPSS message profile is invalid.");
+            if (!string.Equals(Party(header, "Fr"), participant.Bic, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(Party(header, "To"), options.RemoteWpSipsIdentity, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The stored PAPSS message parties are invalid.");
+            var response = await PostAsync(signedXml, requestMsgId, ct);
+            return await ParseAdmissionAsync(response, requestMsgId, participant, ct);
+        }
+        catch (Exception error) { health.RecordFailure(error); throw; }
     }
 
     public async Task<PapssAdmissionResponse> PayAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct)
@@ -247,7 +287,7 @@ public sealed class PapssFacingSipsClient(
     private static string Value(XElement parent, string name) => parent.Elements().Single(x => x.Name.LocalName == name).Value;
 
     private static T Payload<T>(WpSipsMessage<object> message) => message.Payload is T value ? value : throw new InvalidDataException("Unexpected WP-SIPS response profile.");
-    private static string Id() => "SIPS-" + Guid.NewGuid().ToString("N")[..24];
+    public static string Id() => "SIPS-" + Guid.NewGuid().ToString("N")[..24];
     private static string Required(string? value, string name) => !string.IsNullOrWhiteSpace(value) ? value : throw new ArgumentException($"Required PAPSS field missing: {name}.");
     private async Task<Participant> ResolveDestinationAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct)
     {

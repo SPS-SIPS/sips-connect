@@ -8,7 +8,7 @@ namespace SIPS.Connect.Controllers;
 [ApiController]
 [Produces("application/xml")]
 [Route("api/v1/[controller]")]
-public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssGuard, IPapssPaymentDecisionPublisher decisionPublisher, IParticipantCallbackContext callbackContext, ILogger<IncomingController> logger) : ControllerBase
+public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssGuard, IPapssPaymentDecisionPublisher decisionPublisher, IPapssInboundVerificationService inboundVerification, IParticipantCallbackContext callbackContext, ILogger<IncomingController> logger) : ControllerBase
 {
     private readonly IIncoming _isoService = isoService;
     [HttpPost]
@@ -25,8 +25,18 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
             {
                 logger.LogInformation("Validated PAPSS callback for local participant {Bic} using mapping profile {MappingProfile}", route.Bic, route.CallbackMappingProfile);
                 using var mapping = callbackContext.Push(route);
-                await _isoService.Handle(body, ct);
-                if (MessageDefinition(body) == "pacs.008.001.10")
+                // The gateway treats any 2xx as "delivered". Every PAPSS branch below returns 2xx only after
+                // the inbound message is durably stored; bank delivery and gateway replies happen from outboxes.
+                var definition = MessageDefinition(body);
+                if (definition == "acmt.023.001.03")
+                {
+                    await inboundVerification.HandleAsync(route, body, ct);
+                    return Ok();
+                }
+                var handled = await _isoService.Handle(body, ct);
+                if (definition == "acmt.024.001.03" && !string.IsNullOrEmpty(handled))
+                    logger.LogWarning("PAPSS acmt.024 callback was rejected by the result handler and not stored");
+                if (definition == "pacs.008.001.10")
                     await decisionPublisher.PersistAndSubmitAsync(route, body, ct);
                 return Ok();
             }
@@ -35,15 +45,16 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
         {
             return StatusCode(StatusCodes.Status401Unauthorized);
         }
-        catch (CallbackDeliveryException error)
-        {
-            // The result was valid but the bank callback did not acknowledge it: signal a retryable failure.
-            logger.LogWarning(error, "PAPSS callback could not be delivered to the participant callback");
-            return StatusCode(StatusCodes.Status502BadGateway, new { code = "CALLBACK_DELIVERY_FAILED", message = error.Message });
-        }
         catch (InvalidDataException error)
         {
             return BadRequest(new { code = "INVALID_PAPSS_CALLBACK", message = error.Message });
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            // The PAPSS callback was not (completely) stored: a non-2xx makes the gateway redeliver.
+            // Bank delivery failures no longer surface here; they are retried from the push outbox.
+            logger.LogError(error, "PAPSS callback could not be processed and stored");
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { code = "PAPSS_CALLBACK_NOT_STORED", message = "The PAPSS callback could not be stored; retry later." });
         }
 
         string result;
