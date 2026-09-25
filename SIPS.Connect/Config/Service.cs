@@ -399,6 +399,9 @@ public static class DI
         services.AddScoped<PapssOperationStore>();
         services.AddSingleton<IPapssOutboxSignal, PapssOutboxSignal>();
         services.AddScoped<IPapssInboundVerificationService, PapssInboundVerificationService>();
+        services.AddScoped<IPapssPaymentService, PapssPaymentService>();
+        services.AddScoped<IPapssPaymentCallbackService, PapssPaymentCallbackService>();
+        services.AddScoped<PapssPaymentEventDelivery>();
         services.AddHostedService<PapssBankPushWorker>();
         services.AddHostedService<PapssResponseOutboxWorker>();
         services.AddHostedService<PapssStoreRetentionWorker>();
@@ -443,6 +446,11 @@ public static class DI
             throw new InvalidOperationException("PapssFacing:Delivery settings are invalid (MaxAttempts>=1, InitialBackoffSeconds>=1, MaxBackoffSeconds>=InitialBackoffSeconds, PollIntervalSeconds>=1, ClaimLeaseSeconds>=10).");
         if (options.Lookup.MaxWaitSeconds is < 0 or > 300)
             throw new InvalidOperationException("PapssFacing:Lookup:MaxWaitSeconds must be between 0 and 300.");
+        if (options.Status.EnquiryMinimumAgeSeconds is <= 0)
+            throw new InvalidOperationException("PapssFacing:Status:EnquiryMinimumAgeSeconds must be positive when set.");
+        var settled = options.Returns.SettledStatusList();
+        if (settled.Count == 0 || settled.Any(x => x is not ("ACSC" or "ACSP")))
+            throw new InvalidOperationException("PapssFacing:Returns:SettledStatuses must list ACSC and/or ACSP (comma-separated).");
     }
 
     private static void ValidatePapssFacing(PapssFacingOptions options, IConfiguration configuration)
