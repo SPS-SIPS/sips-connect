@@ -47,6 +47,17 @@ public sealed class PapssFinancialCorrelationTests
     }
 
     [Fact]
+    public async Task Missing_debtor_agent_defaults_to_the_authenticated_participant_bic()
+    {
+        // No PaymentRequest jsonAdapter mapping carries a debtor agent (UAT probe was refused with PARTICIPANT_BIC_MISMATCH).
+        var directory = new DirectoryScenario();
+        var payment = Payment(); payment.DebtorAgentBIC = null!;
+        var response = await Client(directory).PayAsync(Binding(), payment, CancellationToken.None);
+        Assert.Equal("RECEIVED_AND_DURABLY_ADMITTED", response.Code);
+        Assert.Equal(Binding().Bic, payment.DebtorAgentBIC);
+    }
+
+    [Fact]
     public async Task Debtor_agent_must_match_authenticated_participant_bic()
     {
         var payment = Payment(); payment.DebtorAgentBIC = "OTHERBANKXXX";
