@@ -20,7 +20,8 @@ public sealed class PapssPaymentDecisionPublisher(
     IPapssFacingSipsClient papss,
     INativeSigner signer,
     PapssFacingOptions options,
-    ILogger<PapssPaymentDecisionPublisher> logger) : IPapssPaymentDecisionPublisher
+    ILogger<PapssPaymentDecisionPublisher> logger,
+    PapssOperationStore? operations = null) : IPapssPaymentDecisionPublisher
 {
     public async Task PersistAndSubmitAsync(PapssParticipantBinding participant, string inboundPacs008, CancellationToken ct)
     {
@@ -61,6 +62,7 @@ public sealed class PapssPaymentDecisionPublisher(
                 .ExecuteUpdateAsync(update => update
                     .SetProperty(x => x.PapssDecisionAdmissionCode, admission.Code)
                     .SetProperty(x => x.PapssDecisionPublishedAt, DateTimeOffset.UtcNow), ct);
+            await MirrorAsync(recordId);
         }
         catch (Exception error) when (error is ParticipantRailException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -75,11 +77,20 @@ public sealed class PapssPaymentDecisionPublisher(
                     .SetProperty(x => x.PapssDecisionFailureCode, code)
                     .SetProperty(x => x.PapssDecisionFailedAt, DateTimeOffset.UtcNow), ct);
             logger.LogError(error, "PAPSS decision {MessageId} reached terminal admission failure {FailureCode}", recordId, code);
+            await MirrorAsync(recordId);
         }
         catch (Exception error) when (error is HttpRequestException or TaskCanceledException or IOException)
         {
             logger.LogWarning(error, "PAPSS decision handoff is ambiguous for ISO message {MessageId}; the stored signed decision will be retried", recordId);
         }
+    }
+
+    /// <summary>Best effort: the isomessages row stays the decision outbox; the operation store only mirrors it.</summary>
+    private async Task MirrorAsync(int recordId)
+    {
+        if (operations is null) return;
+        try { await operations.SyncInboundPaymentDecisionByIsoMessageAsync(recordId, CancellationToken.None); }
+        catch (Exception error) { logger.LogWarning(error, "PAPSS decision state of ISO message {MessageId} could not be mirrored into the operation store", recordId); }
     }
 
     private string CreateSignedDecision(PapssParticipantBinding participant, XDocument inbound, string unsignedPacs002)

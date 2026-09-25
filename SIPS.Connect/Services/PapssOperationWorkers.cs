@@ -56,7 +56,11 @@ public abstract class PapssOutboxWorkerBase(IServiceScopeFactory scopes, PapssFa
     protected static string Truncate(string? value) => value is null ? string.Empty : value.Length <= 1000 ? value : value[..1000];
 }
 
-/// <summary>Pushes stored PAPSS results (papss_operation_events with push_state PENDING) to the bank callback.</summary>
+/// <summary>
+/// Pushes stored PAPSS events (papss_operation_events with push_state PENDING) to the bank callback:
+/// acmt.024 results (CB_VerificationResult), pacs.002 payment/return statuses (CB_CompletionNotification)
+/// and inbound pacs.004 returns (CB_ReturnRequest).
+/// </summary>
 public sealed class PapssBankPushWorker(IServiceScopeFactory scopes, PapssFacingOptions options, XadesOptions xades, IParticipantCallbackContext context, IPapssOutboxSignal signal, TimeProvider clock, ILogger<PapssBankPushWorker> logger)
     : PapssOutboxWorkerBase(scopes, options, signal, clock, logger)
 {
@@ -64,12 +68,11 @@ public sealed class PapssBankPushWorker(IServiceScopeFactory scopes, PapssFacing
     {
         using var scope = Scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IStorageBroker>();
-        var delivery = scope.ServiceProvider.GetRequiredService<IVerificationResultDelivery>();
         var now = Clock.GetUtcNow();
         var due = await db.PapssOperationEvents.AsNoTracking()
             .Where(x => x.PushState == PapssDeliveryState.Pending && (x.PushNextAttemptAt == null || x.PushNextAttemptAt <= now))
             .OrderBy(x => x.PushNextAttemptAt).ThenBy(x => x.Id)
-            .Select(x => new { x.Id, x.PushAttempts, x.OperationId })
+            .Select(x => new { x.Id, x.PushAttempts, x.OperationId, x.EventType })
             .Take(BatchSize).ToListAsync(ct);
         var claimedCount = 0;
         foreach (var item in due)
@@ -81,22 +84,36 @@ public sealed class PapssBankPushWorker(IServiceScopeFactory scopes, PapssFacing
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.PushAttempts, attempt).SetProperty(x => x.PushNextAttemptAt, lease), ct);
             if (claimed == 0) continue;
             claimedCount++;
-            await DeliverAsync(db, delivery, item.Id, item.OperationId, attempt, ct);
+            await DeliverAsync(scope.ServiceProvider, db, item.Id, item.OperationId, item.EventType, attempt, ct);
         }
         return claimedCount;
     }
 
-    private async Task DeliverAsync(IStorageBroker db, IVerificationResultDelivery delivery, long eventId, Guid? operationId, int attempt, CancellationToken ct)
+    private async Task DeliverAsync(IServiceProvider services, IStorageBroker db, long eventId, Guid? operationId, string eventType, int attempt, CancellationToken ct)
     {
-        var raw = await db.PapssOperationEvents.AsNoTracking().Where(x => x.Id == eventId).Select(x => x.RawXml).SingleAsync(ct);
-        SIPS.ISO20022.Models.DTOs.CB.CBVerificationResultDto result;
+        string label;
+        Func<Task> send;
         try
         {
-            result = IncomingVerificationResponseHandler.Map(PayeeVerificationResponseBuilder.Parse(Encoding.UTF8.GetString(raw)));
+            if (eventType == PapssEventTypes.VerificationResult)
+            {
+                var raw = await db.PapssOperationEvents.AsNoTracking().Where(x => x.Id == eventId).Select(x => x.RawXml).SingleAsync(ct);
+                var result = IncomingVerificationResponseHandler.Map(PayeeVerificationResponseBuilder.Parse(Encoding.UTF8.GetString(raw)));
+                var delivery = services.GetRequiredService<IVerificationResultDelivery>();
+                label = "result " + result.RequestMessageId;
+                send = () => delivery.DeliverAsync(result, ct);
+            }
+            else
+            {
+                var delivery = services.GetRequiredService<PapssPaymentEventDelivery>();
+                var push = await delivery.BuildAsync(eventId, ct);
+                label = push.Label;
+                send = () => delivery.SendAsync(push, ct);
+            }
         }
-        catch (Exception error)
+        catch (Exception error) when (!ct.IsCancellationRequested)
         {
-            Logger.LogError(error, "Stored PAPSS result event {EventId} cannot be parsed; marking its bank push FAILED", eventId);
+            Logger.LogError(error, "Stored PAPSS {EventType} event {EventId} cannot be parsed; marking its bank push FAILED", eventType, eventId);
             await CompleteAsync(db, eventId, operationId, attempt, PapssDeliveryState.Failed, "UNPARSEABLE_STORED_RESULT", ct);
             return;
         }
@@ -105,23 +122,23 @@ public sealed class PapssBankPushWorker(IServiceScopeFactory scopes, PapssFacing
         {
             // No request context exists in a worker: re-establish the PAPSS mapping profile and callback URL.
             using (context.Push(Binding(xades)))
-                await delivery.DeliverAsync(result, ct);
+                await send();
             await CompleteAsync(db, eventId, operationId, attempt, PapssDeliveryState.Delivered, null, ct);
-            Logger.LogInformation("PAPSS result {RequestMessageId} pushed to the bank on attempt {Attempt}", result.RequestMessageId, attempt);
+            Logger.LogInformation("PAPSS {Label} pushed to the bank on attempt {Attempt}", label, attempt);
         }
         catch (Exception error) when (!ct.IsCancellationRequested)
         {
             if (attempt >= Math.Max(1, Options.Delivery.MaxAttempts))
             {
                 await CompleteAsync(db, eventId, operationId, attempt, PapssDeliveryState.Failed, error.Message, ct);
-                Logger.LogError(error, "PAPSS result {RequestMessageId} could not be pushed after {Attempt} attempts; bank push FAILED (the result stays available on the lookup API)", result.RequestMessageId, attempt);
+                Logger.LogError(error, "PAPSS {Label} could not be pushed after {Attempt} attempts; bank push FAILED (the result stays available on the lookup API)", label, attempt);
                 return;
             }
             var next = Clock.GetUtcNow().Add(Options.Delivery.Backoff(attempt));
             var message = Truncate(error.Message);
             await db.PapssOperationEvents.Where(x => x.Id == eventId && x.PushState == PapssDeliveryState.Pending && x.PushAttempts == attempt)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.PushNextAttemptAt, next).SetProperty(x => x.PushLastError, message), ct);
-            Logger.LogWarning(error, "PAPSS result {RequestMessageId} push attempt {Attempt} failed; retrying at {NextAttemptAt:o}", result.RequestMessageId, attempt, next);
+            Logger.LogWarning(error, "PAPSS {Label} push attempt {Attempt} failed; retrying at {NextAttemptAt:o}", label, attempt, next);
         }
     }
 

@@ -17,7 +17,7 @@ namespace SIPS.Connect.Services;
 /// which also carries the bank push outbox) and gateway-bound replies (papss_outbound_responses).
 /// Every method commits before returning, so callers may acknowledge the gateway afterwards.
 /// </summary>
-public sealed class PapssOperationStore(IStorageBroker db, PapssFacingOptions options, TimeProvider clock, ILogger<PapssOperationStore> logger)
+public sealed partial class PapssOperationStore(IStorageBroker db, PapssFacingOptions options, TimeProvider clock, ILogger<PapssOperationStore> logger)
 {
     public const string Acmt024 = "acmt.024.001.03";
     public const string Acmt023 = "acmt.023.001.03";

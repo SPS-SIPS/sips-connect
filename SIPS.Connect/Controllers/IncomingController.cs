@@ -8,7 +8,7 @@ namespace SIPS.Connect.Controllers;
 [ApiController]
 [Produces("application/xml")]
 [Route("api/v1/[controller]")]
-public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssGuard, IPapssPaymentDecisionPublisher decisionPublisher, IPapssInboundVerificationService inboundVerification, IParticipantCallbackContext callbackContext, ILogger<IncomingController> logger) : ControllerBase
+public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssGuard, IPapssPaymentDecisionPublisher decisionPublisher, IPapssInboundVerificationService inboundVerification, IParticipantCallbackContext callbackContext, ILogger<IncomingController> logger, IPapssPaymentCallbackService? paymentCallbacks = null) : ControllerBase
 {
     private readonly IIncoming _isoService = isoService;
     [HttpPost]
@@ -33,11 +33,33 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
                     await inboundVerification.HandleAsync(route, body, ct);
                     return Ok();
                 }
+                if (paymentCallbacks is not null)
+                {
+                    // PAPSS pacs.002 (payment / return / status-enquiry result) and inbound pacs.004 are stored in the
+                    // operation store and pushed to the bank from its outbox. They never reach the SmartVista handlers
+                    // (no orphan reject: an uncorrelated report is stored for operators and still acknowledged).
+                    if (definition == "pacs.002.001.12")
+                    {
+                        await paymentCallbacks.HandleStatusReportAsync(route, body, ct);
+                        return Ok();
+                    }
+                    if (definition == "pacs.004.001.11")
+                    {
+                        await paymentCallbacks.HandleReturnAsync(route, body, ct);
+                        return Ok();
+                    }
+                }
                 var handled = await _isoService.Handle(body, ct);
                 if (definition == "acmt.024.001.03" && !string.IsNullOrEmpty(handled))
                     logger.LogWarning("PAPSS acmt.024 callback was rejected by the result handler and not stored");
                 if (definition == "pacs.008.001.10")
+                {
+                    // The legacy handler stored the payment and the bank decision (isomessages, CB_PaymentRequest);
+                    // the decision outbox stays the durable, retryable path to the gateway. The operation store mirrors it.
+                    if (paymentCallbacks is not null) await paymentCallbacks.RecordInboundPaymentAsync(route, body, ct);
                     await decisionPublisher.PersistAndSubmitAsync(route, body, ct);
+                    if (paymentCallbacks is not null) await paymentCallbacks.SyncInboundPaymentAsync(body, ct);
+                }
                 return Ok();
             }
         }

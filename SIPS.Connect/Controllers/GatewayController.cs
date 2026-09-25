@@ -33,7 +33,8 @@ public class GatewayController(
     IPapssFacingSipsClient papssClient,
     PapssOperationStore papssStore,
     PapssFacingOptions papssOptions,
-    TimeProvider clock
+    TimeProvider clock,
+    IPapssPaymentService? papssPayments = null
     ) : ControllerBase
 {
     private readonly IJsonAdapter _jsonAdapter = jsonAdapter;
@@ -45,6 +46,8 @@ public class GatewayController(
     private readonly CoreOptions _coreOptions = coreOptions.Value;
     private readonly IParticipantOperationRouter _operationRouter = operationRouter;
     private readonly IPapssFacingSipsClient _papssClient = papssClient;
+    private readonly IPapssPaymentService _papssPayments = papssPayments
+        ?? new PapssPaymentService(papssStore, papssClient, papssOptions, clock, Microsoft.Extensions.Logging.Abstractions.NullLogger<PapssPaymentService>.Instance);
 
     [HttpPost("Verify")]
     [Authorize(Roles = Gateway)]
@@ -70,22 +73,64 @@ public class GatewayController(
     public Task<ActionResult> GetVerification([FromRoute] string requestMessageId, [FromQuery] int? waitSeconds, CancellationToken ct)
         => LookupAsync(requestMessageId, outboundVerificationOnly: true, waitSeconds, ct);
 
-    private async Task<ActionResult> LookupAsync(string requestMessageId, bool outboundVerificationOnly, int? waitSeconds, CancellationToken ct)
+    /// <summary>Pull API: the stored PAPSS payment (OUTBOUND wins over a received payment with the same TxId).</summary>
+    [HttpGet("Payment/{txId}")]
+    [Authorize(Roles = Gateway)]
+    public Task<ActionResult> GetPayment([FromRoute] string txId, [FromQuery] int? waitSeconds, CancellationToken ct)
+        => LookupAsync(txId, "txId", ct => papssStore.FindPaymentAsync(txId, ct), "No PAPSS payment is stored for this txId.", waitSeconds, ct);
+
+    /// <summary>Pull API: the stored PAPSS return by RtrId (OUTBOUND wins over a received return with the same id).</summary>
+    [HttpGet("Return/{returnId}")]
+    [Authorize(Roles = Gateway)]
+    public Task<ActionResult> GetReturnOperation([FromRoute] string returnId, [FromQuery] int? waitSeconds, CancellationToken ct)
+        => LookupAsync(returnId, "returnId", ct => papssStore.FindReturnAsync(returnId, ct), "No PAPSS return is stored for this returnId.", waitSeconds, ct);
+
+    /// <summary>Pull API: the stored PAPSS payment by EndToEndId (<c>?endToEndId=</c>).</summary>
+    [HttpGet("Operations")]
+    [Authorize(Roles = Gateway)]
+    public Task<ActionResult> FindOperation([FromQuery] string? endToEndId, [FromQuery] int? waitSeconds, CancellationToken ct)
+        => LookupAsync(endToEndId ?? string.Empty, "endToEndId", ct => papssStore.FindPaymentByEndToEndIdAsync(endToEndId!, ct), "No PAPSS payment is stored for this endToEndId.", waitSeconds, ct);
+
+    /// <summary>Operator view: received PAPSS pacs.002/pacs.004 that are uncorrelated, conflicting or carry an unknown status.</summary>
+    [HttpGet("Operations/Unresolved")]
+    [Authorize(Roles = Gateway + "," + Recon)]
+    public async Task<ActionResult> UnresolvedPapssEvents([FromQuery] int limit = 50, CancellationToken ct = default)
+        => Ok((await papssStore.UnresolvedStatusEventsAsync(limit, ct)).Select(e => new
+        {
+            receivedAt = PapssOperationResult.Iso(e.ReceivedAt),
+            messageType = e.MessageType,
+            sourceMessageId = e.SourceMessageId,
+            status = e.Status,
+            reasonCode = e.ReasonCode,
+            correlation = e.Correlation,
+            disposition = e.Disposition,
+            originalMessageId = e.OriginalMessageId,
+            originalMessageType = e.OriginalMessageType,
+            originalTxId = e.OriginalTxId,
+            originalEndToEndId = e.OriginalEndToEndId,
+            amount = e.Amount,
+            currency = e.Currency,
+            attached = e.OperationId is not null,
+            note = e.Note
+        }));
+
+    private Task<ActionResult> LookupAsync(string requestMessageId, bool outboundVerificationOnly, int? waitSeconds, CancellationToken ct)
+        => LookupAsync(requestMessageId, "requestMessageId", ct => papssStore.FindAsync(requestMessageId, outboundVerificationOnly, ct), "No PAPSS operation is stored for this requestMessageId.", waitSeconds, ct);
+
+    private async Task<ActionResult> LookupAsync(string key, string keyName, Func<CancellationToken, Task<PapssOperation?>> find, string notFound, int? waitSeconds, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(requestMessageId) || requestMessageId.Length > 128)
-            return BadRequest(new { code = "INVALID_REQUEST_MESSAGE_ID", message = "requestMessageId is required (max 128 characters)." });
+        if (string.IsNullOrWhiteSpace(key) || key.Length > 128)
+            return BadRequest(new { code = keyName == "requestMessageId" ? "INVALID_REQUEST_MESSAGE_ID" : "INVALID_LOOKUP_KEY", message = $"{keyName} is required (max 128 characters)." });
         // Long-poll only when an operator enabled it: PapssFacing:Lookup:MaxWaitSeconds (default 0).
         var wait = TimeSpan.FromSeconds(Math.Clamp(waitSeconds ?? 0, 0, Math.Max(0, papssOptions.Lookup.MaxWaitSeconds)));
         var until = clock.GetUtcNow() + wait;
         while (true)
         {
-            var operation = await papssStore.FindAsync(requestMessageId, outboundVerificationOnly, ct);
+            var operation = await find(ct);
             if (operation is null)
-                return NotFound(new { code = "OPERATION_NOT_FOUND", message = "No PAPSS operation is stored for this requestMessageId." });
-            var reply = operation.Direction == PapssDirection.Inbound ? await papssStore.FindReplyAsync(operation.Id, ct) : null;
-            var now = clock.GetUtcNow();
-            var result = PapssOperationResult.From(operation, reply, now, papssOptions.Outbound.VerificationResultExpirySeconds);
-            if (result.Status != PapssOperationResult.Pending || now >= until)
+                return NotFound(new { code = "OPERATION_NOT_FOUND", message = notFound });
+            var result = await _papssPayments.DescribeAsync(operation, ct);
+            if (result.Status != PapssOperationResult.Pending || clock.GetUtcNow() >= until)
                 return Ok(_jsonAdapter.Transform(result, OperationResultMapping));
             await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
         }
@@ -156,7 +201,7 @@ public class GatewayController(
         JsonObject md = _jsonAdapter.Transform(body, PaymentRequest);
         var query = _jsonAdapter.ToObject<PaymentRequestDto>(md);
         if (Select(ParticipantOperation.Payment, query.Rail) == DownstreamRail.Papss)
-            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.PayAsync(Binding(), query, ct), PapssAdmissionMapping)));
+            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssPayments.PayAsync(Binding(), query, ct), PapssAdmissionMapping)));
         var response = await _transactionService.HandleAsync(query, ct);
         return GenerateAdminMessage(response, _jsonAdapter, PaymentResponse);
     }
@@ -173,9 +218,40 @@ public class GatewayController(
         JsonObject md = _jsonAdapter.Transform(body, StatusRequest);
         var query = _jsonAdapter.ToObject<StatusRequestDto>(md);
         if (Select(ParticipantOperation.Status, query.Rail) == DownstreamRail.Papss)
-            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.GetStatusAsync(Binding(), query, ct), PapssAdmissionMapping)));
+            return await Papss(async () => Ok(await StatusViaPapssAsync(query, ct)));
         var response = await _transactionStatusService.HandleAsync(query, ct);
         return GenerateAdminMessage(response, _jsonAdapter, PaymentResponse);
+    }
+
+    /// <summary>
+    /// /Status on the PAPSS rail: the stored, authoritative state (PaymentResponse mapping + stored fields). A pacs.028 is
+    /// only sent while the stored payment is non-final; a TxId unknown to the store keeps the previous behaviour
+    /// (pacs.028 sent, admission returned).
+    /// </summary>
+    private async Task<JsonObject> StatusViaPapssAsync(StatusRequestDto query, CancellationToken ct)
+    {
+        var result = await _papssPayments.StatusAsync(Binding(), query, ct);
+        if (result.Payment is not { } payment)
+            return _jsonAdapter.Transform(result.Enquiry!, PapssAdmissionMapping);
+
+        var json = _jsonAdapter.Transform(new PaymentResponseDto
+        {
+            Status = payment.PaymentStatus!,
+            Reason = payment.StatusReasonCode ?? payment.ReasonCode,
+            AdditionalInfo = payment.AdditionalInfo,
+            TxId = payment.TxId ?? query.TxId,
+            EndToEndId = payment.EndToEndId ?? query.EndToEnd
+        }, PaymentResponse);
+        json["requestMessageId"] = payment.RequestMessageId;
+        json["paymentOutcome"] = UpperSnakeEnumConverter<PapssOutcome>.Of(payment.PapssOutcome);
+        json["operation"] = _jsonAdapter.Transform(await _papssPayments.DescribeAsync(payment, ct), OperationResultMapping);
+        json["statusEnquiry"] = result.Enquiry is null && result.EnquiryError is null ? null : new JsonObject
+        {
+            ["requestMessageId"] = result.Enquiry?.RequestMessageId ?? result.EnquiryRequestMessageId,
+            ["code"] = result.Enquiry?.Code ?? result.EnquiryError,
+            ["durablyAdmitted"] = result.Enquiry?.DurablyAdmitted ?? false
+        };
+        return json;
     }
 
     [HttpPost("Return")]
@@ -190,7 +266,7 @@ public class GatewayController(
         JsonObject md = _jsonAdapter.Transform(body, ReturnRequest);
         var query = _jsonAdapter.ToObject<ReturnPaymentRequestDto>(md);
         if (Select(ParticipantOperation.Return, query.Rail) == DownstreamRail.Papss)
-            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssClient.ReturnAsync(Binding(), query, ct), PapssAdmissionMapping)));
+            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssPayments.ReturnAsync(Binding(), query, ct), PapssAdmissionMapping)));
         var response = await _returnTransactionService.HandleAsync(query, ct);
         return GenerateAdminMessage(response, _jsonAdapter, PaymentResponse);
     }

@@ -33,6 +33,30 @@ public sealed class PapssOperationResult
     public string? DeadlineAt { get; set; }
     public long AgeSeconds { get; set; }
 
+    // ---- Payments / returns / status enquiries (null for verification operations) --------------
+    public string? TxId { get; set; }
+    public string? EndToEndId { get; set; }
+    public string? MsgId { get; set; }
+    public decimal? Amount { get; set; }
+    public string? LocalInstrument { get; set; }
+    /// <summary>Raw ISO status in effect (ACCP, ACSP, ACSC, PDNG, RJCT).</summary>
+    public string? PaymentStatus { get; set; }
+    /// <summary>PENDING, ACCEPTED, SETTLED, REJECTED, RETURNED or UNKNOWN.</summary>
+    public string? PaymentOutcome { get; set; }
+    public string? StatusReasonCode { get; set; }
+    public string? StatusAt { get; set; }
+    public bool? StatusConflict { get; set; }
+    public string? ReturnId { get; set; }
+    public string? OriginalTxId { get; set; }
+    public string? OriginalEndToEndId { get; set; }
+    /// <summary>requestMessageId of the operation this one refers to (a return's payment, an enquiry's payment).</summary>
+    public string? OriginalRequestMessageId { get; set; }
+    /// <summary>Returns (and their outcome) recorded against this payment, e.g. "OUTBOUND RTN-1 SETTLED".</summary>
+    public List<string>? Returns { get; set; }
+    /// <summary>INBOUND payment: state of the PAPSS decision (pacs.002 ACCP/RJCT) in the decision outbox.</summary>
+    public string? DecisionState { get; set; }
+    public List<PapssStatusHistoryEntry>? StatusHistory { get; set; }
+
     public const string Pending = "PENDING";
     public const string Completed = "COMPLETED";
     public const string Rejected = "REJECTED";
@@ -67,9 +91,54 @@ public sealed class PapssOperationResult
         AgeSeconds = Math.Max(0, (long)(now - op.CreatedAt).TotalSeconds)
     };
 
+    public static bool IsPaymentLike(PapssOperation op) => op.Operation is PapssOperationType.Payment or PapssOperationType.Return or PapssOperationType.StatusEnquiry;
+
+    /// <summary>Adds the payment fields and the received-status history (payments, returns, status enquiries).</summary>
+    public PapssOperationResult WithPayment(PapssOperation op, IEnumerable<PapssOperationEvent> history, PapssOperation? original, IEnumerable<PapssOperation> linked)
+    {
+        TxId = op.TxId;
+        EndToEndId = op.EndToEndId;
+        MsgId = op.MsgId;
+        Amount = op.Amount;
+        LocalInstrument = op.LocalInstrument;
+        PaymentStatus = op.PaymentStatus;
+        PaymentOutcome = UpperSnakeEnumConverter<Outcome>.Of(op.PapssOutcome);
+        StatusReasonCode = op.StatusReasonCode;
+        StatusAt = Iso(op.StatusAt);
+        StatusConflict = op.StatusConflict;
+        ReturnId = op.ReturnId;
+        OriginalTxId = op.OriginalTxId;
+        OriginalEndToEndId = op.OriginalEndToEndId;
+        OriginalRequestMessageId = original?.RequestMessageId;
+        var returns = linked.Where(x => x.Operation == PapssOperationType.Return)
+            .Select(x => $"{UpperSnakeEnumConverter<PapssDirection>.Of(x.Direction)} {x.ReturnId} {UpperSnakeEnumConverter<Outcome>.Of(x.PapssOutcome)}").ToList();
+        Returns = returns.Count == 0 ? null : returns;
+        if (op.Direction == PapssDirection.Inbound && op.Operation == PapssOperationType.Payment)
+            DecisionState = op.GatewayState switch
+            {
+                PapssGatewayState.NotSubmitted => "NOT_QUEUED",
+                PapssGatewayState.Submitting or PapssGatewayState.SubmissionUnknown => "PENDING",
+                PapssGatewayState.Admitted => "PUBLISHED",
+                _ => "FAILED"
+            };
+        StatusHistory = history.Select(PapssStatusHistoryEntry.From).ToList();
+        return this;
+    }
+
     /// <summary>Derives one summary status from the three independent state dimensions.</summary>
     public static string Summarize(PapssOperation op, PapssOutboundResponse? reply, DateTimeOffset now, int? outboundExpirySeconds)
     {
+        if (IsPaymentLike(op))
+        {
+            if (op.PapssOutcome is Outcome.Settled or Outcome.Returned) return Completed;
+            if (op.PapssOutcome == Outcome.Rejected || op.Direction == PapssDirection.Outbound && op.GatewayState == PapssGatewayState.Rejected) return Rejected;
+            if (op.Operation == PapssOperationType.StatusEnquiry && op.CompletedAt is not null) return Completed;
+            if (op.PapssOutcome == Outcome.Unknown) return Unknown;
+            if (op.Direction == PapssDirection.Outbound && op.GatewayState == PapssGatewayState.SubmissionUnknown && op.PapssOutcome == Outcome.Pending) return Unknown;
+            if (op.Direction == PapssDirection.Inbound && op.BankDeliveryState == PapssDeliveryState.Failed) return Failed;
+            return Pending;
+        }
+
         if (op.Direction == PapssDirection.Outbound)
         {
             if (op.GatewayState == PapssGatewayState.Rejected || op.PapssOutcome == Outcome.Rejected) return Rejected;
@@ -89,5 +158,32 @@ public sealed class PapssOperationResult
         return Pending;
     }
 
-    private static string? Iso(DateTimeOffset? value) => value?.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+    internal static string? Iso(DateTimeOffset? value) => value?.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+}
+
+/// <summary>One received pacs.002 / pacs.004 / pacs.008 of an operation (jsonAdapter OperationResult.statusHistory).</summary>
+public sealed class PapssStatusHistoryEntry
+{
+    public string ReceivedAt { get; set; } = string.Empty;
+    public string MessageType { get; set; } = string.Empty;
+    public string SourceMessageId { get; set; } = string.Empty;
+    public string? Status { get; set; }
+    public string? ReasonCode { get; set; }
+    public string? Correlation { get; set; }
+    public string? Disposition { get; set; }
+    public string PushState { get; set; } = string.Empty;
+    public string? Note { get; set; }
+
+    public static PapssStatusHistoryEntry From(PapssOperationEvent e) => new()
+    {
+        ReceivedAt = PapssOperationResult.Iso(e.ReceivedAt)!,
+        MessageType = e.MessageType,
+        SourceMessageId = e.SourceMessageId,
+        Status = e.Status,
+        ReasonCode = e.ReasonCode,
+        Correlation = e.Correlation,
+        Disposition = e.Disposition,
+        PushState = UpperSnakeEnumConverter<PapssDeliveryState>.Of(e.PushState),
+        Note = e.Note
+    };
 }

@@ -23,6 +23,8 @@ public sealed class PapssFacingOptions
     public PapssDeliveryOptions Delivery { get; set; } = new();
     public PapssLookupOptions Lookup { get; set; } = new();
     public PapssStoreOptions Store { get; set; } = new();
+    public PapssStatusOptions Status { get; set; } = new();
+    public PapssReturnOptions Returns { get; set; } = new();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -107,6 +109,32 @@ public sealed class PapssStoreOptions
     /// <summary>Null (default) = never purge. When set, completed operations/events older than this are deleted.</summary>
     public int? RetentionDays { get; set; }
     public int PurgeIntervalMinutes { get; set; } = 60;
+}
+
+/// <summary>/Status on the PAPSS rail (pacs.028). See docs/PAPSS_OPERATION_STORE_CONFIG.md.</summary>
+public sealed class PapssStatusOptions
+{
+    /// <summary>
+    /// NOT ESTABLISHED by PAPSS (evidence §E11 only lists the triggers: no pacs.002, stuck pending, confirming
+    /// finality). Null (default) = a pacs.028 is sent whenever the stored payment is non-final, as before.
+    /// When set, a payment younger than this is answered from the store without a pacs.028.
+    /// </summary>
+    public int? EnquiryMinimumAgeSeconds { get; set; }
+}
+
+/// <summary>Outbound returns (pacs.004). See docs/PAPSS_OPERATION_STORE_CONFIG.md.</summary>
+public sealed class PapssReturnOptions
+{
+    /// <summary>
+    /// CONTRADICTED in PAPSS material (evidence §D10: ACSC in the portal flow vs ACSP in the pacs.004 response
+    /// sample). Comma-separated pacs.002 statuses that settle an outbound return (and mark the original payment
+    /// RETURNED). Default "ACSC". Allowed values: ACSC, ACSP.
+    /// </summary>
+    public string SettledStatuses { get; set; } = "ACSC";
+
+    public IReadOnlyCollection<string> SettledStatusList()
+        => SettledStatuses.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => x.ToUpperInvariant()).Distinct().ToArray();
 }
 
 public sealed class PapssResponderTrust
