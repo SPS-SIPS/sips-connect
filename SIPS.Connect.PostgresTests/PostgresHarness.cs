@@ -119,7 +119,7 @@ public sealed class PostgresHarness : IAsyncDisposable
         services.AddSingleton<IInterfaceHttpClient>(Bank);
         services.AddSingleton<ICallbackClient>(sp => new ParticipantCallbackClient(
             new CallbackClient(Bank, NullLogger<CallbackClient>.Instance, sp.GetRequiredService<ICorrelationService>()), sp.GetRequiredService<IParticipantCallbackContext>()));
-        services.AddSingleton(new ISO20022Options { Verification = "https://legacy.test/verify", Key = "key", Secret = "secret" });
+        services.AddSingleton(new ISO20022Options { Verification = "https://legacy.test/verify", CompletionNotification = "https://legacy.test/complete", Return = "https://legacy.test/return", Key = "key", Secret = "secret" });
         var signer = new Mock<INativeSigner>();
         signer.Setup(x => x.SignEnvelope(It.IsAny<string>(), It.IsAny<string>())).Returns<string, string>((xml, _) => xml);
         services.AddSingleton(signer.Object);
@@ -136,6 +136,9 @@ public sealed class PostgresHarness : IAsyncDisposable
         services.AddSingleton<ICoreBankVerificationClient>(CoreBank);
         services.AddSingleton(Mock.Of<IISOMessageService>());
         services.AddScoped<IPapssInboundVerificationService, PapssInboundVerificationService>();
+        services.AddScoped<IPapssPaymentService, PapssPaymentService>();
+        services.AddScoped<IPapssPaymentCallbackService, PapssPaymentCallbackService>();
+        services.AddScoped<PapssPaymentEventDelivery>();
         services.AddSingleton<PapssBankPushWorker>();
         services.AddSingleton<PapssResponseOutboxWorker>();
         services.AddSingleton<PapssStoreRetentionWorker>();
@@ -209,6 +212,55 @@ public sealed class PostgresHarness : IAsyncDisposable
         xml = SetHeader(xml, "BizMsgIdr", sourceMessageId);
         return created is null ? xml : SetHeader(xml, "CreDt", created.Value.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
     }
+
+    /// <summary>
+    /// pacs.002.001.12 exactly as the gateway contract sends it: AppHdr BizMsgIdr = PAPSS source message id,
+    /// OrgnlMsgId = the bank's SIPS MsgId, OrgnlMsgNmId = pacs.008.001.10 / pacs.004.001.11, OrgnlTxId = payment TxId.
+    /// </summary>
+    public static string StatusReport(string sourceMessageId, string originalMessageId, string originalMessageType, string txId, string endToEndId, string status, string? reason = null, decimal amount = 10m)
+    {
+        var xml = PaymentRequestResponseBuilder.Build(new PaymentRequestResponseBuilder.Response
+        {
+            From = Gateway,
+            To = LocalBic,
+            Original = new PaymentRequestBuilder.Request
+            {
+                From = LocalBic, To = ForeignBic, BizMsgIdr = originalMessageId, MsgDefIdr = originalMessageType, MsgId = originalMessageId,
+                CreDt = DateTime.UtcNow.AddMinutes(-1), EndToEndId = endToEndId, TxId = txId, Amount = amount, Currency = "USD"
+            },
+            Status = status,
+            Reason = reason,
+            AdditionalInfo = reason is null ? null : "reported by PAPSS"
+        });
+        return SetHeader(xml, "BizMsgIdr", sourceMessageId);
+    }
+
+    /// <summary>Inbound pacs.004.001.11 (a return of a payment we sent).</summary>
+    public static string InboundReturn(string sourceMessageId, string returnId, string originalTxId, string originalEndToEndId, decimal amount = 10m)
+        => SetHeader(ReturnPaymentRequestBuilder.Build(new()
+        {
+            From = Gateway, To = LocalBic, CreDt = DateTime.UtcNow, NumberOfTransactions = 1, LocalInstrument = "USDP", CategoryPurpose = "CASH",
+            ReturnId = returnId, OrgnlTxId = originalTxId, OriginalEndToEnd = originalEndToEndId, OriginalCurrency = "USD", OriginalAmount = amount,
+            ReturnReason = "FOCR", AdditionalInfo = "returned by beneficiary bank", DebtorAgent = ForeignBic, CreditorAgent = LocalBic
+        }).document, "BizMsgIdr", sourceMessageId);
+
+    /// <summary>Inbound pacs.008.001.10 (a credit transfer received from PAPSS).</summary>
+    public static string InboundPayment(string sourceMessageId, string txId, string endToEndId, decimal amount = 25m)
+        => SetHeader(PaymentRequestBuilder.Build(new()
+        {
+            From = Gateway, To = LocalBic, LocalInstrument = "USDP", CategoryPurpose = "CASH", EndToEndId = endToEndId, TxId = txId, Amount = amount, Currency = "USD", Ustrd = "invoice 7",
+            Debtor = new() { Name = "AMINA ALI", Account = "100200", AccountType = "BBAN", AgentBIC = ForeignBic, Issuer = "C" },
+            Creditor = new() { Name = "FORTRESS GLOBAL", Account = "0012030321735", AccountType = "BBAN", AgentBIC = LocalBic, Issuer = "C" }
+        }).document, "BizMsgIdr", sourceMessageId);
+
+    /// <summary>The bank decision the legacy pacs.008 handler stores in isomessages.Response.</summary>
+    public static string Decision(string txId, string endToEndId, string status, string? reason = null)
+        => PaymentRequestResponseBuilder.Build(new PaymentRequestResponseBuilder.Response
+        {
+            From = LocalBic, To = Gateway,
+            Original = new PaymentRequestBuilder.Request { From = Gateway, To = LocalBic, BizMsgIdr = "CT02-SRC", MsgDefIdr = "pacs.008.001.10", MsgId = "CT02-MSG", CreDt = DateTime.UtcNow, EndToEndId = endToEndId, TxId = txId, Amount = 25m, Currency = "USD" },
+            Status = status, Reason = reason
+        });
 
     public static string SetHeader(string xml, string element, string value)
     {
@@ -305,6 +357,41 @@ public sealed class FakeGateway : IPapssFacingSipsClient
     }
 
     public int Count { get { lock (_gate) return Submitted.Count; } }
+    public int Prepared;
+
+    public Task<PapssSignedMessage> PreparePaymentAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct)
+    {
+        Interlocked.Increment(ref Prepared);
+        var built = PaymentRequestBuilder.Build(new()
+        {
+            From = participant.Bic, To = request.ToBIC, LocalInstrument = request.LocalInstrument, CategoryPurpose = request.CategoryPurpose, EndToEndId = request.EndToEndId,
+            TxId = request.TxId!, Amount = request.Amount, Currency = request.Currency, Ustrd = request.RemittanceInformation,
+            Debtor = new() { Name = request.DebtorName, Account = request.DebtorAccount, AccountType = request.DebtorAccountType, AgentBIC = participant.Bic, Issuer = "C" },
+            Creditor = new() { Name = request.CreditorName, Account = request.CreditorAccount, AccountType = request.CreditorAccountType, AgentBIC = request.ToBIC, Issuer = "C" }
+        });
+        return Task.FromResult(new PapssSignedMessage(built.bizMsgIdr, SignForSubmission(built.document, built.bizMsgIdr), DateTimeOffset.UtcNow, built.msgId));
+    }
+
+    public PapssSignedMessage PrepareReturn(PapssParticipantBinding participant, ReturnPaymentRequestDto request)
+    {
+        Interlocked.Increment(ref Prepared);
+        var built = ReturnPaymentRequestBuilder.Build(new()
+        {
+            From = participant.Bic, To = request.ToBIC, CreDt = DateTime.UtcNow, NumberOfTransactions = 1, LocalInstrument = request.LocalInstrument, CategoryPurpose = request.CategoryPurpose,
+            ReturnId = request.ReturnId, OrgnlTxId = request.OriginalTxId, OriginalEndToEnd = request.OriginalEndToEndId, OriginalCurrency = request.OriginalCurrency,
+            OriginalAmount = request.OriginalAmount, ReturnReason = request.Reason, AdditionalInfo = request.AdditionalInfo, DebtorAgent = participant.Bic, CreditorAgent = request.ToBIC
+        });
+        return new(built.bizMsgIdr, SignForSubmission(built.document, built.bizMsgIdr), DateTimeOffset.UtcNow, built.msgId);
+    }
+
+    public PapssSignedMessage PrepareStatus(PapssParticipantBinding participant, StatusRequestDto request)
+    {
+        Interlocked.Increment(ref Prepared);
+        var msgId = PapssFacingSipsClient.Id();
+        var unsigned = PaymentStatusRequestBuilder.Build(new() { From = participant.Bic, To = request.ToBIC, MsgId = msgId, CreDt = DateTime.UtcNow, OrgnlTxId = request.TxId, OriginalEndToEnd = request.EndToEnd });
+        var bizMsgIdr = PostgresHarness.Header(unsigned, "BizMsgIdr");
+        return new(bizMsgIdr, SignForSubmission(unsigned, bizMsgIdr), DateTimeOffset.UtcNow, msgId);
+    }
 
     public Task<PapssAdmissionResponse> VerifyAsync(PapssParticipantBinding participant, VerificationRequestDto request, CancellationToken ct) => throw new NotSupportedException();
     public Task<PapssAdmissionResponse> PayAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct) => throw new NotSupportedException();
