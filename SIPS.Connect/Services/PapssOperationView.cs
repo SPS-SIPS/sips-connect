@@ -173,9 +173,25 @@ public sealed class PapssStatusHistoryEntry
     public string? Disposition { get; set; }
     public string PushState { get; set; } = string.Empty;
     public string? Note { get; set; }
+    // Evidence layers: (1) raw PAPSS message = sourceMessageId + rawEvidenceReference (SHA-256 of the signed PAPSS bytes kept by
+    // the gateway); (2) the normalized fields above and amount/currency; (3) local enrichment = amountSource,
+    // categoryPurposeSource and fieldProvenance (path -> NETWORK_REPORTED / LOCAL_RECONSTRUCTION / IDENTIFIER_TRANSLATION /
+    // DEFAULT_FILLER). A LOCAL_RECONSTRUCTION amount was not reported by PAPSS.
+    public decimal? Amount { get; set; }
+    public string? Currency { get; set; }
+    public string? AmountSource { get; set; }
+    public string? CategoryPurposeSource { get; set; }
+    public string? RawEvidenceReference { get; set; }
+    public Dictionary<string, string>? FieldProvenance { get; set; }
 
     public static PapssStatusHistoryEntry From(PapssOperationEvent e) => new()
     {
+        Amount = e.Amount,
+        Currency = e.Currency,
+        AmountSource = e.AmountSource,
+        CategoryPurposeSource = e.CategoryPurposeSource,
+        RawEvidenceReference = e.RawEvidenceReference,
+        FieldProvenance = e.FieldProvenance is { Length: > 0 } json ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) : null,
         ReceivedAt = PapssOperationResult.Iso(e.ReceivedAt)!,
         MessageType = e.MessageType,
         SourceMessageId = e.SourceMessageId,

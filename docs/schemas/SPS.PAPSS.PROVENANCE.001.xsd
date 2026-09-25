@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPS provenance supplement of the Gateway's SIPS pacs.002.001.12 / pacs.004.001.11 callbacks (gateway README "Callback provenance"; a copy of the gateway schema, keep them identical).
+  Carried as TxInfAndSts/SplmtryData/Envlp/PapssProvenance (pacs.002) or TxInf/SplmtryData/Envlp/PapssProvenance (pacs.004),
+  signed with the callback, on the Gateway -> SIPS Connect boundary only. Never sent to PAPSS.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:sps:papss:provenance:001" xmlns="urn:sps:papss:provenance:001" elementFormDefault="qualified">
+  <xs:simpleType name="Text128"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="128"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="FieldPath"><xs:restriction base="xs:string"><xs:pattern value="[A-Za-z]+(/[A-Za-z]+)*"/><xs:maxLength value="128"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="FieldSource">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NETWORK_REPORTED"/>
+      <xs:enumeration value="LOCAL_RECONSTRUCTION"/>
+      <xs:enumeration value="IDENTIFIER_TRANSLATION"/>
+      <xs:enumeration value="DEFAULT_FILLER"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="PapssProvenance">
+    <xs:complexType><xs:sequence>
+      <xs:element name="SourceMessageId" type="Text128"/>
+      <xs:element name="RawEvidenceReference" type="Text128"/>
+      <xs:element name="Field" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType><xs:sequence>
+          <xs:element name="Path" type="FieldPath"/>
+          <xs:element name="Source" type="FieldSource"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+    </xs:sequence></xs:complexType>
+  </xs:element>
+</xs:schema>

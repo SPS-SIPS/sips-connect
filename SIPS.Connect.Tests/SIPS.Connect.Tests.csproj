@@ -20,4 +20,9 @@
     <ProjectReference Include="../Packages/SIPS.ISO20022/SIPS.ISO20022.csproj" />
     <ProjectReference Include="../Packages/SIPS.PostgreSQL/SIPS.PostgreSQL.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../docs/schemas/SPS.PAPSS.PROVENANCE.001.xsd" Link="ProvenanceSchemas/SPS.PAPSS.PROVENANCE.001.xsd" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Packages/SIPS.ISO20022/Schemas/pacs.002.001.12.xsd" Link="ProvenanceSchemas/pacs.002.001.12.xsd" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Packages/SIPS.ISO20022/Schemas/pacs.004.001.11.xsd" Link="ProvenanceSchemas/pacs.004.001.11.xsd" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
