@@ -342,6 +342,13 @@ public sealed class PapssPaymentOperationTests
         var final = await Status(provider, harness, PostgresHarness.StatusReport("PAPSS-S-111", "CT02-IN-11", "pacs.008.001.10", "TX-IN11", "E2E-IN11", "ACSC"));
         Assert.Equal(PapssEventDisposition.Applied, final.Disposition);
         Assert.Equal(PapssOutcome.Settled, (await Stored(harness, "TX-IN11", PapssDirection.Inbound)).PapssOutcome);
+        // Re-mirroring the decision later must neither undo the PAPSS status nor mark its pending push delivered.
+        using (var scope = provider.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<IPapssPaymentCallbackService>().SyncInboundPaymentAsync(PostgresHarness.InboundPayment("CT02-IN-11", "TX-IN11", "E2E-IN11"), CancellationToken.None);
+        var afterSync = await Stored(harness, "TX-IN11", PapssDirection.Inbound);
+        Assert.Equal((PapssOutcome.Settled, "ACSC", PapssDeliveryState.Pending), (afterSync.PapssOutcome, afterSync.PaymentStatus, afterSync.BankDeliveryState));
+        await provider.GetRequiredService<PapssBankPushWorker>().RunOnceAsync(CancellationToken.None);
+        Assert.Equal(PapssDeliveryState.Delivered, (await Stored(harness, "TX-IN11", PapssDirection.Inbound)).BankDeliveryState);
 
         // A rejected decision is final.
         var rejected = await RecordInbound(provider, harness, "CT02-IN-12", "TX-IN12", "E2E-IN12", "RJCT", reason: "AC04");

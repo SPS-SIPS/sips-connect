@@ -592,9 +592,10 @@ public sealed partial class PapssOperationStore
         operation.IsoMessageId = iso.Id;
         if (iso.Response is { Length: > 0 } response)
         {
-            if (operation.BankDeliveryState == PapssDeliveryState.Pending) operation.BankDeliveryState = PapssDeliveryState.Delivered;
+            // Only the first time: afterwards bankdeliverystate tracks the pushes of later PAPSS statuses.
             if (operation.PaymentStatus is null && operation.PapssOutcome == PapssOutcome.Pending)
             {
+                if (operation.BankDeliveryState == PapssDeliveryState.Pending) operation.BankDeliveryState = PapssDeliveryState.Delivered;
                 try
                 {
                     var (status, reason) = PapssPaymentMessages.DecisionStatus(Encoding.UTF8.GetString(response));
