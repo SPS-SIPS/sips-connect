@@ -276,6 +276,10 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("admissioncode");
 
+                    b.Property<decimal?>("Amount")
+                        .HasColumnType("numeric(18,5)")
+                        .HasColumnName("amount");
+
                     b.Property<string>("BankDeliveryState")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -318,17 +322,50 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("gatewaystate");
 
+                    b.Property<int?>("IsoMessageId")
+                        .HasColumnType("integer")
+                        .HasColumnName("isomessageid");
+
+                    b.Property<string>("LocalInstrument")
+                        .HasMaxLength(35)
+                        .HasColumnType("character varying(35)")
+                        .HasColumnName("localinstrument");
+
+                    b.Property<string>("MsgId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("msgid");
+
                     b.Property<string>("Operation")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("operation");
 
+                    b.Property<string>("OriginalEndToEndId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("originalendtoendid");
+
+                    b.Property<Guid?>("OriginalOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("originaloperationid");
+
+                    b.Property<string>("OriginalTxId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("originaltxid");
+
                     b.Property<string>("PapssOutcome")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("papssoutcome");
+
+                    b.Property<string>("PaymentStatus")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("paymentstatus");
 
                     b.Property<string>("Reason")
                         .HasColumnType("text")
@@ -342,11 +379,21 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("receivedat");
 
+                    b.Property<string>("RequestFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("requestfingerprint");
+
                     b.Property<string>("RequestMessageId")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("requestmessageid");
+
+                    b.Property<string>("ReturnId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("returnid");
 
                     b.Property<byte[]>("SignedRequest")
                         .HasColumnType("bytea")
@@ -359,6 +406,19 @@ namespace SIPS.PostgreSQL.Migrations
                     b.Property<DateTimeOffset?>("SourceCreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("sourcecreatedat");
+
+                    b.Property<DateTimeOffset?>("StatusAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("statusat");
+
+                    b.Property<bool>("StatusConflict")
+                        .HasColumnType("boolean")
+                        .HasColumnName("statusconflict");
+
+                    b.Property<string>("StatusReasonCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("statusreasoncode");
 
                     b.Property<string>("TxId")
                         .HasColumnType("text")
@@ -388,12 +448,37 @@ namespace SIPS.PostgreSQL.Migrations
                     b.HasIndex("CompletedAt")
                         .HasDatabaseName("ix_papss_op_completed_at");
 
+                    b.HasIndex("EndToEndId")
+                        .HasDatabaseName("ix_papss_op_end_to_end_id");
+
+                    b.HasIndex("IsoMessageId")
+                        .HasDatabaseName("ix_papss_op_iso_message");
+
+                    b.HasIndex("MsgId")
+                        .HasDatabaseName("ix_papss_op_msg_id");
+
+                    b.HasIndex("OriginalOperationId")
+                        .HasDatabaseName("ix_papss_op_original");
+
+                    b.HasIndex("TxId")
+                        .HasDatabaseName("ix_papss_op_tx_id");
+
                     b.HasIndex("VerificationId")
                         .HasDatabaseName("ix_papss_op_verification_id");
 
                     b.HasIndex("Direction", "RequestMessageId")
                         .IsUnique()
                         .HasDatabaseName("ux_papss_op_direction_request_msg");
+
+                    b.HasIndex("Direction", "ReturnId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_papss_op_return_id")
+                        .HasFilter("operation = 'RETURN' AND returnid IS NOT NULL");
+
+                    b.HasIndex("Direction", "Operation", "TxId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_papss_op_payment_txid")
+                        .HasFilter("operation = 'PAYMENT' AND txid IS NOT NULL");
 
                     b.ToTable("papss_operations", (string)null);
                 });
@@ -407,6 +492,25 @@ namespace SIPS.PostgreSQL.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<decimal?>("Amount")
+                        .HasColumnType("numeric(18,5)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Correlation")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("correlation");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<string>("Disposition")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("disposition");
+
                     b.Property<string>("EventType")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -419,9 +523,34 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("messagetype");
 
+                    b.Property<string>("Note")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("note");
+
                     b.Property<Guid?>("OperationId")
                         .HasColumnType("uuid")
                         .HasColumnName("operationid");
+
+                    b.Property<string>("OriginalEndToEndId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("originalendtoendid");
+
+                    b.Property<string>("OriginalMessageId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("originalmessageid");
+
+                    b.Property<string>("OriginalMessageType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("originalmessagetype");
+
+                    b.Property<string>("OriginalTxId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("originaltxid");
 
                     b.Property<int>("PushAttempts")
                         .HasColumnType("integer")
@@ -450,6 +579,11 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("bytea")
                         .HasColumnName("rawxml");
 
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reasoncode");
+
                     b.Property<DateTimeOffset>("ReceivedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("receivedat");
@@ -460,11 +594,19 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("sourcemessageid");
 
+                    b.Property<string>("Status")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("status");
+
                     b.HasKey("Id")
                         .HasName("pk_papss_operation_events");
 
                     b.HasIndex("OperationId")
                         .HasDatabaseName("ix_papss_event_operation");
+
+                    b.HasIndex("EventType", "Disposition")
+                        .HasDatabaseName("ix_papss_event_type_disposition");
 
                     b.HasIndex("EventType", "SourceMessageId")
                         .IsUnique()
@@ -704,6 +846,17 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasConstraintName("fk_isomessagestatuses_isomessages_isomessageid");
 
                     b.Navigation("ISOMessage");
+                });
+
+            modelBuilder.Entity("SIPS.PostgreSQL.Models.PapssOperation", b =>
+                {
+                    b.HasOne("SIPS.PostgreSQL.Models.PapssOperation", "OriginalOperation")
+                        .WithMany()
+                        .HasForeignKey("OriginalOperationId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_papss_operations_papss_operations_originaloperationid");
+
+                    b.Navigation("OriginalOperation");
                 });
 
             modelBuilder.Entity("SIPS.PostgreSQL.Models.PapssOperationEvent", b =>
