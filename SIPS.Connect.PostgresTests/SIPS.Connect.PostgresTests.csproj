@@ -1,4 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Real-PostgreSQL integration tests for the PAPSS operation store.
+    Deliberately NOT part of SIPS.sln so normal unit-test runs do not need a database.
+    Requires SIPS_TEST_POSTGRES_CONNECTION (see docs/PAPSS_OPERATION_STORE_CONFIG.md, "Running the PostgreSQL tests");
+    every test fails with an explicit message when it is not set.
+  -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -15,9 +21,9 @@
   <ItemGroup>
     <ProjectReference Include="../SIPS.Connect/SIPS.Connect.csproj" />
     <ProjectReference Include="../Packages/SIPS.Core/SIPS.Core.csproj" />
+    <ProjectReference Include="../Packages/SIPS.PostgreSQL/SIPS.PostgreSQL.csproj" />
     <ProjectReference Include="../Packages/SIPS.Adapter/SIPS.Adapter.csproj" />
     <ProjectReference Include="../Packages/SIPS.XMLDsig.Xades/SIPS.XMLDsig.Xades.csproj" />
     <ProjectReference Include="../Packages/SIPS.ISO20022/SIPS.ISO20022.csproj" />
-    <ProjectReference Include="../Packages/SIPS.PostgreSQL/SIPS.PostgreSQL.csproj" />
   </ItemGroup>
 </Project>
