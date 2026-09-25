@@ -82,7 +82,11 @@ public sealed class PapssInboundVerificationService(
         var answer = result.Response;
         answer.Original = request;
         answer.From = participant.Bic;
-        answer.To = request.From;
+        // On the WP-SIPS leg, WpSipsPapss ownership (XmlSecurityHelpers.CheckTransactionOwnerAgainstCertificate)
+        // binds BOTH the AppHdr From and the acmt.024 Assgne to the signer's represented participant — the gateway
+        // uses the same convention for its callbacks. So the answering bank goes in Assgne as well; the gateway
+        // takes the foreign counterparty from the stored inbound acmt.023, not from this message.
+        answer.To = participant.Bic;
         answer.VerificationId = request.SIPSRequestId ?? string.Empty;
         // Pass the core bank's reason through unchanged; never substitute a default (PAPSS reason-code
         // rules are contradictory, see docs). The builder would otherwise default an empty reason to MISS.

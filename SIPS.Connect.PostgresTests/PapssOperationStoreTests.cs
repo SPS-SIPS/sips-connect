@@ -249,6 +249,11 @@ public sealed class PapssOperationStoreTests
         Assert.Equal("true", Value("Vrfctn"));
         Assert.Equal("MATCH", reply.Descendants().First(x => x.Name.LocalName == "Rsn").Elements().Single().Value);
         Assert.Equal("AMINA ALI", Value("Nm"));
+        // The gateway verifies with the real WpSipsPapss ownership rule: AppHdr From and Assgne must both be the signer.
+        var replyDocument = new System.Xml.XmlDocument { PreserveWhitespace = true };
+        replyDocument.LoadXml(harness.Gateway_.Submitted.Single());
+        Assert.True(SIPS.XMLDsig.Xades.Helpers.XmlSecurityHelpers.CheckTransactionOwnerAgainstCertificate(replyDocument, PostgresHarness.LocalBic));
+        Assert.False(SIPS.XMLDsig.Xades.Helpers.XmlSecurityHelpers.CheckTransactionOwnerAgainstCertificate(replyDocument, PostgresHarness.ForeignBic));
 
         var lookup = await Lookup(harness, provider, "PAPSS-MSG-000001", operations: true);
         Assert.Equal("COMPLETED", lookup["status"]!.GetValue<string>());
