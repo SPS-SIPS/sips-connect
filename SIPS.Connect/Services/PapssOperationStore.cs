@@ -104,7 +104,7 @@ public sealed class PapssOperationStore(IStorageBroker db, PapssFacingOptions op
         await using var transaction = await db.BeginTransactionAsync(ct);
         // Lock the correlated operation so two different results for the same operation cannot both complete it.
         var operation = await db.PapssOperations
-            .FromSqlInterpolated($@"SELECT * FROM papss_operations
+            .FromSqlInterpolated($@"SELECT *, xmin FROM papss_operations
                 WHERE direction = 'OUTBOUND' AND operation = 'VERIFICATION'
                   AND (requestmessageid = {result.RequestMessageId} OR verificationid = {result.VerificationId})
                 ORDER BY CASE WHEN requestmessageid = {result.RequestMessageId} THEN 0 ELSE 1 END, createdat

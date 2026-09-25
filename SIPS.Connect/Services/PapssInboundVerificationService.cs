@@ -102,7 +102,7 @@ public sealed class PapssInboundVerificationService(
     /// Makes Rpt/Rsn carry exactly the core-bank reason, or removes it when the bank gave none (or one
     /// that is not a valid Max35Text), instead of the builder's MISS/SUCC default.
     /// </summary>
-    internal string ApplyBankReason(string xml, string bankReason, string sourceMessageId)
+    public string ApplyBankReason(string xml, string bankReason, string sourceMessageId)
     {
         using var reader = System.Xml.XmlReader.Create(new StringReader(xml), new() { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null });
         var document = XDocument.Load(reader, LoadOptions.None);
