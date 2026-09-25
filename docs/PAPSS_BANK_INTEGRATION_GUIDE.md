@@ -75,6 +75,65 @@ For PAPSS, a successful request is acknowledged with:
 }
 ```
 
+SIPS Connect stores the verification in its PAPSS operation store before it calls WP-SIPS. So the `requestMessageId` can always be looked up, even when the call to WP-SIPS times out; see [Look up a PAPSS operation](#look-up-a-papss-operation).
+- **Resending the same message id.** If you send the same `MsgId` again with the same account, type and destination, SIPS Connect does one of the following:
+  - It returns the stored admission.
+  - It returns the stored rejection.
+  - If the earlier outcome was ambiguous, it re-submits the identical signed request, and WP-SIPS answers `EXACT_REPLAY`.
+- **Reusing a message id for a different verification.** This returns `400` with `DUPLICATE_CONFLICT`.
+
+### Look up a PAPSS operation
+
+`GET /api/v1/Gateway/Operations/{requestMessageId}` or `GET /api/v1/Gateway/Verify/{requestMessageId}`. Both need the same `Gateway` role as `POST /Verify`. `Verify/{id}` only matches bank-initiated verifications.
+
+The lookup returns the stored state and result through the `OperationResult` JsonAdapter mapping:
+
+```json
+{
+  "requestMessageId": "SIPS-4f1c2d3e4f5a6b7c8d9e0f1a",
+  "operation": "VERIFICATION",
+  "direction": "OUTBOUND",
+  "status": "COMPLETED",
+  "gatewayState": "ADMITTED",
+  "papssOutcome": "VERIFIED_MATCH",
+  "bankDeliveryState": "DELIVERED",
+  "verificationId": "SIPS-4f1c2d3e4f5a6b7c8d9e0f1a",
+  "counterpartyBic": "<DESTINATION_BIC>",
+  "verified": true,
+  "accountName": "FORTRESS GLOBAL SECURITY PRINTERS(SL)LTD",
+  "accountNumber": "0012030321735",
+  "accountType": "BBAN",
+  "currency": "SLE",
+  "reason": "MATCH",
+  "additionalInfo": null,
+  "admissionCode": "RECEIVED_AND_DURABLY_ADMITTED",
+  "reasonCode": null,
+  "replyState": null,
+  "createdAt": "2026-09-25T08:00:00.000Z",
+  "completedAt": "2026-09-25T08:00:02.310Z",
+  "deadlineAt": null,
+  "ageSeconds": 42
+}
+```
+
+The `status` field summarises three independent states:
+
+| `status` | Meaning |
+| --- | --- |
+| `PENDING` | Admitted or being submitted, and no result yet. |
+| `COMPLETED` | A PAPSS result is stored (`verified`, `accountName`, `reason`, …). This holds even if the push to your callback failed. |
+| `REJECTED` | WP-SIPS rejected the request before any external effect. `admissionCode` has the code, for example `DUPLICATE_CONFLICT`. |
+| `UNKNOWN` | The outcome of the submission is ambiguous (transport error or timeout). Retry `POST /Verify` with the same `MsgId`, or wait for the result. |
+| `EXPIRED` | The verification was still pending after `PapssFacing:Outbound:VerificationResultExpirySeconds`. This only happens when an operator configured that setting. |
+| `FAILED` | Only for enquiries that PAPSS sent to your bank: your core bank did not answer. |
+
+The three state fields are:
+- `gatewayState`: `SUBMITTING`, `ADMITTED`, `REJECTED` or `SUBMISSION_UNKNOWN`.
+- `papssOutcome`: `PENDING`, `VERIFIED_MATCH`, `VERIFIED_NO_MATCH`, `REJECTED` or `UNKNOWN`.
+- `bankDeliveryState`: `NOT_REQUIRED`, `PENDING`, `DELIVERED` or `FAILED`, for the callback push.
+
+An unknown id returns `404` with `OPERATION_NOT_FOUND`. The optional `?waitSeconds=N` parameter long-polls while the status is `PENDING`. It is capped by `PapssFacing:Lookup:MaxWaitSeconds`, which defaults to `0`, meaning long-polling is off. Use the lookup as a fallback or for reconciliation. The push callback is still the primary channel.
+
 ### Submit a payment
 
 `POST /Payment`
@@ -246,7 +305,31 @@ The callback mapping keys are `<profile>.<callback-name>`, for example `bank-uat
 }
 ```
 
-Correlate on `requestMessageId` (the value returned by `/Verify`; for PAPSS verifications SIPS Connect uses one identifier for the request BizMsgIdr, MsgId and verification id). A `verified: false` result carries `reason` (for example `MISS`) and the enquired `accountNumber`/`accountType`; `accountName` and `currency` are then `null`. The request carries `X-Idempotency-Key: <verificationId>`; process redeliveries idempotently. A 2xx response acknowledges delivery; any other outcome makes SIPS Connect answer PAPSS with HTTP 502 so the result is redelivered.
+Correlate on `requestMessageId` (the value returned by `/Verify`; for PAPSS verifications SIPS Connect uses one identifier for the request BizMsgIdr, MsgId and verification id). A `verified: false` result carries `reason` (for example `MISS`) and the enquired `accountNumber`/`accountType`; `accountName` and `currency` are then `null`. The request carries `X-Idempotency-Key: <verificationId>`. Process redeliveries idempotently.
+
+The callback is pushed asynchronously, from a durable outbox:
+- SIPS Connect first stores the signed acmt.024. It de-duplicates on the acmt.024 AppHdr `BizMsgIdr`, so a PAPSS redelivery is stored and pushed only once. Only then does it acknowledge PAPSS.
+- A worker then delivers the result to your callback.
+- A 2xx from your callback marks the push `DELIVERED`.
+- Any other status, or a transport error, is retried with exponential backoff. The defaults are 5 s initial, 300 s maximum and 10 attempts (`PapssFacing:Delivery:*`). After the last attempt the push is marked `FAILED`, and the result stays available from the lookup API.
+- A slow or failing callback no longer makes PAPSS redeliver the result.
+- Delivery is at-least-once, so you may see the same `verificationId` more than once.
+
+If a result arrives for a `requestMessageId` that SIPS Connect does not hold, it is still stored and pushed. An example is a verification submitted before the operation store was deployed. A second, different result for an operation that is already completed is stored for audit and is not pushed.
+
+### Verification enquiries from other PAPSS countries
+
+When a participant in another country verifies one of your accounts:
+1. PAPSS delivers a signed acmt.023 to SIPS Connect.
+2. SIPS Connect stores the enquiry, keyed by the PAPSS source message id.
+3. SIPS Connect calls your core bank through the existing `CB_VerificationRequest` / `CB_VerificationResponse` mappings, within `Core:CoreBankTimeoutSeconds`.
+4. SIPS Connect queues a signed acmt.024.001.03 answer for WP-SIPS and submits it from an outbox, re-sending the identical bytes if a retry is needed.
+
+The behaviour to expect:
+- **Redelivered enquiries.** PAPSS may redeliver an enquiry until SIPS Connect acknowledges it. A redelivery never calls your core bank a second time and never produces a different answer.
+- **Reason.** The answer carries exactly the `reason` your core bank returned. If you return no reason, the acmt.024 has no reason, because SIPS Connect does not add a default.
+- **Core bank failure.** If your core bank does not answer (timeout, 5xx or 4xx), SIPS Connect sends **no** answer. The enquiry is recorded as `FAILED` / `UNKNOWN`. Whether a participant may send a negative answer in that case, and with which code, is not yet established by PAPSS; see [PAPSS_OPERATION_STORE_CONFIG.md](PAPSS_OPERATION_STORE_CONFIG.md#unresolved-papss-behaviour).
+- **Lookup.** `GET /api/v1/Gateway/Operations/{PAPSS source message id}` shows the enquiry with `direction: "INBOUND"`, the answer you gave and the gateway `replyState`.
 
 Callback receivers must:
 
