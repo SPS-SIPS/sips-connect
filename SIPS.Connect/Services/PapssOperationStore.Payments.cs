@@ -560,6 +560,23 @@ public sealed partial class PapssOperationStore
     /// </summary>
     public async Task SyncInboundPaymentDecisionAsync(Guid operationId, CancellationToken ct)
     {
+        // A pacs.002 for the same payment may update the row concurrently (xmin): re-read and retry.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await SyncInboundPaymentDecisionOnceAsync(operationId, ct);
+                return;
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < 3)
+            {
+                db.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    private async Task SyncInboundPaymentDecisionOnceAsync(Guid operationId, CancellationToken ct)
+    {
         var now = Now;
         var operation = await db.PapssOperations.SingleAsync(x => x.Id == operationId, ct);
         var iso = await db.ISOMessages.AsNoTracking()
