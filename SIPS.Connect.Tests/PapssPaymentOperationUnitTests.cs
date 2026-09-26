@@ -56,6 +56,12 @@ public sealed class PapssPaymentOperationUnitTests
         Assert.Equal(PapssOutcome.Accepted, Rules.OutcomeOf("ACSP", isReturn: true, AcscOnly));
         Assert.Equal(PapssOutcome.Settled, Rules.OutcomeOf("ACSC", isReturn: true, AcscOnly));
         Assert.Equal(PapssOutcome.Settled, Rules.OutcomeOf("ACSP", isReturn: true, ["ACSC", "ACSP"]));
+        // Default (PAPSS-confirmed 2026-09-26): ACCP is the returner's authoritative return status.
+        var defaults = new SIPS.Connect.Config.PapssReturnOptions().SettledStatusList();
+        Assert.Equal(PapssOutcome.Settled, Rules.OutcomeOf("ACCP", isReturn: true, defaults));
+        Assert.Equal(PapssEventDisposition.Applied, Rules.Evaluate(PapssOutcome.Pending, null, "ACCP", isReturn: true, defaults));
+        Assert.Equal(PapssEventDisposition.DuplicateFinal, Rules.Evaluate(PapssOutcome.Settled, "ACCP", "ACSC", isReturn: true, defaults));
+        Assert.Equal(PapssOutcome.Accepted, Rules.OutcomeOf("ACCP", isReturn: false, defaults));
         // The setting only affects returns.
         Assert.Equal(PapssOutcome.Accepted, Rules.OutcomeOf("ACSP", isReturn: false, ["ACSC", "ACSP"]));
     }
@@ -150,7 +156,10 @@ public sealed class PapssPaymentOperationUnitTests
     {
         var defaults = Bind(new Dictionary<string, string?>());
         Assert.Null(defaults.Status.EnquiryMinimumAgeSeconds);
-        Assert.Equal(["ACSC"], defaults.Returns.SettledStatusList());
+        // PAPSS-confirmed 2026-09-26: the returner's authoritative return status is ACCP.
+        Assert.Equal(["ACCP", "ACSC"], defaults.Returns.SettledStatusList());
+        Assert.True(defaults.Recall.RequireSettledOriginal);
+        Assert.Equal((30, 30), (defaults.Recall.MaxAgeDays, defaults.Recall.ResponseDeadlineDays));
         DI.ValidatePapssStore(defaults);
 
         var empty = Bind(new Dictionary<string, string?> { ["PapssFacing:Status:EnquiryMinimumAgeSeconds"] = "" });
@@ -166,7 +175,14 @@ public sealed class PapssPaymentOperationUnitTests
         Assert.Equal(120, configured.Status.EnquiryMinimumAgeSeconds);
         Assert.Equal(["ACSC", "ACSP"], configured.Returns.SettledStatusList());
 
-        Assert.Throws<InvalidOperationException>(() => DI.ValidatePapssStore(Bind(new() { ["PapssFacing:Returns:SettledStatuses"] = "ACCP" })));
+        DI.ValidatePapssStore(Bind(new() { ["PapssFacing:Returns:SettledStatuses"] = "ACCP" }));
+        Assert.Throws<InvalidOperationException>(() => DI.ValidatePapssStore(Bind(new() { ["PapssFacing:Returns:SettledStatuses"] = "PDNG" })));
+        var recall = Bind(new() { ["PapssFacing:Recall:RequireSettledOriginal"] = "false", ["PapssFacing:Recall:MaxAgeDays"] = "", ["PapssFacing:Recall:ResponseDeadlineDays"] = "45" });
+        // An empty value keeps the PAPSS-confirmed default.
+        Assert.Equal((false, (int?)30, (int?)45), (recall.Recall.RequireSettledOriginal, recall.Recall.MaxAgeDays, recall.Recall.ResponseDeadlineDays));
+        DI.ValidatePapssStore(recall);
+        Assert.Throws<InvalidOperationException>(() => DI.ValidatePapssStore(Bind(new() { ["PapssFacing:Recall:MaxAgeDays"] = "0" })));
+        Assert.Throws<InvalidOperationException>(() => DI.ValidatePapssStore(Bind(new() { ["PapssFacing:Recall:ResponseDeadlineDays"] = "-1" })));
         Assert.Throws<InvalidOperationException>(() => DI.ValidatePapssStore(Bind(new() { ["PapssFacing:Returns:SettledStatuses"] = " " })));
         Assert.Throws<InvalidOperationException>(() => DI.ValidatePapssStore(Bind(new() { ["PapssFacing:Status:EnquiryMinimumAgeSeconds"] = "0" })));
     }

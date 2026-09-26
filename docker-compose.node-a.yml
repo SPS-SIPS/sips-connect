@@ -69,7 +69,10 @@ services:
       - PapssFacing__Delivery__ClaimLeaseSeconds=${PAPSS_DELIVERY_CLAIM_LEASE_SECONDS:-120}
       - PapssFacing__Lookup__MaxWaitSeconds=${PAPSS_LOOKUP_MAX_WAIT_SECONDS:-0}
       - PapssFacing__Status__EnquiryMinimumAgeSeconds=${PAPSS_STATUS_ENQUIRY_MIN_AGE_SECONDS:-}
-      - PapssFacing__Returns__SettledStatuses=${PAPSS_RETURN_SETTLED_STATUSES:-ACSC}
+      - PapssFacing__Returns__SettledStatuses=${PAPSS_RETURN_SETTLED_STATUSES:-ACCP,ACSC}
+      - PapssFacing__Recall__RequireSettledOriginal=${PAPSS_RECALL_REQUIRE_SETTLED_ORIGINAL:-true}
+      - PapssFacing__Recall__MaxAgeDays=${PAPSS_RECALL_MAX_AGE_DAYS:-30}
+      - PapssFacing__Recall__ResponseDeadlineDays=${PAPSS_RECALL_RESPONSE_DEADLINE_DAYS:-30}
       - ISO20022__SIPS=${SIPS_PEER_URL:?SIPS_PEER_URL is required}
       - ISO20022__Agent=${BANK_CODE:?BANK_CODE is required}
       - ISO20022__BIC=${BANK_CODE:?BANK_CODE is required}

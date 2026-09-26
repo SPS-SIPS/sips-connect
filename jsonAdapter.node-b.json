@@ -1155,6 +1155,39 @@
         }
       ]
     },
+    "RecallRequest": {
+      "FieldMappings": [
+        {
+          "InternalField": "Rail",
+          "UserField": "rail",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        },
+        {
+          "InternalField": "TxId",
+          "UserField": "txId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "EndToEndId",
+          "UserField": "endToEndId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Reason",
+          "UserField": "reason",
+          "Type": "string"
+        },
+        {
+          "InternalField": "RecallId",
+          "UserField": "recallId",
+          "Type": "string",
+          "OmitIfNull": true,
+          "OmitIfEmpty": true
+        }
+      ]
+    },
     "CB_CompletionNotification": {
       "FieldMappings": [
         {
@@ -1690,6 +1723,24 @@
           "InternalField": "Returns",
           "UserField": "returns",
           "Type": "object",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "Recalls",
+          "UserField": "recalls",
+          "Type": "object",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "OriginalPaymentOutcome",
+          "UserField": "originalPaymentOutcome",
+          "Type": "string",
+          "OmitIfNull": true
+        },
+        {
+          "InternalField": "ResponseOverdue",
+          "UserField": "responseOverdue",
+          "Type": "bool",
           "OmitIfNull": true
         },
         {
@@ -2448,6 +2499,50 @@
         {
           "InternalField": "ResponseMessageId",
           "UserField": "responseMessageId",
+          "Type": "string"
+        }
+      ]
+    },
+    "papss-callback-v1.CB_RecallResult": {
+      "FieldMappings": [
+        {
+          "InternalField": "RecallId",
+          "UserField": "recallId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "TxId",
+          "UserField": "txId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "EndToEndId",
+          "UserField": "endToEndId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "Outcome",
+          "UserField": "outcome",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ReasonCode",
+          "UserField": "reasonCode",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ResponderId",
+          "UserField": "responderId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "SourceMessageId",
+          "UserField": "sourceMessageId",
+          "Type": "string"
+        },
+        {
+          "InternalField": "ReceivedAt",
+          "UserField": "receivedAt",
           "Type": "string"
         }
       ]

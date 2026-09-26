@@ -58,8 +58,8 @@ public abstract class PapssOutboxWorkerBase(IServiceScopeFactory scopes, PapssFa
 
 /// <summary>
 /// Pushes stored PAPSS events (papss_operation_events with push_state PENDING) to the bank callback:
-/// acmt.024 results (CB_VerificationResult), pacs.002 payment/return statuses (CB_CompletionNotification)
-/// and inbound pacs.004 returns (CB_ReturnRequest).
+/// acmt.024 results (CB_VerificationResult), pacs.002 payment/return statuses (CB_CompletionNotification),
+/// inbound pacs.004 returns (CB_ReturnRequest) and recall answers (CB_RecallResult).
 /// </summary>
 public sealed class PapssBankPushWorker(IServiceScopeFactory scopes, PapssFacingOptions options, XadesOptions xades, IParticipantCallbackContext context, IPapssOutboxSignal signal, TimeProvider clock, ILogger<PapssBankPushWorker> logger)
     : PapssOutboxWorkerBase(scopes, options, signal, clock, logger)
@@ -321,6 +321,9 @@ public sealed class PapssStoreRetentionWorker(IServiceScopeFactory scopes, Papss
             .Where(x => x.CompletedAt != null && x.CompletedAt < cutoff && x.BankDeliveryState != PapssDeliveryState.Pending)
             .Where(x => !db.PapssOutboundResponses.Any(r => r.OperationId == x.Id && r.State == PapssResponseState.Pending))
             .Where(x => !db.PapssOperationEvents.Any(e => e.OperationId == x.Id && e.PushState == PapssDeliveryState.Pending))
+            // A payment with an open recall is kept: the recall's answers are attributed through it.
+            .Where(x => !db.PapssOperations.Any(r => r.OriginalOperationId == x.Id && r.Operation == PapssOperationType.Recall
+                && (r.PapssOutcome == PapssOutcome.RecallPending || r.PapssOutcome == PapssOutcome.RecallAcceptedByPapss)))
             .ExecuteDeleteAsync(ct);
         if (operations + events > 0)
             logger.LogInformation("PAPSS store retention purged {Operations} operations and {Events} events older than {Cutoff:o}", operations, events, cutoff);

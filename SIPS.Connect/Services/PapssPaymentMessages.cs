@@ -194,7 +194,7 @@ public static class PapssPaymentMessages
 
     // ----------------------------------------------------------------------------------------------
 
-    private static (XElement Header, XElement Document) Load(string xml, string documentRoot)
+    internal static (XElement Header, XElement Document) Load(string xml, string documentRoot)
     {
         XDocument parsed;
         try
@@ -212,7 +212,7 @@ public static class PapssPaymentMessages
     /// The provenance supplement, only where the gateway puts it (the transaction's SplmtryData/Envlp) and only once. It must
     /// name the same PAPSS source message as the AppHdr; an unknown source value is refused rather than guessed.
     /// </summary>
-    private static PapssProvenance? Provenance(XElement header, XElement transaction)
+    internal static PapssProvenance? Provenance(XElement header, XElement transaction)
     {
         XNamespace p = PapssFieldProvenance.Namespace;
         var all = header.Document!.Descendants(p + "PapssProvenance").ToList();
@@ -236,31 +236,31 @@ public static class PapssPaymentMessages
         return new PapssProvenance(source, Value(envelope, "RawEvidenceReference"), fields);
     }
 
-    private static IEnumerable<XElement> Children(XElement? parent, string name) => parent?.Elements().Where(x => x.Name.LocalName == name) ?? [];
-    private static XElement? Child(XElement? parent, string name) => Children(parent, name).FirstOrDefault();
-    private static XElement? Path(XElement? parent, params string[] names) => names.Aggregate(parent, (current, name) => Child(current, name));
-    private static string? Text(XElement? parent, string name) => NullIfEmpty(Child(parent, name)?.Value);
-    private static string? ReasonCode(XElement? choice) => Text(choice, "Cd") ?? Text(choice, "Prtry");
-    private static string? Agent(XElement? agent)
+    internal static IEnumerable<XElement> Children(XElement? parent, string name) => parent?.Elements().Where(x => x.Name.LocalName == name) ?? [];
+    internal static XElement? Child(XElement? parent, string name) => Children(parent, name).FirstOrDefault();
+    internal static XElement? Path(XElement? parent, params string[] names) => names.Aggregate(parent, (current, name) => Child(current, name));
+    internal static string? Text(XElement? parent, string name) => NullIfEmpty(Child(parent, name)?.Value);
+    internal static string? ReasonCode(XElement? choice) => Text(choice, "Cd") ?? Text(choice, "Prtry");
+    internal static string? Agent(XElement? agent)
     {
         var institution = Child(agent, "FinInstnId");
         return Text(institution, "BICFI") ?? Text(Child(institution, "Othr"), "Id") ?? Text(Child(institution, "ClrSysMmbId"), "MmbId");
     }
 
-    private static decimal? Amount(XElement? amount)
+    internal static decimal? Amount(XElement? amount)
         => amount is not null && decimal.TryParse(amount.Value.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : null;
 
-    private static string? Currency(XElement? amount)
+    internal static string? Currency(XElement? amount)
     {
         var code = amount?.Attribute("Ccy")?.Value.Trim().ToUpperInvariant();
         return code is { Length: 3 } && code.All(c => c is >= 'A' and <= 'Z') ? code : null;
     }
 
-    private static DateTimeOffset? Timestamp(string? value)
+    internal static DateTimeOffset? Timestamp(string? value)
         => value is not null && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed) ? parsed : null;
 
-    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    private static string Required(string? value, string name) => value ?? throw new InvalidDataException($"The PAPSS message is missing {name}.");
+    internal static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    internal static string Required(string? value, string name) => value ?? throw new InvalidDataException($"The PAPSS message is missing {name}.");
 }
 
 /// <summary>

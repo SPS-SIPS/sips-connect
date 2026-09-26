@@ -153,6 +153,10 @@ public sealed partial class PapssOperationStore
     /// </summary>
     public async Task<PapssIngestResult> IngestPaymentStatusAsync(string rawXml, PapssStatusReport report, CancellationToken ct)
     {
+        // [ISOLATION]: the answer to our camt.056 carries the recalled payment's TxId/EndToEndId; it must never be applied to
+        // (or even correlated with) the payment. OrgnlMsgNmId camt.056.* routes it to the recall only.
+        if (PapssRecallMessages.IsRecallAnswer(report.OriginalMessageType))
+            return await IngestRecallStatusAsync(rawXml, report, ct);
         var now = Now;
         var settledReturn = options.Returns.SettledStatusList();
         var kinds = KindsFor(report.OriginalMessageType);
@@ -397,6 +401,9 @@ public sealed partial class PapssOperationStore
                     payment.PapssOutcome = PapssOutcome.Returned;
                     payment.CompletedAt ??= now;
                     payment.UpdatedAt = now;
+                    // A positive answer to our recall arrives as this pacs.004: it also closes the payment's open recall.
+                    if (await CloseOpenRecallByReturnAsync(payment, message, raw, now, ct) is { } closed)
+                        note = $"closes recall {closed.Recall.RequestMessageId} (RECALL_RETURNED); {closed.Note}";
                 }
             }
 
@@ -464,8 +471,10 @@ public sealed partial class PapssOperationStore
                 if (payment is null)
                     logger.LogWarning("PAPSS pacs.004 {SourceMessageId} (RtrId={ReturnId}) matches no stored outbound payment (OrgnlTxId={OriginalTxId}, OrgnlEndToEndId={OriginalEndToEndId}); stored and pushed to the bank",
                         message.SourceMessageId, message.ReturnId, message.OriginalTxId, message.OriginalEndToEndId);
-                else if (note is not null)
+                else if (disposition == PapssEventDisposition.Conflict)
                     logger.LogError("PAPSS pacs.004 {SourceMessageId}: {Note}", message.SourceMessageId, note);
+                else if (note is not null)
+                    logger.LogInformation("PAPSS pacs.004 {SourceMessageId} (RtrId={ReturnId}) {Note}", message.SourceMessageId, message.ReturnId, note);
                 return new PapssIngestResult(false, operation, payment is null ? PapssCorrelation.None : PapssCorrelation.TransactionId, disposition, true, note);
             }
             catch (DbUpdateException error) when (IsUniqueViolation(error))
@@ -692,7 +701,7 @@ public sealed partial class PapssOperationStore
         => (await db.PapssOperations.AsNoTracking().Where(x => x.Operation == PapssOperationType.Payment && x.EndToEndId == endToEndId).ToListAsync(ct))
             .OrderBy(x => x.Direction == PapssDirection.Outbound ? 0 : 1).ThenByDescending(x => x.CreatedAt).FirstOrDefault();
 
-    /// <summary>Returns and status enquiries that refer to this operation.</summary>
+    /// <summary>Returns, status enquiries and recalls that refer to this operation.</summary>
     public Task<List<PapssOperation>> FindLinkedAsync(Guid operationId, CancellationToken ct)
         => db.PapssOperations.AsNoTracking().Where(x => x.OriginalOperationId == operationId).OrderBy(x => x.CreatedAt).ToListAsync(ct);
 
@@ -703,10 +712,11 @@ public sealed partial class PapssOperationStore
                 .OrderBy(x => x.ReceivedAt).ThenBy(x => x.Id))
             .ToListAsync(ct);
 
-    /// <summary>Operator view: received pacs.002/pacs.004 that were not attached (uncorrelated / mismatch) or that conflict.</summary>
+    /// <summary>Operator view: received pacs.002/pacs.004/camt.029 that were not attached (uncorrelated / mismatch) or that conflict.</summary>
     public Task<List<PapssOperationEvent>> UnresolvedStatusEventsAsync(int limit, CancellationToken ct)
         => EventSummaries(db.PapssOperationEvents.AsNoTracking()
-                .Where(x => (x.EventType == PapssEventTypes.PaymentStatus || x.EventType == PapssEventTypes.ReturnReceived)
+                .Where(x => (x.EventType == PapssEventTypes.PaymentStatus || x.EventType == PapssEventTypes.ReturnReceived
+                             || x.EventType == PapssEventTypes.RecallStatus || x.EventType == PapssEventTypes.RecallResolution)
                             && (x.Disposition == PapssEventDisposition.Uncorrelated || x.Disposition == PapssEventDisposition.Conflict || x.Disposition == PapssEventDisposition.UnknownStatus))
                 .OrderByDescending(x => x.ReceivedAt).ThenByDescending(x => x.Id)
                 .Take(Math.Clamp(limit, 1, 500)))
