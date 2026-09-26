@@ -48,6 +48,12 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
                         await paymentCallbacks.HandleReturnAsync(route, body, ct);
                         return Ok();
                     }
+                    // camt.029 (the beneficiary refused our recall): stored and correlated to the recall, never to the payment.
+                    if (definition == PapssRecallMessages.Camt029)
+                    {
+                        await paymentCallbacks.HandleRecallResolutionAsync(route, body, ct);
+                        return Ok();
+                    }
                 }
                 var handled = await _isoService.Handle(body, ct);
                 if (definition == "acmt.024.001.03" && !string.IsNullOrEmpty(handled))

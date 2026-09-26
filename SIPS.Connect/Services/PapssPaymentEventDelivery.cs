@@ -18,7 +18,8 @@ namespace SIPS.Connect.Services;
 /// <summary>
 /// Pushes stored PAPSS payment events to the bank, using the existing callback mappings:
 /// PAYMENT_STATUS (pacs.002 for a payment or a return) -> CB_CompletionNotification;
-/// RETURN_RECEIVED (inbound pacs.004) -> CB_ReturnRequest. The PAPSS callback mapping profile and
+/// RETURN_RECEIVED (inbound pacs.004) -> CB_ReturnRequest; RECALL_STATUS / RECALL_RESOLUTION / RECALL_RETURNED (answers to our
+/// camt.056) -> CB_RecallResult. The PAPSS callback mapping profile and
 /// callback URL apply (the push worker establishes the participant binding). The domestic SmartVista
 /// path is not involved.
 /// </summary>
@@ -36,6 +37,9 @@ public sealed class PapssPaymentEventDelivery(
         WriteIndented = false,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
+
+    /// <summary>Bank push of a recall answer; resolved under the PAPSS callback mapping profile ({profile}.CB_RecallResult).</summary>
+    public const string RecallResultMapping = "CB_RecallResult";
 
     public sealed record Push(string Url, string Mapping, Dictionary<string, string> Headers, object Body, string Label);
 
@@ -88,6 +92,36 @@ public sealed class PapssPaymentEventDelivery(
                     AdditionalInfo = message.AdditionalInfo
                 };
                 return new Push(links.Return ?? string.Empty, CoreConstants.CB_ReturnRequest, headers, body, $"pacs.004 {message.ReturnId} for {message.OriginalTxId}");
+            }
+            case PapssEventTypes.RecallStatus or PapssEventTypes.RecallResolution or PapssEventTypes.RecallReturned:
+            {
+                if (operation is not { Operation: PapssOperationType.Recall })
+                    throw new InvalidDataException($"PAPSS recall event {e.SourceMessageId} is not attached to a recall.");
+                // The outcome this event reported (not the recall's current one): each answer is pushed as it happened.
+                var outcome = PapssRecallRules.OutcomeOfEvent(e.EventType, e.Status) ?? throw new InvalidDataException($"PAPSS recall event {e.SourceMessageId} has no recall outcome.");
+                var responderId = e.EventType switch
+                {
+                    PapssEventTypes.RecallStatus => PapssRecallMessages.StatusId(raw),
+                    PapssEventTypes.RecallResolution => PapssRecallMessages.ParseResolution(raw).ResponderId,
+                    _ => PapssPaymentMessages.ParseReturn(raw).ReturnId
+                };
+                var outcomeName = UpperSnakeEnumConverter<PapssOutcome>.Of(outcome);
+                headers["X-Idempotency-Key"] = $"{operation.RequestMessageId}:{outcomeName}";
+                headers["X-Recall-Id"] = operation.RequestMessageId;
+                headers["X-Papss-Operation"] = UpperSnakeEnumConverter<PapssOperationType>.Of(PapssOperationType.Recall);
+                if (!string.IsNullOrWhiteSpace(operation.OriginalTxId)) headers["X-Transaction-Id"] = operation.OriginalTxId;
+                var body = new PapssRecallResultPush
+                {
+                    RecallId = operation.RequestMessageId,
+                    TxId = operation.OriginalTxId,
+                    EndToEndId = operation.OriginalEndToEndId,
+                    Outcome = outcomeName,
+                    ReasonCode = e.ReasonCode,
+                    ResponderId = responderId,
+                    SourceMessageId = e.SourceMessageId,
+                    ReceivedAt = PapssOperationResult.Iso(e.ReceivedAt)!
+                };
+                return new Push(links.CompletionNotification ?? string.Empty, RecallResultMapping, headers, body, $"recall {operation.RequestMessageId} {outcomeName}");
             }
             default:
                 throw new InvalidDataException($"PAPSS event type {e.EventType} is not pushed to the bank.");

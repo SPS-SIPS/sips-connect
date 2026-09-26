@@ -21,6 +21,12 @@ public interface IPapssPaymentService
     Task<PapssAdmissionResponse> PayAsync(PapssParticipantBinding participant, PaymentRequestDto request, CancellationToken ct);
     Task<PapssAdmissionResponse> ReturnAsync(PapssParticipantBinding participant, ReturnPaymentRequestDto request, CancellationToken ct);
     Task<PapssStatusResult> StatusAsync(PapssParticipantBinding participant, StatusRequestDto request, CancellationToken ct);
+    /// <summary>
+    /// Recalls (camt.056) one of this participant's settled OUTBOUND PAPSS payments. The recall is stored before submission;
+    /// the admission handling is the payment one (recall id = idempotency key).
+    /// </summary>
+    Task<PapssAdmissionResponse> RecallAsync(PapssParticipantBinding participant, PapssRecallRequest request, CancellationToken ct)
+        => throw new NotSupportedException("This PAPSS payment service cannot recall payments.");
     /// <summary>Bank-facing view of a stored operation, with payment fields and status history where relevant.</summary>
     Task<PapssOperationResult> DescribeAsync(PapssOperation operation, CancellationToken ct);
 }
@@ -65,6 +71,70 @@ public sealed class PapssPaymentService(
         var (operation, created) = await store.CreateOutboundReturnAsync(prepared, request, fingerprint, original, ct);
         if (!created) return await ReplayAsync(participant, operation, fingerprint, "return", ct);
         return await SubmitAsync(participant, operation, prepared.SignedXml, ct);
+    }
+
+    public async Task<PapssAdmissionResponse> RecallAsync(PapssParticipantBinding participant, PapssRecallRequest request, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Rail) && !request.Rail.Trim().Equals("PAPSS", StringComparison.OrdinalIgnoreCase))
+            throw new ParticipantRailException("OPERATION_NOT_SUPPORTED", "Recall is only available on the PAPSS rail.");
+        var reason = PapssRecallMessages.NormalizeReason(request.Reason);
+        var txId = NullIfBlank(request.TxId);
+        var endToEndId = NullIfBlank(request.EndToEndId);
+        if (txId is null && endToEndId is null) throw new ArgumentException("The transaction identifier (txId) or end-to-end identifier of the payment to recall is required.");
+        var recallId = NullIfBlank(request.RecallId);
+        if (recallId is not null && !PapssRecallMessages.IsRecallId(recallId))
+            throw new ArgumentException("recallId must be 'SIPS-' followed by 24 lowercase hexadecimal characters (or be omitted).");
+
+        var payment = await FindRecallablePaymentAsync(txId, endToEndId, ct);
+        var fingerprint = Hash("RECALL", payment.TxId, payment.EndToEndId, reason);
+        if (recallId is not null && await store.FindOutboundRecallAsync(recallId, ct) is { } existing)
+            return await ReplayAsync(participant, existing, fingerprint, "recall", ct);
+
+        // Preconditions for a NEW recall (a replay above is answered from the stored recall whatever the payment state now is).
+        if (payment.GatewayState == PapssGatewayState.Rejected || payment.PapssOutcome is PapssOutcome.Rejected or PapssOutcome.Returned
+            || options.Recall.RequireSettledOriginal && payment.PapssOutcome != PapssOutcome.Settled)
+            throw new ParticipantRailException("ORIGINAL_NOT_SETTLED",
+                $"Payment {payment.TxId} is {UpperSnakeEnumConverter<PapssOutcome>.Of(payment.PapssOutcome)}; only a settled PAPSS payment can be recalled.");
+        // PAPSS-confirmed 2026-09-26: recall is possible up to 30 days after settlement (PapssFacing:Recall:MaxAgeDays).
+        var settledAt = payment.CompletedAt ?? payment.StatusAt ?? payment.CreatedAt;
+        if (options.Recall.MaxAgeDays is { } maxAge && clock.GetUtcNow() - settledAt > TimeSpan.FromDays(maxAge))
+            throw new ParticipantRailException("RECALL_WINDOW_EXPIRED", $"Payment {payment.TxId} settled more than {maxAge} days ago and can no longer be recalled.");
+        if (await store.FindOpenRecallAsync(payment.Id, ct) is { } open)
+            throw new ParticipantRailException("RECALL_ALREADY_OPEN", $"Payment {payment.TxId} already has an open recall {open.RequestMessageId}; only one recall per payment may be open.");
+        if (payment.MsgId is null || payment.EndToEndId is null || payment.Amount is null || string.IsNullOrWhiteSpace(payment.Currency))
+            throw new ArgumentException($"Payment {payment.TxId} is stored without its message id, end-to-end id, amount or currency and cannot be recalled.");
+
+        var id = recallId ?? PapssFacingSipsClient.Id();
+        var createdAt = clock.GetUtcNow();
+        var unsigned = PapssRecallMessages.BuildRecallRequest(new PapssRecallInstruction(
+            id, participant.Bic, options.RemoteWpSipsIdentity, payment.MsgId, payment.EndToEndId, payment.TxId!, payment.Amount.Value, payment.Currency!, reason, createdAt));
+        var signed = new PapssSignedMessage(id, papss.SignForSubmission(unsigned, id), createdAt, id);
+        var (operation, created) = await store.CreateOutboundRecallAsync(signed, payment, reason, fingerprint, ct);
+        if (!created) return await ReplayAsync(participant, operation, fingerprint, "recall", ct);
+        logger.LogInformation("PAPSS recall {RecallId} of payment {TxId} (reason {Reason}) stored; submitting camt.056", id, payment.TxId, reason);
+        return await SubmitAsync(participant, operation, signed.SignedXml, ct);
+    }
+
+    /// <summary>The OUTBOUND payment a recall names (only the debtor agent may recall: a received payment is refused).</summary>
+    private async Task<PapssOperation> FindRecallablePaymentAsync(string? txId, string? endToEndId, CancellationToken ct)
+    {
+        PapssOperation? payment;
+        if (txId is not null)
+        {
+            payment = await store.FindOutboundPaymentByTxIdAsync(txId, ct);
+            if (payment is not null && endToEndId is not null && payment.EndToEndId is not null && !string.Equals(endToEndId, payment.EndToEndId, StringComparison.Ordinal))
+                throw new ArgumentException("The end-to-end identifier does not match the stored PAPSS payment for this transaction identifier.");
+        }
+        else
+        {
+            var matches = await store.FindOutboundPaymentsByEndToEndIdAsync(endToEndId!, ct);
+            if (matches.Count > 1) throw new ArgumentException("More than one PAPSS payment has this end-to-end identifier; recall it by txId.");
+            payment = matches.SingleOrDefault();
+        }
+        if (payment is not null) return payment;
+        if (await store.HasInboundPaymentAsync(txId, endToEndId, ct))
+            throw new ParticipantRailException("RECALL_NOT_ALLOWED", "Only a payment this participant sent (OUTBOUND) can be recalled; this payment was received.");
+        throw new ParticipantRailException("ORIGINAL_PAYMENT_NOT_FOUND", "No PAPSS payment sent by this participant is stored for this identifier.");
     }
 
     public async Task<PapssStatusResult> StatusAsync(PapssParticipantBinding participant, StatusRequestDto request, CancellationToken ct)
@@ -132,7 +202,7 @@ public sealed class PapssPaymentService(
         var result = PapssOperationResult.From(operation, reply, clock.GetUtcNow(), options.Outbound.VerificationResultExpirySeconds);
         if (!PapssOperationResult.IsPaymentLike(operation)) return result;
         var original = operation.OriginalOperationId is { } originalId ? await store.FindByIdAsync(originalId, ct) : null;
-        return result.WithPayment(operation, await store.StatusHistoryAsync(operation.Id, ct), original, await store.FindLinkedAsync(operation.Id, ct));
+        return result.WithPayment(operation, await store.StatusHistoryAsync(operation.Id, ct), original, await store.FindLinkedAsync(operation.Id, ct), clock.GetUtcNow());
     }
 
     // ----------------------------------------------------------------------------------------
@@ -174,6 +244,8 @@ public sealed class PapssPaymentService(
             throw;
         }
         await store.MarkGatewayAdmittedAsync(operation.Id, admission.Code, CancellationToken.None);
+        if (operation.Operation == PapssOperationType.Recall)
+            await store.RecordRecallDeadlineAsync(operation.Id, CancellationToken.None);
         return admission;
     }
 
@@ -198,6 +270,7 @@ public sealed class PapssPaymentService(
     private static string Hash(params string?[] parts)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\u001f', parts.Select(p => p?.Trim() ?? string.Empty))))).ToLowerInvariant();
     private static string? Code(string? value) => value?.Trim().ToUpperInvariant();
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static string Amount(decimal value) => value.ToString("0.#####", CultureInfo.InvariantCulture);
     private static string Required(string? value, string name) => !string.IsNullOrWhiteSpace(value) ? value : throw new ArgumentException($"Required PAPSS field missing: {name}.");
 }

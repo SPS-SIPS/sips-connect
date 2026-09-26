@@ -53,6 +53,12 @@ public sealed class PapssOperationResult
     public string? OriginalRequestMessageId { get; set; }
     /// <summary>Returns (and their outcome) recorded against this payment, e.g. "OUTBOUND RTN-1 SETTLED".</summary>
     public List<string>? Returns { get; set; }
+    /// <summary>Recalls (camt.056) of this payment, oldest first. A recall's outcome never changes the payment's own state.</summary>
+    public List<PapssRecallSummary>? Recalls { get; set; }
+    /// <summary>RECALL: the current outcome of the recalled payment (shown separately: the recall never changes it except by pacs.004).</summary>
+    public string? OriginalPaymentOutcome { get; set; }
+    /// <summary>RECALL: still open after its record-only beneficiary response deadline (deadlineAt). Null when not applicable.</summary>
+    public bool? ResponseOverdue { get; set; }
     /// <summary>INBOUND payment: state of the PAPSS decision (pacs.002 ACCP/RJCT) in the decision outbox.</summary>
     public string? DecisionState { get; set; }
     public List<PapssStatusHistoryEntry>? StatusHistory { get; set; }
@@ -91,10 +97,10 @@ public sealed class PapssOperationResult
         AgeSeconds = Math.Max(0, (long)(now - op.CreatedAt).TotalSeconds)
     };
 
-    public static bool IsPaymentLike(PapssOperation op) => op.Operation is PapssOperationType.Payment or PapssOperationType.Return or PapssOperationType.StatusEnquiry;
+    public static bool IsPaymentLike(PapssOperation op) => op.Operation is PapssOperationType.Payment or PapssOperationType.Return or PapssOperationType.StatusEnquiry or PapssOperationType.Recall;
 
     /// <summary>Adds the payment fields and the received-status history (payments, returns, status enquiries).</summary>
-    public PapssOperationResult WithPayment(PapssOperation op, IEnumerable<PapssOperationEvent> history, PapssOperation? original, IEnumerable<PapssOperation> linked)
+    public PapssOperationResult WithPayment(PapssOperation op, IEnumerable<PapssOperationEvent> history, PapssOperation? original, IEnumerable<PapssOperation> linked, DateTimeOffset now = default)
     {
         TxId = op.TxId;
         EndToEndId = op.EndToEndId;
@@ -102,7 +108,8 @@ public sealed class PapssOperationResult
         Amount = op.Amount;
         LocalInstrument = op.LocalInstrument;
         PaymentStatus = op.PaymentStatus;
-        PaymentOutcome = UpperSnakeEnumConverter<Outcome>.Of(op.PapssOutcome);
+        // A recall's outcome is papssOutcome (RECALL_*); paymentOutcome stays reserved for payment/return outcomes.
+        PaymentOutcome = op.Operation == PapssOperationType.Recall ? null : UpperSnakeEnumConverter<Outcome>.Of(op.PapssOutcome);
         StatusReasonCode = op.StatusReasonCode;
         StatusAt = Iso(op.StatusAt);
         StatusConflict = op.StatusConflict;
@@ -113,6 +120,13 @@ public sealed class PapssOperationResult
         var returns = linked.Where(x => x.Operation == PapssOperationType.Return)
             .Select(x => $"{UpperSnakeEnumConverter<PapssDirection>.Of(x.Direction)} {x.ReturnId} {UpperSnakeEnumConverter<Outcome>.Of(x.PapssOutcome)}").ToList();
         Returns = returns.Count == 0 ? null : returns;
+        var recalls = linked.Where(x => x.Operation == PapssOperationType.Recall).Select(x => PapssRecallSummary.From(x, now)).ToList();
+        Recalls = recalls.Count == 0 ? null : recalls;
+        if (op.Operation == PapssOperationType.Recall)
+        {
+            OriginalPaymentOutcome = original is null ? null : UpperSnakeEnumConverter<Outcome>.Of(original.PapssOutcome);
+            ResponseOverdue = RecallOverdue(op, now);
+        }
         if (op.Direction == PapssDirection.Inbound && op.Operation == PapssOperationType.Payment)
             DecisionState = op.GatewayState switch
             {
@@ -128,6 +142,14 @@ public sealed class PapssOperationResult
     /// <summary>Derives one summary status from the three independent state dimensions.</summary>
     public static string Summarize(PapssOperation op, PapssOutboundResponse? reply, DateTimeOffset now, int? outboundExpirySeconds)
     {
+        if (op.Operation == PapssOperationType.Recall)
+        {
+            // Only RECALL_RETURNED completes a recall; ACCP (RECALL_ACCEPTED_BY_PAPSS) is accepted for processing, still pending.
+            if (op.PapssOutcome == Outcome.RecallReturned) return Completed;
+            if (op.PapssOutcome is Outcome.RecallRejectedByPapss or Outcome.RecallRejectedByBeneficiary or Outcome.Rejected || op.GatewayState == PapssGatewayState.Rejected) return Rejected;
+            if (op.GatewayState == PapssGatewayState.SubmissionUnknown && op.PapssOutcome == Outcome.RecallPending) return Unknown;
+            return Pending;
+        }
         if (IsPaymentLike(op))
         {
             if (op.PapssOutcome is Outcome.Settled or Outcome.Returned) return Completed;
@@ -157,6 +179,9 @@ public sealed class PapssOperationResult
         if (reply?.State == PapssResponseState.Failed) return Unknown;
         return Pending;
     }
+
+    internal static bool? RecallOverdue(PapssOperation recall, DateTimeOffset now)
+        => recall.DeadlineAt is { } deadline ? PapssRecallRules.IsOpen(recall.PapssOutcome) && now > deadline : null;
 
     internal static string? Iso(DateTimeOffset? value) => value?.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 }
@@ -201,5 +226,42 @@ public sealed class PapssStatusHistoryEntry
         Disposition = e.Disposition,
         PushState = UpperSnakeEnumConverter<PapssDeliveryState>.Of(e.PushState),
         Note = e.Note
+    };
+}
+
+/// <summary>One recall of a payment (jsonAdapter OperationResult.recalls).</summary>
+public sealed class PapssRecallSummary
+{
+    public string RecallId { get; set; } = string.Empty;
+    /// <summary>PENDING, COMPLETED (funds returned), REJECTED or UNKNOWN.</summary>
+    public string Status { get; set; } = string.Empty;
+    public string PapssOutcome { get; set; } = string.Empty;
+    public string GatewayState { get; set; } = string.Empty;
+    /// <summary>The bank's recall reason (camt.056 CxlRsnInf/Rsn/Cd).</summary>
+    public string? Reason { get; set; }
+    /// <summary>Reason of the answer: pacs.002 StsRsnInf (RJCT), camt.029 CxlStsRsnInf or pacs.004 RtrRsnInf.</summary>
+    public string? AnswerReasonCode { get; set; }
+    /// <summary>RtrId of the pacs.004 that returned the funds.</summary>
+    public string? ReturnId { get; set; }
+    public string CreatedAt { get; set; } = string.Empty;
+    public string? CompletedAt { get; set; }
+    public string? DeadlineAt { get; set; }
+    public bool? ResponseOverdue { get; set; }
+    public bool? StatusConflict { get; set; }
+
+    public static PapssRecallSummary From(PapssOperation x, DateTimeOffset now) => new()
+    {
+        RecallId = x.RequestMessageId,
+        Status = PapssOperationResult.Summarize(x, null, now, null),
+        PapssOutcome = UpperSnakeEnumConverter<Outcome>.Of(x.PapssOutcome),
+        GatewayState = UpperSnakeEnumConverter<PapssGatewayState>.Of(x.GatewayState),
+        Reason = x.Reason,
+        AnswerReasonCode = x.StatusReasonCode,
+        ReturnId = x.ReturnId,
+        CreatedAt = PapssOperationResult.Iso(x.CreatedAt)!,
+        CompletedAt = PapssOperationResult.Iso(x.CompletedAt),
+        DeadlineAt = PapssOperationResult.Iso(x.DeadlineAt),
+        ResponseOverdue = PapssOperationResult.RecallOverdue(x, now),
+        StatusConflict = x.StatusConflict ? true : null
     };
 }

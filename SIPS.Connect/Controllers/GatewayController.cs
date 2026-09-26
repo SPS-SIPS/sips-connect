@@ -85,19 +85,26 @@ public class GatewayController(
     public Task<ActionResult> GetReturnOperation([FromRoute] string returnId, [FromQuery] int? waitSeconds, CancellationToken ct)
         => LookupAsync(returnId, "returnId", ct => papssStore.FindReturnAsync(returnId, ct), "No PAPSS return is stored for this returnId.", waitSeconds, ct);
 
+    /// <summary>Pull API: a recall (camt.056) by its recallId, with its answers and the recalled payment's outcome.</summary>
+    [HttpGet("Recall/{recallId}")]
+    [Authorize(Roles = Gateway)]
+    public Task<ActionResult> GetRecall([FromRoute] string recallId, [FromQuery] int? waitSeconds, CancellationToken ct)
+        => LookupAsync(recallId, "recallId", ct => papssStore.FindOutboundRecallAsync(recallId, ct), "No PAPSS recall is stored for this recallId.", waitSeconds, ct);
+
     /// <summary>Pull API: the stored PAPSS payment by EndToEndId (<c>?endToEndId=</c>).</summary>
     [HttpGet("Operations")]
     [Authorize(Roles = Gateway)]
     public Task<ActionResult> FindOperation([FromQuery] string? endToEndId, [FromQuery] int? waitSeconds, CancellationToken ct)
         => LookupAsync(endToEndId ?? string.Empty, "endToEndId", ct => papssStore.FindPaymentByEndToEndIdAsync(endToEndId!, ct), "No PAPSS payment is stored for this endToEndId.", waitSeconds, ct);
 
-    /// <summary>Operator view: received PAPSS pacs.002/pacs.004 that are uncorrelated, conflicting or carry an unknown status.</summary>
+    /// <summary>Operator view: received PAPSS pacs.002/pacs.004/camt.029 that are uncorrelated, conflicting or carry an unknown status.</summary>
     [HttpGet("Operations/Unresolved")]
     [Authorize(Roles = Gateway + "," + Recon)]
     public async Task<ActionResult> UnresolvedPapssEvents([FromQuery] int limit = 50, CancellationToken ct = default)
         => Ok((await papssStore.UnresolvedStatusEventsAsync(limit, ct)).Select(e => new
         {
             receivedAt = PapssOperationResult.Iso(e.ReceivedAt),
+            eventType = e.EventType,
             messageType = e.MessageType,
             sourceMessageId = e.SourceMessageId,
             status = e.Status,
@@ -275,6 +282,40 @@ public class GatewayController(
     }
 
 
+    /// <summary>
+    /// Recalls (camt.056.001.08) one of this participant's settled OUTBOUND PAPSS payments. The recall is stored before it is
+    /// submitted; the response is the gateway admission (requestMessageId = recallId). PAPSS's answer and the beneficiary's
+    /// answer arrive later on the bank callback (CB_RecallResult) and on GET Recall/{recallId}.
+    /// </summary>
+    [HttpPost("Recall")]
+    [Authorize(Roles = Gateway)]
+    public async Task<ActionResult> Recall([FromBody] JsonObject body, CancellationToken ct)
+    {
+        if (_coreOptions.VerificationOnlyMode)
+        {
+            return BadRequest(new { Error = "SIPS Connect is configured in Verification Only mode. This operation is not allowed." });
+        }
+
+        var query = _jsonAdapter.ToObject<PapssRecallRequest>(_jsonAdapter.Transform(body, RecallRequest));
+        try
+        {
+            return await Papss(async () => Ok(_jsonAdapter.Transform(await _papssPayments.RecallAsync(Binding(), query, ct), PapssAdmissionMapping)));
+        }
+        catch (ParticipantRailException e) when (RecallRefusalStatus(e.Code) is { } status)
+        {
+            return StatusCode(status, new { code = e.Code, message = e.Message });
+        }
+    }
+
+    /// <summary>Recall refusals raised before anything is submitted; other codes keep the common PAPSS mapping (400).</summary>
+    private static int? RecallRefusalStatus(string code) => code switch
+    {
+        "ORIGINAL_PAYMENT_NOT_FOUND" => StatusCodes.Status404NotFound,
+        "RECALL_ALREADY_OPEN" or "ORIGINAL_NOT_SETTLED" or "RECALL_WINDOW_EXPIRED" => StatusCodes.Status409Conflict,
+        "RECALL_NOT_ALLOWED" => StatusCodes.Status422UnprocessableEntity,
+        _ => null
+    };
+
     [HttpPost("Retry/{id}")]
     [Authorize(Roles = Recon)]
     public async Task<ActionResult> Retry([FromRoute] string id, CancellationToken ct)
@@ -346,6 +387,7 @@ public class GatewayController(
     private async Task<ActionResult> Papss(Func<Task<ActionResult>> action)
     {
         try { return await action(); }
+        catch (ParticipantRailException e) when (RecallRefusalStatus(e.Code) is not null) { throw; }
         catch (ParticipantRailException e) { return BadRequest(new { code = e.Code, message = e.Message }); }
         catch (ArgumentException e) { return UnprocessableEntity(new { code = "PAPSS_VALIDATION_FAILED", message = e.Message }); }
         catch (UnauthorizedAccessException) { return StatusCode(StatusCodes.Status502BadGateway, new { code = "INVALID_SIGNED_RESPONSE", message = "The WP-SIPS response could not be authenticated." }); }

@@ -18,6 +18,7 @@ public static class Constants
     public const string FxResponse = "FxResponse";
     public const string PapssAdmissionMapping = "PapssAdmissionResponse";
     public const string OperationResultMapping = "OperationResult";
+    public const string RecallRequest = "RecallRequest";
 }
 
 public static class PointOfInitializationMethod

@@ -449,8 +449,12 @@ public static class DI
         if (options.Status.EnquiryMinimumAgeSeconds is <= 0)
             throw new InvalidOperationException("PapssFacing:Status:EnquiryMinimumAgeSeconds must be positive when set.");
         var settled = options.Returns.SettledStatusList();
-        if (settled.Count == 0 || settled.Any(x => x is not ("ACSC" or "ACSP")))
-            throw new InvalidOperationException("PapssFacing:Returns:SettledStatuses must list ACSC and/or ACSP (comma-separated).");
+        if (settled.Count == 0 || settled.Any(x => x is not ("ACCP" or "ACSC" or "ACSP")))
+            throw new InvalidOperationException("PapssFacing:Returns:SettledStatuses must list ACCP, ACSC and/or ACSP (comma-separated).");
+        if (options.Recall.MaxAgeDays is <= 0)
+            throw new InvalidOperationException("PapssFacing:Recall:MaxAgeDays must be positive when set.");
+        if (options.Recall.ResponseDeadlineDays is <= 0)
+            throw new InvalidOperationException("PapssFacing:Recall:ResponseDeadlineDays must be positive when set.");
     }
 
     private static void ValidatePapssFacing(PapssFacingOptions options, IConfiguration configuration)

@@ -25,6 +25,7 @@ public sealed class PapssFacingOptions
     public PapssStoreOptions Store { get; set; } = new();
     public PapssStatusOptions Status { get; set; } = new();
     public PapssReturnOptions Returns { get; set; } = new();
+    public PapssRecallOptions Recall { get; set; } = new();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -126,15 +127,40 @@ public sealed class PapssStatusOptions
 public sealed class PapssReturnOptions
 {
     /// <summary>
-    /// CONTRADICTED in PAPSS material (evidence §D10: ACSC in the portal flow vs ACSP in the pacs.004 response
-    /// sample). Comma-separated pacs.002 statuses that settle an outbound return (and mark the original payment
-    /// RETURNED). Default "ACSC". Allowed values: ACSC, ACSP.
+    /// Comma-separated pacs.002 statuses that settle an outbound return (and mark the original payment RETURNED).
+    /// PAPSS-confirmed 2026-09-26: the returner's authoritative return status is ACCP (the material had contradicted itself,
+    /// evidence §D10: ACSC in the portal flow vs ACSP in the pacs.004 response sample). Default "ACCP,ACSC".
+    /// Allowed values: ACCP, ACSC, ACSP.
     /// </summary>
-    public string SettledStatuses { get; set; } = "ACSC";
+    public string SettledStatuses { get; set; } = "ACCP,ACSC";
 
     public IReadOnlyCollection<string> SettledStatusList()
         => SettledStatuses.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(x => x.ToUpperInvariant()).Distinct().ToArray();
+}
+
+/// <summary>Outbound recalls (camt.056). See docs/PAPSS_OPERATION_STORE_CONFIG.md.</summary>
+public sealed class PapssRecallOptions
+{
+    /// <summary>
+    /// Only a SETTLED payment may be recalled (default true). PAPSS refuses a recall of a payment in an invalid status (error
+    /// 1017, recall evidence 2026-09-25). When false, a payment that is still PENDING/ACCEPTED may also be recalled; a REJECTED
+    /// or RETURNED payment never can.
+    /// </summary>
+    public bool RequireSettledOriginal { get; set; } = true;
+
+    /// <summary>
+    /// PAPSS-confirmed 2026-09-26: a payment can be recalled up to 30 days after settlement. POST /Recall refuses
+    /// (RECALL_WINDOW_EXPIRED) a payment settled longer ago. Must be positive; an empty value keeps the default.
+    /// </summary>
+    public int? MaxAgeDays { get; set; } = 30;
+
+    /// <summary>
+    /// PAPSS-confirmed 2026-09-26: the beneficiary has 30 days to answer. Record-only: the recall's deadlineAt is its admission
+    /// time plus this; an open recall past it is shown as responseOverdue in the lookup, its state never changes by itself.
+    /// Must be positive; an empty value keeps the default.
+    /// </summary>
+    public int? ResponseDeadlineDays { get; set; } = 30;
 }
 
 public sealed class PapssResponderTrust

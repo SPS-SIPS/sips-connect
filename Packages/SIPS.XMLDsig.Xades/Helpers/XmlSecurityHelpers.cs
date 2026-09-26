@@ -117,6 +117,14 @@ public static class XmlSecurityHelpers
             return StringComparer.OrdinalIgnoreCase.Equals(assgne.InnerText.Trim(), certificateOwner.Trim());
         }
 
+        // PAPSS recall: the camt.056 is signed by the recalling bank (Assgnr = its BIC), the camt.029 by the WP-SIPS gateway
+        // (Assgnr = the gateway identity); in both the assigner is the signer.
+        if (messageType is "urn:iso:std:iso:20022:tech:xsd:camt.056.001.08" or "urn:iso:std:iso:20022:tech:xsd:camt.029.001.09")
+        {
+            var assgnr = envelope.GetElementsByTagName("Assgnr", messageType).Cast<XmlElement>().FirstOrDefault();
+            return assgnr is not null && StringComparer.OrdinalIgnoreCase.Equals(assgnr.InnerText.Trim(), certificateOwner.Trim());
+        }
+
         if (messageType is "urn:iso:std:iso:20022:tech:xsd:admi.009.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.010.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.002.001.01" or "urn:iso:std:iso:20022:tech:xsd:pacs.028.001.05" or "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.11")
         {
             return true;
