@@ -30,4 +30,8 @@
     <Compile Include="../SIPS.Connect.Tests/GatewayProvenanceXml.cs" Link="GatewayProvenanceXml.cs" />
     <Compile Include="../SIPS.Connect.Tests/GatewayRecallXml.cs" Link="GatewayRecallXml.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Same physical fixture as SIPS.Connect.Tests; see its csproj comment for provenance. -->
+    <None Include="../SIPS.Connect.Tests/Fixtures/recall-outcome-unresolved-callback-20260926.xml" Link="Fixtures/recall-outcome-unresolved-callback-20260926.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

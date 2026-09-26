@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -675,6 +676,88 @@ public sealed class PapssRecallOperationTests
         Assert.Single(results, r => r is OkObjectResult);
         Assert.Equal(1, await harness.WithStorageAsync(db => db.PapssOperationEvents.CountAsync(x => x.EventType == PapssEventTypes.RecallClosed)));
         Assert.Equal(PapssOutcome.RecallAbandoned, (await StoredRecall(harness, recallId)).PapssOutcome);
+    }
+
+    /// <summary>
+    /// The literal, unmodified bytes the Gateway POSTed for the S3 RECALL_OUTCOME_UNRESOLVED signal (real, gateway-synthesized
+    /// pacs.002.001.12; not hand-written). See art/papss/evidence/recall-outcome-unresolved-callback-20260926.md. Fed through
+    /// the same real ingestion path production uses (parsing, correlation by OrgnlMsgId+OrgnlMsgNmId, outcome resolution),
+    /// with a payment and recall set up to exactly match the fixture's own ids (TxId=TX-OUT-1, EndToEndId=E2E-OUT-1,
+    /// recallId=SIPS-0123456789abcdef0123cccc). Cryptographic signature verification of this exact fixture is covered
+    /// separately (SIPS.Connect.Tests.PapssRecallCapturedFixtureTests): we do not have the Gateway's ephemeral test
+    /// certificate, so this test exercises everything below the signature check, as the store already does once
+    /// PapssCallbackGuard has admitted a callback.
+    /// </summary>
+    [Fact]
+    public async Task Real_gateway_captured_unresolved_callback_is_recognized_end_to_end()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        const string recallId = "SIPS-0123456789abcdef0123cccc";
+
+        // A settled OUTBOUND payment matching the fixture's own ids exactly.
+        using (var scope = provider.CreateScope())
+        {
+            var body = new JsonObject
+            {
+                ["rail"] = "PAPSS", ["agent"] = PostgresHarness.ForeignBic, ["lclInstrument"] = "USDP", ["ctgPurp"] = "CASH",
+                ["localId"] = "E2E-OUT-1", ["txId"] = "TX-OUT-1", ["amount"] = 10, ["currency"] = "USD",
+                ["drName"] = "AMINA ALI", ["drAccount"] = "100200", ["drAccountType"] = "BBAN",
+                ["crName"] = "FORTRESS GLOBAL", ["crAccount"] = "0012030321735", ["crAccountType"] = "BBAN", ["crAgentBIC"] = PostgresHarness.ForeignBic, ["narration"] = "qualification"
+            };
+            Assert.IsType<OkObjectResult>(await Controller(harness, scope.ServiceProvider).MakePayment(body, CancellationToken.None));
+        }
+        var payment = await Stored(harness, "TX-OUT-1");
+        await StatusCallback(provider, harness, PostgresHarness.StatusReport("PAPSS-S-TX-OUT-1", payment.MsgId!, "pacs.008.001.10", "TX-OUT-1", "E2E-OUT-1", "ACSC"));
+        Assert.Equal(PapssOutcome.Settled, (await Stored(harness, "TX-OUT-1")).PapssOutcome);
+
+        var admission = await Recall(harness, provider, Body("TX-OUT-1", recallId: recallId));
+        Assert.Equal(recallId, admission["requestMessageId"]!.GetValue<string>());
+
+        // 1 (signature) is covered by SIPS.Connect.Tests.PapssRecallCapturedFixtureTests; feed the exact captured bytes
+        // through the real store ingestion path here (2: correlation, 3: outcome + evidence).
+        var xml = LoadCapturedUnresolvedFixture();
+        var first = await StatusCallback(provider, harness, xml);
+        Assert.Equal((PapssCorrelation.MessageId, PapssEventDisposition.Applied, true), (first.Correlation, first.Disposition, first.Pushed));
+        var recall = await StoredRecall(harness, recallId);
+        Assert.Equal((PapssOutcome.RecallOutcomeUnresolved, "PDNG", "RECALL_OUTCOME_UNRESOLVED"), (recall.PapssOutcome, recall.PaymentStatus, recall.StatusReasonCode));
+        Assert.Null(recall.CompletedAt); // still OPEN
+
+        // 3: evidence visible via GET Recall/{id}, including the gateway's own raw-evidence hash reference.
+        var lookup = await Lookup(harness, provider, c => c.GetRecall(recallId, null, CancellationToken.None));
+        Assert.Equal(("RECALL", "UNKNOWN", "RECALL_OUTCOME_UNRESOLVED", "RECALL_OUTCOME_UNRESOLVED"), (Text(lookup, "operation"), Text(lookup, "status"), Text(lookup, "papssOutcome"), Text(lookup, "statusReasonCode")));
+        Assert.False(string.IsNullOrWhiteSpace(Text(lookup, "additionalInfo"))); // free text varies by failure mode; only non-empty is asserted
+        var history = Assert.Single(lookup["statusHistory"]!.AsArray())!;
+        Assert.Equal("1e16475886d80cd551aa9c3da532abaa926b5d9bfc80c3ed965a03624cd6e456", Text(history, "rawEvidenceReference"));
+        Assert.Equal("b4a8d1ef005c84998d6b1e504f0b8d1a", Text(history, "sourceMessageId"));
+
+        // 5: idempotent redelivery of the exact same byte-for-byte payload does not create a duplicate event or change state
+        // (the Gateway confirmed BizMsgIdr/effect id/hash are deterministic per recall, not per retry).
+        var eventsBefore = await harness.WithStorageAsync(db => db.PapssOperationEvents.CountAsync(x => x.EventType == PapssEventTypes.RecallStatus && x.OperationId == recall.Id));
+        var redelivered = await StatusCallback(provider, harness, xml);
+        Assert.True(redelivered.Duplicate);
+        Assert.Equal(eventsBefore, await harness.WithStorageAsync(db => db.PapssOperationEvents.CountAsync(x => x.EventType == PapssEventTypes.RecallStatus && x.OperationId == recall.Id)));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, (await StoredRecall(harness, recallId)).PapssOutcome);
+
+        // Still OPEN: blocks a new recall of the same payment.
+        Assert.Equal((409, "RECALL_ALREADY_OPEN"), await Refusal(harness, provider, Body("TX-OUT-1", reason: "DUPL")));
+        // The recalled payment itself was never touched by any of this.
+        Assert.Equal(PapssOutcome.Settled, (await Stored(harness, "TX-OUT-1")).PapssOutcome);
+
+        // 4: operator close releases the one-open-recall lock.
+        await CloseRecall(harness, provider, recallId, "gateway-confirmed RECALL_OUTCOME_UNRESOLVED; PAPSS side manually reconciled, no funds moved");
+        Assert.Equal(PapssOutcome.RecallAbandoned, (await StoredRecall(harness, recallId)).PapssOutcome);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        var second = (await Recall(harness, provider, Body("TX-OUT-1", reason: "FRAD")))["requestMessageId"]!.GetValue<string>();
+        Assert.NotEqual(recallId, second);
+    }
+
+    /// <summary>Loads the exact fixture bytes copied into this project (see the csproj comment) and re-checks the documented hash.</summary>
+    private static string LoadCapturedUnresolvedFixture()
+    {
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "recall-outcome-unresolved-callback-20260926.xml"));
+        Assert.Equal("031a4692cc5eafb313b55e90236f9d35437ec07dfb25e7d6037df30c53f8cac3", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(xml))).ToLowerInvariant());
+        return xml;
     }
 
     // ---------------------------------------------------------------------------------------------

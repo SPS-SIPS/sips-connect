@@ -24,5 +24,9 @@
     <None Include="../docs/schemas/SPS.PAPSS.PROVENANCE.001.xsd" Link="ProvenanceSchemas/SPS.PAPSS.PROVENANCE.001.xsd" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Packages/SIPS.ISO20022/Schemas/pacs.002.001.12.xsd" Link="ProvenanceSchemas/pacs.002.001.12.xsd" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Packages/SIPS.ISO20022/Schemas/pacs.004.001.11.xsd" Link="ProvenanceSchemas/pacs.004.001.11.xsd" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The literal, unmodified bytes the Gateway POSTed for the S3 RECALL_OUTCOME_UNRESOLVED signal; see
+         art/papss/evidence/recall-outcome-unresolved-callback-20260926.md. SHA-256:
+         031a4692cc5eafb313b55e90236f9d35437ec07dfb25e7d6037df30c53f8cac3 -->
+    <None Include="Fixtures/recall-outcome-unresolved-callback-20260926.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
