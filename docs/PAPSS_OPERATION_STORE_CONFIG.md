@@ -4,11 +4,12 @@ SIPS Connect records every PAPSS operation it takes part in, in PostgreSQL, befo
 
 ## Settings
 
-Every setting is optional. With all of them unset, SIPS Connect behaves as it did before the store existed: it computes no deadline, never expires or purges records and never holds a reply. You can set each one in `appsettings.json` under `PapssFacing`, as an ASP.NET environment variable (`__` separator), or through the `.env` variable that `docker-compose*.yml` passes through.
+Every setting is optional. With all of them unset, SIPS Connect behaves as it did before the store existed: it computes no deadline, never expires or purges records and never holds a reply. The `Recall:*` settings only affect the recall API (R1) and default to the values PAPSS confirmed on 2026-09-26. You can set each one in `appsettings.json` under `PapssFacing`, as an ASP.NET environment variable (`__` separator), or through the `.env` variable that `docker-compose*.yml` passes through.
 
 The **Source** column says where a default comes from:
 - **PAPSS**: a value PAPSS publishes.
 - **SPS-internal**: an engineering default chosen by SPS. It is not a PAPSS protocol rule.
+- **PAPSS-confirmed**: PAPSS support answered the question (2026-09-26, `art/papss/evidence/recall-evidence-20260925.md`, section "PAPSS support answers").
 - **UNRESOLVED**: PAPSS has not settled this rule (see [Unresolved PAPSS behaviour](#unresolved-papss-behaviour)).
 
 | Setting (environment variable) | `.env` variable | Default | Source | Meaning |
@@ -26,15 +27,18 @@ The **Source** column says where a default comes from:
 | `PapssFacing__Delivery__ClaimLeaseSeconds` | `PAPSS_DELIVERY_CLAIM_LEASE_SECONDS` | `120` | SPS-internal | How long one instance holds a claimed item. After that, another instance may retry the item, for example after a crash. |
 | `PapssFacing__Lookup__MaxWaitSeconds` | `PAPSS_LOOKUP_MAX_WAIT_SECONDS` | `0` (disabled) | SPS-internal | Maximum `?waitSeconds=` long-poll on the lookup API, from 0 to 300. |
 | `PapssFacing__Status__EnquiryMinimumAgeSeconds` | `PAPSS_STATUS_ENQUIRY_MIN_AGE_SECONDS` | unset | UNRESOLVED (NOT ESTABLISHED) | `/Status` on the PAPSS rail sends a pacs.028 only for our own non-final payment. When this is set, a payment younger than this many seconds is answered from the store without a pacs.028. Unset keeps the previous behaviour: enquire whenever the payment is non-final. PAPSS only names the triggers (no pacs.002 received, stuck pending, confirming finality; evidence §E11). |
-| `PapssFacing__Returns__SettledStatuses` | `PAPSS_RETURN_SETTLED_STATUSES` | `ACSC` | UNRESOLVED (CONTRADICTED) | Comma-separated pacs.002 statuses that settle an outbound return and mark the original payment `RETURNED`. Allowed: `ACSC`, `ACSP`. The portal flow says ACSC, the pacs.004 response sample says ACSP (evidence §D10). |
+| `PapssFacing__Returns__SettledStatuses` | `PAPSS_RETURN_SETTLED_STATUSES` | `ACCP,ACSC` | PAPSS-confirmed (2026-09-26) | Comma-separated pacs.002 statuses that settle an outbound return and mark the original payment `RETURNED`. Allowed: `ACCP`, `ACSC`, `ACSP`. PAPSS confirmed that the returner's authoritative return status is `ACCP`; `ACSC` stays in the default because the portal flow shows it (the material had contradicted itself, evidence §D10: ACSC in the portal flow, ACSP in the pacs.004 response sample). |
+| `PapssFacing__Recall__RequireSettledOriginal` | `PAPSS_RECALL_REQUIRE_SETTLED_ORIGINAL` | `true` | PAPSS error 1017 (invalid original status) | `POST /Recall` accepts only a `SETTLED` payment. `false` also allows a `PENDING`/`ACCEPTED` payment; a `REJECTED` or `RETURNED` payment is never recallable. |
+| `PapssFacing__Recall__MaxAgeDays` | `PAPSS_RECALL_MAX_AGE_DAYS` | `30` | PAPSS-confirmed (2026-09-26) | A payment can be recalled up to this many days after it settled (`completedat`). Older: `409 RECALL_WINDOW_EXPIRED`, nothing is sent. |
+| `PapssFacing__Recall__ResponseDeadlineDays` | `PAPSS_RECALL_RESPONSE_DEADLINE_DAYS` | `30` | PAPSS-confirmed (2026-09-26) | The beneficiary's answer deadline. Record-only: the recall's `deadlineat` = admission time + this; an open recall past it shows `responseOverdue: true` on the lookup. The recall never changes state by itself. |
 
 For the core-bank call that answers an inbound acmt.023, SIPS Connect uses the existing `Core:CoreBankTimeoutSeconds` setting (default `3`), so behaviour there is unchanged. The WP-SIPS request timeout is still `PapssFacing:RequestTimeoutSeconds`.
 
-Validation at start-up: positive values where a number is set; the deadline value and clock set together; `MaxBackoffSeconds >= InitialBackoffSeconds`; `ClaimLeaseSeconds >= 10`; `Lookup:MaxWaitSeconds` from 0 to 300; `Returns:SettledStatuses` lists only `ACSC`/`ACSP` and is not empty. An empty environment variable means "unset" (the compose files default `PAPSS_RETURN_SETTLED_STATUSES` to `ACSC`).
+Validation at start-up: positive values where a number is set; the deadline value and clock set together; `MaxBackoffSeconds >= InitialBackoffSeconds`; `ClaimLeaseSeconds >= 10`; `Lookup:MaxWaitSeconds` from 0 to 300; `Returns:SettledStatuses` lists only `ACCP`/`ACSC`/`ACSP` and is not empty; `Recall:MaxAgeDays` and `Recall:ResponseDeadlineDays` are positive. An empty environment variable means "unset" (for the `Recall` day values it keeps the default; the compose files default `PAPSS_RETURN_SETTLED_STATUSES` to `ACCP,ACSC` and both recall day values to `30`).
 
 ## Database objects
 
-The migrations are `20260924234525_AddPapssOperationStore` (Phase 1, verification) and `20260925050858_AddPapssPaymentOperations` (Phase 2, payments, returns and status enquiries; additive, nullable columns only). The tables are separate from `isomessages`. Column names follow the repository's lower-case naming convention.
+The migrations are `20260924234525_AddPapssOperationStore` (Phase 1, verification), `20260925050858_AddPapssPaymentOperations` (Phase 2, payments, returns and status enquiries; additive, nullable columns only), `20260925120000_AddPapssEventProvenance` and `20260926052231_AddPapssRecall` (R1 recall: one partial unique index, no new column). The tables are separate from `isomessages`. Column names follow the repository's lower-case naming convention.
 
 - `papss_operations`: one row per operation, in either direction.
   - Key: `(direction, requestmessageid)` is unique.
@@ -48,16 +52,17 @@ The migrations are `20260924234525_AddPapssOperationStore` (Phase 1, verificatio
   - Row version: `xmin`.
   - Payment columns (Phase 2):
     - `msgid`: GrpHdr MsgId of the pacs.008/pacs.004/pacs.028 we sent, which the gateway echoes as pacs.002 `OrgnlMsgId`; for INBOUND rows, the MsgId of the message received.
-    - `returnid`; `originaloperationid` (self link: return -> payment, status enquiry -> payment, `ON DELETE SET NULL`); `originaltxid`, `originalendtoendid`.
+    - `returnid`; `originaloperationid` (self link: return -> payment, status enquiry -> payment, recall -> payment, `ON DELETE SET NULL`); `originaltxid`, `originalendtoendid`.
     - `amount` (numeric(18,5)), `currency`, `localinstrument`.
     - `paymentstatus`: raw ISO status in effect (`ACCP`, `ACSP`, `ACSC`, `PDNG`, `RJCT`); `statusreasoncode` (the pacs.002 `StsRsnInf/Rsn`, or the pacs.004 return reason); `statusat`.
     - `statusconflict`: a different final status arrived after a final one (operator attention).
     - `requestfingerprint`: SHA-256 of the bank request content, for TxId / ReturnId idempotency.
     - `isomessageid`: INBOUND payment only, the `isomessages` row with the bank decision and the PAPSS decision outbox.
-  - Unique: `ux_papss_op_payment_txid` on `(direction, operation, txid)` where `operation = 'PAYMENT'`; `ux_papss_op_return_id` on `(direction, returnid)` where `operation = 'RETURN'`.
+  - Unique: `ux_papss_op_payment_txid` on `(direction, operation, txid)` where `operation = 'PAYMENT'`; `ux_papss_op_return_id` on `(direction, returnid)` where `operation = 'RETURN'`; `ux_papss_op_open_recall` on `(originaloperationid)` where `operation = 'RECALL'` and `papssoutcome IN ('RECALL_PENDING', 'RECALL_ACCEPTED_BY_PAPSS')` (at most one OPEN recall per payment).
+  - Recall rows (`operation = 'RECALL'`, OUTBOUND): `requestmessageid` = `msgid` = the recall id (camt.056 BizMsgIdr = Assgnmt/Id = CxlId); `originaloperationid` = the recalled payment, `originaltxid` / `originalendtoendid` / `amount` / `currency` copied from it; `reason` = the bank's recall reason; `paymentstatus` = the answer's raw status (`ACCP`/`RJCT` from PAPSS, `RJCR` from a camt.029); `statusreasoncode` = the answer's reason; `returnid` = RtrId of the pacs.004 that returned the funds; `signedrequest` = our signed camt.056, `signedresponse` = the camt.029 or pacs.004 that closed it; `deadlineat` = the record-only beneficiary deadline.
 - `papss_operation_events`: an append-only log of received messages.
   - Each event is unique per `(eventtype, sourcemessageid)`, so a redelivered callback is stored once.
-  - Event types: `VERIFICATION_RESULT` (acmt.024), `VERIFICATION_ENQUIRY` (acmt.023), `PAYMENT_STATUS` (pacs.002), `PAYMENT_RECEIVED` (pacs.008), `RETURN_RECEIVED` (pacs.004).
+  - Event types: `VERIFICATION_RESULT` (acmt.024), `VERIFICATION_ENQUIRY` (acmt.023), `PAYMENT_STATUS` (pacs.002), `PAYMENT_RECEIVED` (pacs.008), `RETURN_RECEIVED` (pacs.004), `RECALL_STATUS` (pacs.002 answering our camt.056), `RECALL_RESOLUTION` (camt.029), `RECALL_RETURNED` (the pacs.004 that closed an open recall; the same pacs.004 is also a `RETURN_RECEIVED` event of the return).
   - Each event carries its bank push outbox columns: `pushstate`, `pushattempts`, `pushnextattemptat`, `pushlasterror`, `pushdeliveredat`.
   - Status history columns (payment events): `status`, `reasoncode`, `correlation` (`MSG_ID`, `TX_ID`, `NONE`, `MISMATCH`), `disposition` (`APPLIED`, `NOT_ADVANCING`, `DUPLICATE_FINAL`, `CONFLICT`, `UNKNOWN_STATUS`, `UNCORRELATED`), `originalmessageid`, `originalmessagetype`, `originaltxid`, `originalendtoendid`, `amount`, `currency`, `note`. An event with `operationid IS NULL` was not attached to any operation.
   - Provenance columns (pacs.002 / pacs.004 events, migration `AddPapssEventProvenance`), from the gateway's signed `SplmtryData/Envlp/PapssProvenance` (`urn:sps:papss:provenance:001`, schema `docs/schemas/SPS.PAPSS.PROVENANCE.001.xsd`): `rawevidencereference` (SHA-256 of the raw signed PAPSS message the gateway keeps; with `sourcemessageid` it links the event to the network evidence), `amountsource` and, for pacs.004, `categorypurposesource` (`NETWORK_REPORTED`, `LOCAL_RECONSTRUCTION`, or `UNSPECIFIED_LEGACY` when the gateway sent no provenance), and `fieldprovenance` (JSON map of element path to source, also `IDENTIFIER_TRANSLATION` and `DEFAULT_FILLER`). A `LOCAL_RECONSTRUCTION` amount was supplied by the gateway from the original payment, not reported by PAPSS: it is stored on the event but never compared with, or copied into, the operation amount (the event note says so). Rows written before the migration keep NULL.
@@ -92,6 +97,16 @@ Payments, returns and status enquiries use the same three columns:
 - When an outbound return settles (`Returns:SettledStatuses`), its original payment becomes `RETURNED`. A received pacs.004 marks our payment `RETURNED` directly. A return against a `REJECTED` (or already `RETURNED`) payment is flagged, not applied.
 - A status for a payment also completes any open `STATUS_ENQUIRY` linked to it.
 
+Recalls (`operation = 'RECALL'`, OUTBOUND only) use the same columns:
+
+| Dimension | RECALL |
+| --- | --- |
+| `gatewaystate` | admi.002 admission of our camt.056 (`SUBMITTING`, `ADMITTED`, `REJECTED`, `SUBMISSION_UNKNOWN`); any answer proves admission |
+| `papssoutcome` | `RECALL_PENDING` (stored/submitted, no answer) -> `RECALL_ACCEPTED_BY_PAPSS` (pacs.002 ACCP: accepted for processing, NOT completed) -> one of `RECALL_REJECTED_BY_PAPSS` (pacs.002 RJCT + reason), `RECALL_REJECTED_BY_BENEFICIARY` (camt.029 RJCR + reason), `RECALL_RETURNED` (pacs.004 received). From `RECALL_PENDING` a camt.029 or pacs.004 may also arrive directly. `REJECTED` when WP-SIPS refused the camt.056. |
+| `bankdeliverystate` | Push of the latest applied answer (`CB_RecallResult`) |
+
+`RECALL_PENDING` and `RECALL_ACCEPTED_BY_PAPSS` are open; the others are final. A final recall does not block a new recall of the same payment. An answer is applied only to an open recall: the same final answer again is `DUPLICATE_FINAL`, a late ACCP after the beneficiary answered is `NOT_ADVANCING`, a contradicting answer (for example RJCT after ACCP, camt.029 after `RECALL_RETURNED`) is `CONFLICT` (`statusconflict`, not applied, not pushed), a camt.029 confirmation other than `RJCR` is `UNKNOWN_STATUS`. The recalled payment's own state is never changed by a recall answer, except that a pacs.004 marks it `RETURNED` exactly as before.
+
 The lookup API adds one summary `status`:
 - `PENDING`
 - `COMPLETED`
@@ -99,6 +114,8 @@ The lookup API adds one summary `status`:
 - `FAILED`: inbound only. The core bank did not answer, or the reply was held.
 - `UNKNOWN`: the submission outcome is ambiguous, or the reply retries ran out.
 - `EXPIRED`: only when `VerificationResultExpirySeconds` is set (verification only).
+
+For recalls: `COMPLETED` = `RECALL_RETURNED`; `REJECTED` = rejected by PAPSS, by the beneficiary or by WP-SIPS; `UNKNOWN` = submission ambiguous and no answer yet; otherwise `PENDING` (including `RECALL_ACCEPTED_BY_PAPSS`).
 
 For payments and returns: `COMPLETED` = `SETTLED` or `RETURNED`; `REJECTED` = rejected by PAPSS, by us (inbound decision RJCT) or by WP-SIPS; `UNKNOWN` = submission ambiguous and no status yet; otherwise `PENDING` (including `ACCEPTED`).
 
@@ -117,9 +134,18 @@ Inbound pacs.004: linked to our OUTBOUND payment by `OrgnlTxId` + `OrgnlEndToEnd
 
 Inbound pacs.008: the existing handler still records `isomessages`, calls the core bank (`CB_PaymentRequest`) and stores the decision; the existing decision outbox still publishes the signed pacs.002 and retries it. The operation store records an INBOUND `PAYMENT` (de-duplicated on source `BizMsgIdr` and TxId) and mirrors the decision and the outbox state (`decisionState` on the lookup).
 
+## Recall correlation and isolation (camt.056 answers)
+
+PAPSS's answers to a camt.056 do not all carry our recall id, which is why at most one recall per payment may be OPEN (application check plus `ux_papss_op_open_recall`; a concurrent second request gets `409 RECALL_ALREADY_OPEN`).
+
+- **pacs.002 with `OrgnlMsgNmId` `camt.056.*`** (PAPSS's immediate ACCP/RJCT): routed to the recall **before** any payment correlation, both in the callback service and in the store. It is matched only by `OrgnlMsgId` = recall id, and attached only when its `OrgnlTxId`/`OrgnlEndToEndId` (the recalled payment's ids) equal the recall's. It is **never** correlated with, applied to or pushed for the payment, although it carries the payment's TxId/EndToEndId: the payment row and its status history stay untouched (regression test `Papss_accp_moves_only_the_recall_and_never_touches_the_payment`). No match: `UNCORRELATED`, stored, acknowledged, not pushed.
+- **camt.029.001.09** (the beneficiary refuses): allowed by the callback guard (BAH From = gateway, To = our BIC, signer = gateway, the `Assgnr` is the signer, original TxId/EndToEndId and `Sts/Conf` present). Matched by `RslvdCase/Id` = recall id (TxId/EndToEndId must match, else `MISMATCH`); without `RslvdCase`, by the single OPEN recall whose `originaltxid`/`originalendtoendid` equal `OrgnlTxId`/`OrgnlEndToEndId` (`TX_ID`). No match: `UNCORRELATED`, stored with the raw message, acknowledged (2xx after commit), not pushed, listed by `Operations/Unresolved` (`eventType` `RECALL_RESOLUTION`).
+- **pacs.004** (funds returned): unchanged. It is linked to our OUTBOUND payment by `OrgnlTxId` + `OrgnlEndToEndId`, marks it `RETURNED` and is pushed as `CB_ReturnRequest`. When that payment has an OPEN recall, the same transaction also sets the recall to `RECALL_RETURNED` (`returnid` = RtrId) and queues a `RECALL_RETURNED` event (`CB_RecallResult`). Without an open recall the return is spontaneous, as before. PAPSS confirmed that a return within 7 days of settlement carries exactly the original amount; a reported amount or currency that differs is written to the event note (never blocking; beyond 7 days the fee treatment is NOT ESTABLISHED).
+- Every applied answer queues one `CB_RecallResult` push; de-duplication is on the source AppHdr `BizMsgIdr` per event type, as for other callbacks.
+
 ## Idempotency of outbound payments and returns
 
-The bank's `txId` (payments) and `returnId` (returns) are the idempotency keys:
+The bank's `txId` (payments), `returnId` (returns) and optional `recallId` (recalls; without it every request is a new recall, and the one-open-recall rule prevents duplicates) are the idempotency keys:
 - New key: the message is built and signed, stored with its signed bytes and a fingerprint of the bank request, then submitted.
 - Same key, same content: an `ADMITTED` operation returns its stored admission; a `REJECTED` one returns its stored rejection code; a `SUBMITTING`/`SUBMISSION_UNKNOWN` one re-submits the stored signed bytes unchanged (the gateway answers `EXACT_REPLAY`). Directory discovery/readiness is not repeated.
 - Same key, different content: `DUPLICATE_CONFLICT` (HTTP 400) without calling WP-SIPS or PAPSS.
@@ -133,12 +159,13 @@ All state lives in the database. After a restart, the workers carry on with what
   - `VERIFICATION_RESULT` -> `CB_VerificationResult` (`X-Idempotency-Key` = verification id).
   - `PAYMENT_STATUS` -> `CB_CompletionNotification` (`X-Idempotency-Key` = `<txId>:<status>`, or `<returnId>:<status>` for a return, so ACSP and a later ACSC are both delivered; plus `X-Transaction-Id`, `X-Return-Id`, `X-Papss-Operation`, `X-Papss-Source-Message-Id`).
   - `RETURN_RECEIVED` -> `CB_ReturnRequest` (`X-Idempotency-Key` = `RtrId`).
+  - `RECALL_STATUS`, `RECALL_RESOLUTION`, `RECALL_RETURNED` -> `CB_RecallResult` (`X-Idempotency-Key` = `<recallId>:<outcome>`, plus `X-Recall-Id`, `X-Transaction-Id`, `X-Papss-Operation: RECALL`). The body reports the outcome of that answer, not the recall's later state.
   - A worker has no request context, so it re-establishes the mapping profile and callback URL from configuration.
 - `PapssResponseOutboxWorker`: submits replies whose state is `PENDING` to `PapssFacing:IsoIngressUrl`, re-sending the stored bytes unchanged.
   - `RECEIVED_AND_DURABLY_ADMITTED` or `EXACT_REPLAY`: the reply becomes `ADMITTED`.
   - Any other admi.002 code: the reply becomes `REJECTED`. This is terminal, and the code is stored.
   - A transport error, a timeout or a response that cannot be verified is treated as ambiguous: the reply is retried and the operation's gateway state becomes `SUBMISSION_UNKNOWN`.
-- `PapssStoreRetentionWorker`: runs only when `RetentionDays` is set.
+- `PapssStoreRetentionWorker`: runs only when `RetentionDays` is set. A payment with an open recall is never purged.
 
 ## Unresolved PAPSS behaviour
 
@@ -154,12 +181,22 @@ The following PAPSS rules are not settled. SIPS Connect does not invent them, so
 Payments, returns and status enquiries (Phase 2). The authoritative review with citations is `art/papss/evidence/phase2-evidence-20260925.md`; section references below point into it.
 
 7. **Number and order of pacs.002 per payment** (§B5, CONTRADICTED): one final pacs.002, a synchronous ACSP then the final one, or a synchronous final ACSC. The store therefore accepts any sequence and only applies advancing statuses (see [States](#states)). SL1016 is `nonInstant` in UAT; what that does to the sequence is NOT ESTABLISHED.
-8. **Return result status** (§D10, CONTRADICTED): ACSC vs ACSP. Configurable with `Returns:SettledStatuses` (default `ACSC`).
+8. **Return result status** (§D10, CONTRADICTED; answered by PAPSS on 2026-09-26: ACCP is the authoritative return status). `Returns:SettledStatuses` now defaults to `ACCP,ACSC`.
 9. **pacs.028 timing and answerer** (§E11): any minimum age / rate is NOT ESTABLISHED (`Status:EnquiryMinimumAgeSeconds`, default unset); whether PAPSS or the receiving participant answers is CONTRADICTED. SIPS Connect does not depend on it: the answer is an ordinary pacs.002 correlated to the payment.
 10. **Amounts in PAPSS RJCT** (§B4, NOT ESTABLISHED): amounts are optional in the correlation; the stored amount is authoritative.
 11. **Beneficiary reject reason codes** (§C8, NOT ESTABLISHED) and **pacs.004 reason codes** (§D10, FOCR vs DUPL, CONTRADICTED): reason codes are passed through unchanged, never defaulted.
 12. **Inbound pacs.004 finality** (§D10): an inbound pacs.004 is acknowledged, not answered with a pacs.002, so it is recorded as `SETTLED` on receipt and its payment as `RETURNED`. Whether spontaneous returns (without a camt.056) are allowed is CONTRADICTED; SIPS Connect records whatever PAPSS delivers.
 13. **pacs.004 OrgnlMsgId convention** (§D10, CONTRADICTED) and **UETR** (§A2): not used for correlation.
+
+Recall (R1). The authoritative review is `art/papss/evidence/recall-evidence-20260925.md` (including "PAPSS support answers", 2026-09-26).
+
+14. **camt.056 wire version and `OrgnlMsgNmId`**: PAPSS confirmed camt.056.001.06 with `OrgnlMsgNmId` camt.056 on the wire. SIPS Connect sends the SIPS contract (camt.056.001.08, `OrgnlMsgNmId` pacs.008.001.10); the gateway translates. Gateway work.
+15. **Recall reason codes** (CONTRADICTED lists; PAPSS: "use what is applicable"): passed through, only the ISO shape (1-4 letters/digits) is checked. `DUPL` is accepted in every source.
+16. **Eligibility window** (PAPSS: 30 days after settlement): `Recall:MaxAgeDays`. **Beneficiary deadline** (PAPSS: 30 days): `Recall:ResponseDeadlineDays`, record-only.
+17. **Extra pacs.002 after the beneficiary's answer**: PAPSS says none; the beneficiary's answer arrives as an inbound camt.029 (negative) or pacs.004 (positive). PAPSS wrote "camt.056 or pacs.004", which is AMBIGUOUS. Anything unexpected that references a recall is stored uncorrelated for operators; an inbound camt.056 itself is not accepted by SIPS Connect in R1 (the callback guard refuses it, so it stays with the gateway; inbound recall is R2).
+18. **One recall per payment**: NOT ESTABLISHED by PAPSS; it is a SIPS Connect rule, required because the answers do not carry the recall id.
+19. **Fees**: within 7 days of settlement the amount is unwound exactly (PAPSS); beyond 7 days NOT ESTABLISHED. Fee capture is a separate enhancement.
+20. **Recall of a payment that is not settled**: PAPSS error 1017 (invalid original status) is why `Recall:RequireSettledOriginal` defaults to `true`.
 
 ## Known limitations
 
@@ -169,7 +206,10 @@ Payments, returns and status enquiries (Phase 2). The authoritative review with 
 - A pacs.002 whose correlation keys are unknown to the store (for example a payment submitted before Phase 2 was deployed) is stored `UNCORRELATED` and is **not** pushed to the bank; it needs operator reconciliation (`Operations/Unresolved`). Evidence §G shows no pacs traffic in UAT so far.
 - A conflicting second final status is not pushed to the bank; operators resolve it from the lookup (`statusConflict`, `statusHistory`).
 - An inbound payment whose PAPSS final status never arrives stays `ACCEPTED` (not `COMPLETED`), so the retention job never purges it.
-- The gateway (not SIPS Connect) builds the PAPSS pacs.008/pacs.004/pacs.028 wire messages; the structural gaps listed in evidence §A2, §C9, §D10 and §E11 are gateway work.
+- A recall left at `SUBMISSION_UNKNOWN` stays open and is not re-submitted automatically: the bank re-sends the same `recallId` (the stored bytes are re-submitted), or an answer from PAPSS settles it. Without a `recallId` the bank gets `409 RECALL_ALREADY_OPEN` naming the open recall.
+- An overdue recall (`responseOverdue`) is only flagged; SIPS Connect sends nothing and changes no state.
+- There is no recall status enquiry in PAPSS (pacs.028 covers pacs.008 only).
+- The gateway (not SIPS Connect) builds the PAPSS pacs.008/pacs.004/pacs.028/camt.056 wire messages; the structural gaps listed in evidence §A2, §C9, §D10 and §E11 are gateway work.
 
 ## Running the PostgreSQL tests
 
