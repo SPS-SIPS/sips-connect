@@ -92,8 +92,9 @@ All lookups need the `Gateway` role and return the same `OperationResult` payloa
 | `GET /api/v1/Gateway/Verify/{requestMessageId}` | Bank-initiated verifications only. |
 | `GET /api/v1/Gateway/Payment/{txId}` | The payment with this TxId. Your own (outbound) payment wins over a received one with the same TxId. |
 | `GET /api/v1/Gateway/Return/{returnId}` | The return with this `returnId` (outbound first, then received). |
+| `GET /api/v1/Gateway/Recall/{recallId}` | Your recall (camt.056) with this `recallId`, with its answers and the recalled payment's outcome. `Operations/{recallId}` returns the same. |
 | `GET /api/v1/Gateway/Operations?endToEndId=...` | The payment with this EndToEndId (outbound first, newest first). |
-| `GET /api/v1/Gateway/Operations/Unresolved?limit=50` | Operator view (`Gateway` or `Recon` role): received pacs.002/pacs.004 that matched no operation, conflict with a final status, or carry an unknown status. |
+| `GET /api/v1/Gateway/Operations/Unresolved?limit=50` | Operator view (`Gateway` or `Recon` role): received pacs.002/pacs.004/camt.029 that matched no operation, conflict with a final status, or carry an unknown status (`eventType` tells payment and recall answers apart). |
 
 The lookup returns the stored state and result through the `OperationResult` JsonAdapter mapping:
 
@@ -178,6 +179,7 @@ Payments and returns add these fields (they are absent for verifications):
 - `paymentStatus` is the raw ISO status in effect (`ACCP`, `ACSP`, `ACSC`, `PDNG`, `RJCT`); `paymentOutcome` (same as `papssOutcome`) is `PENDING`, `ACCEPTED` (ACCP/ACSP), `SETTLED` (ACSC), `REJECTED` (RJCT), `RETURNED` (a return settled against the payment) or `UNKNOWN`. `SETTLED`, `REJECTED` and `RETURNED` are final and never go back.
 - `statusConflict: true` means PAPSS reported a different final status after a final one. The first final status is kept; contact SPS operations before acting on either.
 - A return shows `returnId`, `originalTxId`, `originalEndToEndId` and `originalRequestMessageId` (the payment it returns). A payment lists its `returns`.
+- A payment you recalled lists its `recalls` (oldest first): `recallId`, `status`, `papssOutcome` (`RECALL_*`), `gatewayState`, `reason` (yours), `answerReasonCode`, `returnId` (when the funds came back), `createdAt`, `completedAt`, `deadlineAt`, `responseOverdue`, `statusConflict`. A recall never changes the payment's `paymentStatus`/`paymentOutcome`; only a received pacs.004 makes it `RETURNED`. See [Recall a payment](#recall-a-payment).
 - A received (INBOUND) payment shows your decision (`paymentStatus` `ACCP` or `RJCT`) and `decisionState` (`NOT_QUEUED`, `PENDING`, `PUBLISHED`, `FAILED`) for the signed decision SIPS Connect sends to PAPSS; a later PAPSS final status updates `paymentStatus`/`paymentOutcome`.
 - `statusHistory` lists every status message received for the operation, including the ones that did not change it (`NOT_ADVANCING`, `DUPLICATE_FINAL`, `CONFLICT`).
 - Each `statusHistory` entry links three evidence layers: the raw PAPSS message (`sourceMessageId`, `rawEvidenceReference` = SHA-256 of the signed PAPSS message the gateway keeps), the normalized event (`status`, `reasonCode`, `amount`, `currency`, ...) and the gateway's per-field provenance (`amountSource`, `categoryPurposeSource`, `fieldProvenance`). Sources: `NETWORK_REPORTED` (PAPSS sent it), `LOCAL_RECONSTRUCTION` (the gateway filled it from the original payment it stored; PAPSS did not report it), `IDENTIFIER_TRANSLATION` (your own MsgId/TxId/EndToEndId restored), `DEFAULT_FILLER` (a message-builder placeholder such as `NA`) and `UNSPECIFIED_LEGACY` (the callback carried no provenance). An amount marked `LOCAL_RECONSTRUCTION` is not a PAPSS confirmation of the amount: SIPS Connect does not compare it with your payment and never stores it as the payment amount.
@@ -285,9 +287,51 @@ A stored payment is returned with the `PaymentResponse` mapping plus stored fiel
 }
 ```
 
-Unsupported recall semantics are refused. The response uses the common PAPSS admission shape.
+`/Return` sends a pacs.004; to ask the beneficiary bank to give back a payment **you** sent, use [`/Recall`](#recall-a-payment). The response uses the common PAPSS admission shape.
 
-`returnId` is the idempotency key, with the same rules as `txId` for payments (same content = stored admission or identical re-submission; different content = `400` `DUPLICATE_CONFLICT`). The return is linked to the payment it returns when that payment is in the store; a payment you received is the usual case. Its result arrives on the payment status callback with `X-Return-Id`; once it settles, the returned payment shows `paymentOutcome: "RETURNED"`. Which status settles a return (ACSC, or also ACSP) is not settled by PAPSS; SIPS Connect uses `PapssFacing:Returns:SettledStatuses` (default `ACSC`).
+`returnId` is the idempotency key, with the same rules as `txId` for payments (same content = stored admission or identical re-submission; different content = `400` `DUPLICATE_CONFLICT`). The return is linked to the payment it returns when that payment is in the store; a payment you received is the usual case. Its result arrives on the payment status callback with `X-Return-Id`; once it settles, the returned payment shows `paymentOutcome: "RETURNED"`. PAPSS confirmed on 2026-09-26 that the returner's authoritative return status is `ACCP`; SIPS Connect settles a return on `PapssFacing:Returns:SettledStatuses` (default `ACCP,ACSC`).
+
+### Recall a payment
+
+`POST /api/v1/Gateway/Recall` (role `Gateway`, JsonAdapter mapping `RecallRequest`) asks PAPSS to recall one of **your settled PAPSS payments** (camt.056):
+
+```json
+{
+  "rail": "PAPSS",
+  "txId": "<YOUR_ORIGINAL_TX_ID>",
+  "endToEndId": "<YOUR_ORIGINAL_END_TO_END_ID>",
+  "reason": "DUPL",
+  "recallId": "SIPS-0123456789abcdef01234567"
+}
+```
+
+- Name the payment by `txId` or `endToEndId` (both: they must belong to the same payment). `rail` is optional; anything but `PAPSS` is refused.
+- `reason` is required: an ISO cancellation reason code, 1-4 letters/digits. It is passed to PAPSS unchanged; PAPSS said "use what is applicable" (`DUPL` is accepted in every PAPSS source).
+- `recallId` is optional. When you send it, it must be `SIPS-` followed by 24 lowercase hexadecimal characters, and it is your idempotency key (same rules as `txId` for payments: same request = stored admission or identical re-submission after an ambiguous attempt; different reason or payment = `400 DUPLICATE_CONFLICT`). Without it SIPS Connect generates one.
+- The response is the common admission shape; `requestMessageId` is the `recallId`. Only a technical admission: PAPSS answers later.
+
+Refusals (nothing is sent to PAPSS):
+
+| HTTP | `code` | Meaning |
+| --- | --- | --- |
+| `404` | `ORIGINAL_PAYMENT_NOT_FOUND` | No PAPSS payment sent by your bank is stored for this `txId`/`endToEndId`. |
+| `422` | `RECALL_NOT_ALLOWED` | The payment was received by your bank. Only the payer's bank (original debtor agent) can recall. |
+| `409` | `ORIGINAL_NOT_SETTLED` | The payment is not `SETTLED` (PAPSS refuses other statuses, error 1017). Operators can relax this with `PapssFacing:Recall:RequireSettledOriginal=false`; a `REJECTED` or `RETURNED` payment is never recallable. |
+| `409` | `RECALL_WINDOW_EXPIRED` | The payment settled more than 30 days ago (PAPSS-confirmed; `PapssFacing:Recall:MaxAgeDays`). |
+| `409` | `RECALL_ALREADY_OPEN` | The payment already has an open recall (its id is in `message`). Only one recall per payment may be open, because PAPSS's answers do not all carry the recall id. After a final rejection you may recall again. |
+| `422` | `PAPSS_VALIDATION_FAILED` | Missing/invalid `reason`, `recallId` or payment reference. |
+
+How it proceeds (states in `papssOutcome` of the recall):
+
+1. `RECALL_PENDING`: stored with the signed camt.056 before it is submitted. An ambiguous submission shows `status: "UNKNOWN"`: re-send the same request with the same `recallId`.
+2. PAPSS answers at once: `RECALL_ACCEPTED_BY_PAPSS` (ACCP). This means **accepted for processing, not completed**: the money has not moved and your payment is still `SETTLED`. Or `RECALL_REJECTED_BY_PAPSS` (RJCT, the reason code in `reasonCode`, final).
+3. The beneficiary bank answers (PAPSS allows it 30 days; `deadlineAt` on the recall, `responseOverdue: true` after it, record-only):
+   - funds returned: a pacs.004 arrives; your payment becomes `RETURNED` (the usual [return callback](#return-received-from-papss)) and the recall `RECALL_RETURNED` (final);
+   - refused: a camt.029; the recall becomes `RECALL_REJECTED_BY_BENEFICIARY` (final, with the reason, for example `CUST`, `AGNT`, `LEGL`).
+
+Each answer is pushed on the [recall result callback](#recall-result-callback). Follow a recall with `GET /api/v1/Gateway/Recall/{recallId}` (summary `status`: `PENDING` until returned or rejected, `COMPLETED` when returned, `REJECTED`, `UNKNOWN`), and on the payment lookup (`recalls`). The recall lookup shows `originalRequestMessageId`, `originalTxId`, `originalEndToEndId`, `originalPaymentOutcome`, `reason` (yours), `statusReasonCode` (the answer's reason), `returnId`, `deadlineAt`, `responseOverdue` and the `statusHistory` of the answers. PAPSS has no recall status enquiry.
+
+Fees: PAPSS confirmed that a recall returned within 7 days of settlement gives back exactly the original amount. A different amount is noted on the recall's history, never blocked; beyond 7 days the fee treatment is not established by PAPSS.
 
 ### Check PAPSS readiness
 
@@ -353,6 +397,8 @@ Error bodies use `code` and `message` where PAPSS routing or validation fails.
 | HTTP status | Meaning | Bank action |
 | --- | --- | --- |
 | `400` | Rail, participant binding, PAPSS enablement, or operation permission failed | Correct configuration/request; do not blind-retry |
+| `404` | Recall: the payment to recall is not stored (`ORIGINAL_PAYMENT_NOT_FOUND`); lookups: `OPERATION_NOT_FOUND` | Check the references |
+| `409` | Recall refused in the payment's current state (`ORIGINAL_NOT_SETTLED`, `RECALL_WINDOW_EXPIRED`, `RECALL_ALREADY_OPEN`) | Do not retry unchanged; follow the open recall or wait for settlement |
 | `401` / `403` | Authentication or Gateway role failed | Refresh credentials or correct authorization |
 | `422` | PAPSS authority, directory capability, or transaction validation failed | Correct business data or wait for an eligible fresh directory observation; do not retry unchanged |
 | `502` | Signed response was invalid or could not be authenticated | Preserve references; escalate, do not create a replacement payment |
@@ -424,6 +470,29 @@ When a payment you sent is returned, PAPSS delivers a pacs.004. SIPS Connect sto
 ```
 
 Headers: `X-Idempotency-Key: <returnId>`, `X-Return-Id`, `X-Transaction-Id`. The return is pushed even if SIPS Connect does not hold the original payment. No pacs.002 is sent back to PAPSS for a received return.
+
+### Recall result callback
+
+Every answer to one of your recalls is pushed with the mapping `<profile>.CB_RecallResult` (baseline):
+
+```json
+{
+  "recallId": "SIPS-0123456789abcdef01234567",
+  "txId": "<YOUR_ORIGINAL_TX_ID>",
+  "endToEndId": "<YOUR_ORIGINAL_END_TO_END_ID>",
+  "outcome": "RECALL_ACCEPTED_BY_PAPSS",
+  "reasonCode": null,
+  "responderId": "<PAPSS StsId, camt.029 CxlStsId or pacs.004 RtrId>",
+  "sourceMessageId": "<PAPSS source message id>",
+  "receivedAt": "2026-09-26T08:00:01.020Z"
+}
+```
+
+- `outcome`: `RECALL_ACCEPTED_BY_PAPSS` (not final), `RECALL_REJECTED_BY_PAPSS`, `RECALL_REJECTED_BY_BENEFICIARY` or `RECALL_RETURNED` (final). A recall normally produces two callbacks: PAPSS's answer, then the beneficiary's.
+- Headers: `X-Idempotency-Key: <recallId>:<outcome>`, `X-Recall-Id`, `X-Transaction-Id`, `X-Papss-Operation: RECALL`, `X-Papss-Source-Message-Id`.
+- PAPSS's answer to a recall carries your payment's TxId/EndToEndId, but it is **not** a payment status: no `CB_CompletionNotification` is sent for it and your payment's state does not change. When the funds come back you receive both `CB_ReturnRequest` (the pacs.004, as for any return) and `CB_RecallResult` with `RECALL_RETURNED`.
+- An answer SIPS Connect cannot attribute to a recall is stored for SPS operations (`Operations/Unresolved`) and not pushed.
+- Delivery works like the other callbacks: stored first, pushed from an outbox with retries, at-least-once.
 
 ### Verification enquiries from other PAPSS countries
 
@@ -511,7 +580,7 @@ Callback mappings remain participant-profile-prefixed and are separate from thes
 4. Load and validate the participant JsonAdapter and callback mappings.
 5. Bind certificates and secrets through the environment's secret store.
 6. Enable the deployment-level PAPSS rail for UAT.
-7. Exercise Verify, Payment, Status, Return, Readiness, Discovery, and FX.
+7. Exercise Verify, Payment, Status, Return, Recall, Readiness, Discovery, and FX.
 8. Confirm signed-ISO correlation and asynchronous callback delivery where applicable.
 9. Test duplicate callback handling, ambiguous delivery reconciliation, denied operations, stale/ambiguous/ineligible directory observations, unsupported currencies/instruments, and credential failure.
 10. Record request references, expected results, timestamps, and evidence without recording secrets or sensitive account data.
