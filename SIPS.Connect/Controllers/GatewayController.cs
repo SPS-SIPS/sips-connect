@@ -16,6 +16,7 @@ using SIPS.Connect.Config;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Models;
 using System.Text;
+using System.Security.Claims;
 
 namespace SIPS.Connect.Controllers;
 [ApiController]
@@ -317,13 +318,30 @@ public class GatewayController(
     };
 
     /// <summary>
+    /// The authenticated caller's own identity for audit purposes: the API key's configured Name (already the sole claim
+    /// carrying it), or - for a Keycloak/JWT operator, where this app maps no realm claim onto ClaimTypes.Name - the first
+    /// of the claims Keycloak tokens actually carry for this: preferred_username, then the subject.
+    /// </summary>
+    private static string? CallerIdentity(ClaimsPrincipal? user)
+        => user?.FindFirst(ClaimTypes.Name)?.Value
+            ?? user?.FindFirst("preferred_username")?.Value
+            ?? user?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? user?.FindFirst("sub")?.Value;
+
+    /// <summary>
     /// Operator recovery: manually closes a recall stuck OPEN, for example RECALL_OUTCOME_UNRESOLVED (the gateway could not
     /// read a definite PAPSS outcome for the camt.056). Sets the final RECALL_ABANDONED outcome, releases the one-open-recall
     /// lock (ux_papss_op_open_recall) so a new recall may be submitted for the payment, pushes CB_RecallResult, and records
-    /// who/when/why as an audited papss_operation_events entry. Manual only: SIPS Connect never applies this by itself.
+    /// who/when/why (and which of the two paths below authenticated the call) as an audited papss_operation_events entry.
+    /// Manual only: SIPS Connect never applies this by itself.
+    ///
+    /// Two authorized paths, never anonymous: the human/operator role (Recon, same as Retry and the other reconciliation
+    /// endpoints) via Keycloak; or a narrow, per-API-key machine capability (KnownRoles.RecallClose, granted only to the
+    /// specific API key configured with it via ApiKey.Roles) for an API party that needs to close its own stuck recalls
+    /// without the broader Recon role.
     /// </summary>
     [HttpPost("Recall/{recallId}/Close")]
-    [Authorize(Roles = Recon)]
+    [Authorize(Roles = Recon + "," + RecallClose)]
     public async Task<ActionResult> CloseRecall([FromRoute] string recallId, [FromBody] PapssRecallCloseRequest body, CancellationToken ct)
     {
         var reason = body?.Reason?.Trim();
@@ -332,8 +350,13 @@ public class GatewayController(
         if (string.IsNullOrWhiteSpace(recallId) || recallId.Length > 128)
             return BadRequest(new { code = "INVALID_LOOKUP_KEY", message = "recallId is required (max 128 characters)." });
 
-        var closedBy = User?.Identity?.Name;
-        var (outcome, recall) = await papssStore.CloseRecallAsync(recallId, reason, closedBy, ct);
+        var closedBy = CallerIdentity(User);
+        // The auth path reflects which scheme actually authenticated the caller (ApiKey vs. Keycloak/JWT), not which
+        // role happened to satisfy [Authorize] above - an operator is never mistaken for an API party or vice versa.
+        var authPath = User?.Identity is ClaimsIdentity { AuthenticationType: ApiKeyDefaults.AuthenticationScheme }
+            ? PapssRecallCloseAuthPath.ApiParty
+            : PapssRecallCloseAuthPath.Operator;
+        var (outcome, recall) = await papssStore.CloseRecallAsync(recallId, reason, closedBy, authPath, ct);
         return outcome switch
         {
             PapssRecallCloseOutcome.NotFound => NotFound(new { code = "OPERATION_NOT_FOUND", message = "No PAPSS recall is stored for this recallId." }),

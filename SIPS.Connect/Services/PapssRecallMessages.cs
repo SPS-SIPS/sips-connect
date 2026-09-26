@@ -71,6 +71,15 @@ public sealed class PapssRecallCloseRequest
     public string? Reason { get; set; }
 }
 
+/// <summary>Which of the two authorized paths closed a recall: recorded in the RECALL_CLOSED audit event for every call.</summary>
+public static class PapssRecallCloseAuthPath
+{
+    /// <summary>A human operator, authenticated via Keycloak/JWT with the Recon role (the same path as Retry).</summary>
+    public const string Operator = "OPERATOR";
+    /// <summary>An API party, authenticated via API key with the narrow KnownRoles.RecallClose capability.</summary>
+    public const string ApiParty = "API_PARTY";
+}
+
 /// <summary>Result of <see cref="PapssOperationStore.CloseRecallAsync"/>.</summary>
 public enum PapssRecallCloseOutcome
 {
@@ -200,7 +209,7 @@ public static partial class PapssRecallMessages
     /// The audit record of a manual operator close, stored as the RECALL_CLOSED event's "raw" bytes (JSON, not XML: there is no
     /// PAPSS/gateway message for this action). <see cref="BuildCloseAudit"/> and <see cref="ParseCloseAudit"/> round-trip it.
     /// </summary>
-    public sealed record PapssRecallCloseAudit(string ClosedBy, string Reason, DateTimeOffset ClosedAt);
+    public sealed record PapssRecallCloseAudit(string ClosedBy, string Reason, DateTimeOffset ClosedAt, string AuthPath);
 
     public static byte[] BuildCloseAudit(PapssRecallCloseAudit audit)
         => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(audit);
