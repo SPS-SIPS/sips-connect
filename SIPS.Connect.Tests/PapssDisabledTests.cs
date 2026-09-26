@@ -97,6 +97,30 @@ public sealed class PapssCallbackGuardTests
     }
 
     [Fact]
+    public async Task Signed_camt029_recall_answer_is_admitted_and_its_assigner_must_be_the_signer()
+    {
+        using var pki = new CallbackPki();
+        var options = Options();
+        var signed = pki.Signer.SignEnvelope(GatewayRecallXml.Resolution("CT02-CXL-1", "SIPS-0123456789abcdef01234567", "M1", "TX-1", "E2E-1", from: "PAPSS", to: "BANKSOSIXXX", businessService: options.SecurityProfile), XadesProfile.WpSipsPapss);
+        var verified = await pki.Verifier.VerifyWithProvenance(signed, XadesProfile.WpSipsPapss, CancellationToken.None);
+        Assert.True(verified.Result, $"certificate={verified.Verbose.CertificateStatus}; signature={verified.Verbose.SignatureStatus}; references={verified.Verbose.ReferencesStatus}; ownership={verified.Verbose.OwnershSIPStatus}");
+        var route = await new PapssCallbackGuard(options, LocalXades(), Mappings(), pki.Verifier).ValidateAsync(signed, CancellationToken.None);
+        Assert.Equal("BANKSOSIXXX", route?.Bic);
+
+        // The assigner is the signer: a camt.029 naming another assigner fails the ownership check.
+        var foreign = XDocument.Parse(GatewayRecallXml.Resolution("CT02-CXL-2", "SIPS-0123456789abcdef01234567", "M1", "TX-1", "E2E-1", from: "PAPSS", to: "BANKSOSIXXX", businessService: options.SecurityProfile));
+        foreign.Descendants().First(x => x.Name.LocalName == "Assgnr").Descendants().First(x => x.Name.LocalName == "Id").Value = "OTHERBANK";
+        var misassigned = pki.Signer.SignEnvelope(foreign.ToString(SaveOptions.DisableFormatting), XadesProfile.WpSipsPapss);
+        Assert.False((await pki.Verifier.VerifyWithProvenance(misassigned, XadesProfile.WpSipsPapss, CancellationToken.None)).Result);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => new PapssCallbackGuard(options, LocalXades(), Mappings(), pki.Verifier).ValidateAsync(misassigned, CancellationToken.None));
+
+        // Without the original transaction references it is refused before signature verification.
+        var incomplete = XDocument.Parse(GatewayRecallXml.Resolution("CT02-CXL-3", null, "M1", "TX-1", "E2E-1", from: "PAPSS", to: "BANKSOSIXXX", businessService: options.SecurityProfile));
+        incomplete.Descendants().Single(x => x.Name.LocalName == "OrgnlEndToEndId").Remove();
+        await Assert.ThrowsAsync<InvalidDataException>(() => new PapssCallbackGuard(options, LocalXades(), Mappings(), Mock.Of<INativeVerifier>()).ValidateAsync(incomplete.ToString(), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task PAPSS_identity_with_missing_or_wrong_profile_fails_closed_before_legacy_dispatch()
     {
         foreach (var service in new string?[] { null, "WRONG.PROFILE" })

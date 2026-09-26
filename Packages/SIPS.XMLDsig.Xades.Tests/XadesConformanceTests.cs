@@ -88,6 +88,18 @@ public sealed class XadesConformanceTests : IDisposable
             ReturnPaymentRequestBuilder.Build(new(){From="SPS-A",To="SPS-B",CreDt=now,NumberOfTransactions=1,LocalInstrument="INST",CategoryPurpose="CASH",ReturnId="RET1",OriginalEndToEnd="E2E",OrgnlTxId="TX1",OriginalCurrency="USD",OriginalAmount=1,ReturnReason="DUPL",AdditionalInfo="test",DebtorAgent="SPS-A",CreditorAgent="SPS-B"}).document};
         foreach(var message in messages){Assert.Contains("Id=\"BL-",message);var family=XDocument.Parse(message).Descendants().First(x=>x.Name.LocalName=="MsgDefIdr").Value;var result=await verifier.VerifySignature(signer.SignEnvelope(message),true,default);Assert.True(result.result,$"{family}:{result.verbose.CertificateStatus}/{result.verbose.SignatureStatus}/{result.verbose.OwnershSIPStatus}");}
     }
+    [Fact] public async Task Papss_recall_messages_are_owned_by_their_assigner()
+    {
+        // camt.056 (signed by the recalling bank) and camt.029 (signed by the gateway): the Assgnr must be the certificate owner.
+        foreach(var (definition,root) in new[]{("camt.056.001.08","FIToFIPmtCxlReq"),("camt.029.001.09","RsltnOfInvstgtn")})
+        {
+            string Message(string assigner)=>$"<FPEnvelope xmlns='urn:test:recall' xmlns:header='urn:iso:std:iso:20022:tech:xsd:head.001.001.03' xmlns:document='urn:iso:std:iso:20022:tech:xsd:{definition}' Id='BL-RCL-1'><header:AppHdr><header:Fr><header:FIId><header:FinInstnId><header:Othr><header:Id>SPS-A</header:Id></header:Othr></header:FinInstnId></header:FIId></header:Fr><header:To><header:FIId><header:FinInstnId><header:Othr><header:Id>SPS-B</header:Id></header:Othr></header:FinInstnId></header:FIId></header:To><header:BizMsgIdr>RCL-1</header:BizMsgIdr><header:MsgDefIdr>{definition}</header:MsgDefIdr><header:BizSvc>SPS.PAPSS.FINANCIAL.001</header:BizSvc><header:CreDt>{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}</header:CreDt></header:AppHdr><document:Document><document:{root}><document:Assgnmt><document:Id>RCL-1</document:Id><document:Assgnr><document:Agt><document:FinInstnId><document:Othr><document:Id>{assigner}</document:Id></document:Othr></document:FinInstnId></document:Agt></document:Assgnr></document:Assgnmt></document:{root}></document:Document></FPEnvelope>";
+            var owned=await PapssVerify(PapssSign(Message("SPS-A")));
+            Assert.True(owned.Result,$"{definition}:{owned.Verbose.OwnershSIPStatus}/{owned.Verbose.SignatureStatus}");
+            Assert.Equal(definition,owned.Signer!.MessageDefinitionId);
+            Assert.False((await PapssVerify(PapssSign(Message("SPS-B")))).Result);
+        }
+    }
     static PaymentRequestBuilder.Request Payment(string from,string to,DateTime now)=>new(){From=from,To=to,CreDt=now,MsgId="PAY-REQ",TxId="TX1",EndToEndId="E2E",Amount=1,Currency="USD",LocalInstrument="INST",CategoryPurpose="CASH",Ustrd="test",SettlementMethod=SettlementMethod1Code.CLRG,ChargeBearer=ChargeBearerType1Code.SLEV,Debtor=new Person{Name="D",Address="A",Account="D1",AccountType="ACCT",AgentBIC=from,Issuer="I"},Creditor=new Person{Name="C",Address="A",Account="C1",AccountType="ACCT",AgentBIC=to,Issuer="I"}};
     static string Fx(DateTimeOffset at)=>WpSipsInformationMessageBuilder.BuildFxRequest(new("SPS-A","SPS-B","REQ-MSG","admi.009.001.02",WpSipsProfiles.Fx,at),"REQ-1",new("US","KE","USD","KES","BANK1","INST",10,false,null));
     public void Dispose(){Directory.Delete(dir,true);}

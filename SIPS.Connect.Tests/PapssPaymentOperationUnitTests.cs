@@ -211,6 +211,22 @@ public sealed class PapssPaymentOperationUnitTests
     }
 
     [Fact]
+    public async Task Papss_camt029_is_stored_by_the_recall_handler_and_never_reaches_the_smartvista_handlers()
+    {
+        var callbacks = new Mock<IPapssPaymentCallbackService>();
+        var controller = Controller(callbacks.Object, out var incoming, out var publisher);
+        var xml = GatewayRecallXml.Resolution("CT02-CXL-9", "SIPS-0123456789abcdef01234567", "M", "TX-9", "E2E-9");
+        controller.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+
+        Assert.IsType<OkResult>(await controller.Post(CancellationToken.None));
+
+        callbacks.Verify(x => x.HandleRecallResolutionAsync(It.IsAny<PapssParticipantBinding>(), xml, It.IsAny<CancellationToken>()), Times.Once);
+        callbacks.VerifyNoOtherCalls();
+        incoming.VerifyNoOtherCalls();
+        publisher.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Papss_pacs002_that_could_not_be_stored_is_not_acknowledged_and_an_unparseable_one_is_refused()
     {
         var callbacks = new Mock<IPapssPaymentCallbackService>();

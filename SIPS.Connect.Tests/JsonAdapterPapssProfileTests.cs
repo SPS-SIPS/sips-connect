@@ -19,7 +19,9 @@ public sealed class JsonAdapterPapssProfileTests
         ["StatusRequest"] = ["Rail", "EndToEnd", "TxId", "ToBIC"],
         ["ReturnRequest"] = ["Rail", "ToBIC", "LocalInstrument", "CategoryPurpose", "OriginalAmount", "OriginalCurrency", "OriginalTxId", "OriginalEndToEndId", "ReturnId"],
         ["PapssAdmissionResponse"] = ["RequestMessageId", "Code", "DurablyAdmitted"],
-        ["OperationResult"] = ["RequestMessageId", "Operation", "Direction", "Status", "GatewayState", "PapssOutcome", "BankDeliveryState", "Verified", "AccountName", "AccountNumber", "AccountType", "Currency", "Reason", "AdmissionCode", "CreatedAt", "CompletedAt", "DeadlineAt"],
+        ["OperationResult"] = ["RequestMessageId", "Operation", "Direction", "Status", "GatewayState", "PapssOutcome", "BankDeliveryState", "Verified", "AccountName", "AccountNumber", "AccountType", "Currency", "Reason", "AdmissionCode", "CreatedAt", "CompletedAt", "DeadlineAt", "Recalls", "OriginalPaymentOutcome", "ResponseOverdue"],
+        ["RecallRequest"] = ["Rail", "TxId", "EndToEndId", "Reason", "RecallId"],
+        ["papss-callback-v1.CB_RecallResult"] = ["RecallId", "TxId", "EndToEndId", "Outcome", "ReasonCode", "ResponderId", "SourceMessageId", "ReceivedAt"],
         ["ReadinessRequest"] = ["Rail", "PapssId", "Bic"],
         ["ReadinessResponse"] = ["Observation", "Error"],
         ["ParticipantDiscoveryRequest"] = ["Rail", "Online", "Type", "Bic", "PapssId"],
@@ -31,7 +33,9 @@ public sealed class JsonAdapterPapssProfileTests
     private static readonly Dictionary<string, Dictionary<string, string>> RequiredUserFields = new()
     {
         ["PaymentRequest"] = new() { ["TxId"] = "txId" },
-        ["ReturnRequest"] = new() { ["LocalInstrument"] = "lclInstrument", ["CategoryPurpose"] = "ctgPurp" }
+        ["ReturnRequest"] = new() { ["LocalInstrument"] = "lclInstrument", ["CategoryPurpose"] = "ctgPurp" },
+        ["RecallRequest"] = new() { ["TxId"] = "txId", ["EndToEndId"] = "endToEndId", ["Reason"] = "reason", ["RecallId"] = "recallId" },
+        ["papss-callback-v1.CB_RecallResult"] = new() { ["RecallId"] = "recallId", ["Outcome"] = "outcome", ["ResponderId"] = "responderId", ["SourceMessageId"] = "sourceMessageId" }
     };
 
     [Theory]

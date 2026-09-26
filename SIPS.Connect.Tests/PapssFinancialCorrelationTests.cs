@@ -271,6 +271,25 @@ public sealed class PapssFinancialCorrelationTests
     }
 
     [Fact]
+    public async Task Recall_request_gets_the_rail_header_when_signed_and_is_submitted_unchanged_to_the_common_ingress()
+    {
+        var directory = new DirectoryScenario(); var client = Client(directory);
+        var id = PapssFacingSipsClient.Id();
+        var unsigned = PapssRecallMessages.BuildRecallRequest(new(id, "BANKSOSIXXX", "PAPSS", "MSG-1", "E2E-1", "TX-1", 10m, "SOS", "DUPL", DateTimeOffset.UtcNow));
+        var signed = client.SignForSubmission(unsigned, id);
+        var header = XDocument.Parse(signed).Descendants().Single(x => x.Name.LocalName == "AppHdr");
+        string Header(string name) => header.Elements().Single(x => x.Name.LocalName == name).Value;
+        Assert.Equal((id, "camt.056.001.08", Options().SecurityProfile), (Header("BizMsgIdr"), Header("MsgDefIdr"), Header("BizSvc")));
+        Assert.Equal(["Fr", "To", "BizMsgIdr", "MsgDefIdr", "BizSvc", "CreDt"], header.Elements().Select(x => x.Name.LocalName));
+
+        var admission = await client.SubmitSignedAsync(Binding(), signed, CancellationToken.None);
+        Assert.Equal((id, "RECEIVED_AND_DURABLY_ADMITTED"), (admission.RequestMessageId, admission.Code));
+        Assert.Equal(signed, directory.FinancialRequest);
+        Assert.Equal("/sips/messages", Assert.Single(directory.Requests).Path);
+        Assert.Equal("urn:iso:std:iso:20022:tech:xsd:camt.056.001.08", XDocument.Parse(directory.FinancialRequest!).Descendants().Single(x => x.Name.LocalName == "Document").Name.NamespaceName);
+    }
+
+    [Fact]
     public async Task All_operations_use_the_single_signed_wp_sips_ingress()
     {
         var directory = new DirectoryScenario(); var client = Client(directory); var binding = Binding();
