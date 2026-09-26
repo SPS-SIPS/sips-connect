@@ -34,13 +34,19 @@ public sealed class PapssRecallOperationTests
         await connection.OpenAsync();
         await using var history = new NpgsqlCommand("SELECT count(*) FROM \"__EFMigrationsHistory\" WHERE migrationid LIKE '%_AddPapssRecall'", connection);
         Assert.Equal(1L, (long)(await history.ExecuteScalarAsync())!);
+        await using var unresolvedHistory = new NpgsqlCommand("SELECT count(*) FROM \"__EFMigrationsHistory\" WHERE migrationid LIKE '%_AddPapssRecallUnresolvedOutcome'", connection);
+        Assert.Equal(1L, (long)(await unresolvedHistory.ExecuteScalarAsync())!);
         await using var index = new NpgsqlCommand("SELECT indexdef FROM pg_indexes WHERE indexname = 'ux_papss_op_open_recall'", connection);
         var definition = (string)(await index.ExecuteScalarAsync())!;
         Assert.StartsWith("CREATE UNIQUE INDEX", definition);
         Assert.Contains("(originaloperationid)", definition);
         Assert.Contains("RECALL_PENDING", definition);
         Assert.Contains("RECALL_ACCEPTED_BY_PAPSS", definition);
+        // RECALL_OUTCOME_UNRESOLVED (S3 recovery) is also OPEN; RECALL_ABANDONED (the manual close outcome) and the other
+        // RECALL_REJECTED_* outcomes are final and must never appear in the open-recall filter.
+        Assert.Contains("RECALL_OUTCOME_UNRESOLVED", definition);
         Assert.DoesNotContain("RECALL_REJECTED", definition);
+        Assert.DoesNotContain("RECALL_ABANDONED", definition);
     }
 
     [Fact]
@@ -133,6 +139,34 @@ public sealed class PapssRecallOperationTests
         await SettledPayment(harness, provider, "TX-R2OLD");
         harness.Clock.Advance(TimeSpan.FromDays(31));
         Assert.Equal((409, "RECALL_WINDOW_EXPIRED"), await Refusal(harness, provider, Body("TX-R2OLD")));
+    }
+
+    /// <summary>
+    /// Regression guard for finding S4: recalling an already-RETURNED or already-REJECTED payment must stay refused
+    /// (ORIGINAL_NOT_SETTLED) even when PapssFacing:Recall:RequireSettledOriginal is relaxed to allow unsettled payments -
+    /// the guard is unconditional for these two outcomes, not merely "must be SETTLED".
+    /// </summary>
+    [Fact]
+    public async Task Recall_of_an_already_returned_or_already_rejected_payment_stays_refused_even_when_unsettled_is_allowed()
+    {
+        await using var harness = await PostgresHarness.CreateAsync(o => o.Recall.RequireSettledOriginal = false);
+        await using var provider = harness.BuildProvider();
+
+        // Settled, then a pacs.004 returns it: PapssOutcome.Returned.
+        await SettledPayment(harness, provider, "TX-R22");
+        await InboundReturn(provider, harness, PostgresHarness.InboundReturn("CT02-RTN-221", "RTN-22", "TX-R22", "E2E-TX-R22"));
+        Assert.Equal(PapssOutcome.Returned, (await Stored(harness, "TX-R22")).PapssOutcome);
+        Assert.Equal((409, "ORIGINAL_NOT_SETTLED"), await Refusal(harness, provider, Body("TX-R22")));
+
+        // Admitted, then PAPSS rejects it (RJCT): PapssOutcome.Rejected.
+        await Pay(harness, provider, Payment("TX-R23"));
+        var payment = await Stored(harness, "TX-R23");
+        await StatusCallback(provider, harness, PostgresHarness.StatusReport("PAPSS-S-TX-R23", payment.MsgId!, "pacs.008.001.10", "TX-R23", "E2E-TX-R23", "RJCT", reason: "AC04"));
+        Assert.Equal(PapssOutcome.Rejected, (await Stored(harness, "TX-R23")).PapssOutcome);
+        Assert.Equal((409, "ORIGINAL_NOT_SETTLED"), await Refusal(harness, provider, Body("TX-R23")));
+
+        // No recall was ever stored for either payment.
+        Assert.Equal(0, await harness.WithStorageAsync(db => db.PapssOperations.CountAsync(x => x.Operation == PapssOperationType.Recall)));
     }
 
     [Fact]
@@ -492,6 +526,158 @@ public sealed class PapssRecallOperationTests
     }
 
     // ---------------------------------------------------------------------------------------------
+    // S3 recovery: RECALL_OUTCOME_UNRESOLVED and the manual operator close
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Recall_outcome_unresolved_keeps_the_recall_open_and_blocks_a_new_recall()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var payment = await SettledPayment(harness, provider, "TX-R17");
+        var paymentBefore = Snapshot(await Stored(harness, "TX-R17"));
+        var recallId = (await Recall(harness, provider, Body("TX-R17")))["requestMessageId"]!.GetValue<string>();
+
+        // The gateway's ambiguous signal is carried in the reason (StsRsnInf/Rsn), not TxSts (ISO-capped at 4 characters);
+        // TxSts itself is kept as a valid code (RJCT here, the conservative default) per the current gateway design.
+        var xml = GatewayRecallXml.RecallStatus("PAPSS-RS-171", recallId, "TX-R17", "E2E-TX-R17", "RJCT", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic);
+        var result = await StatusCallback(provider, harness, xml);
+        Assert.Equal((PapssCorrelation.MessageId, PapssEventDisposition.Applied, true), (result.Correlation, result.Disposition, result.Pushed));
+        var recall = await StoredRecall(harness, recallId);
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, recall.PapssOutcome);
+        Assert.Null(recall.CompletedAt); // still OPEN, not final
+        Assert.Equal(PapssGatewayState.Admitted, recall.GatewayState);
+
+        // Blocks a new recall of the same payment, same as RECALL_PENDING/RECALL_ACCEPTED_BY_PAPSS would.
+        Assert.Equal((409, "RECALL_ALREADY_OPEN"), await Refusal(harness, provider, Body("TX-R17")));
+        // The payment itself is completely untouched (isolation holds for this new outcome too).
+        Assert.Equal(paymentBefore, Snapshot(await Stored(harness, "TX-R17")));
+
+        await provider.GetRequiredService<PapssBankPushWorker>().RunOnceAsync(CancellationToken.None);
+        var push = Assert.Single(harness.Bank.Calls, c => c.Body.ContainsKey("recallId"));
+        Assert.Equal(("RECALL_OUTCOME_UNRESOLVED", recallId), (Text(push.Body, "outcome"), Text(push.Body, "recallId")));
+
+        var lookup = await Lookup(harness, provider, c => c.GetRecall(recallId, null, CancellationToken.None));
+        Assert.Equal(("UNKNOWN", "RECALL_OUTCOME_UNRESOLVED"), (Text(lookup, "status"), Text(lookup, "papssOutcome")));
+    }
+
+    [Fact]
+    public async Task A_later_camt029_or_pacs004_still_resolves_an_unresolved_recall_without_operator_action()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var payment = await SettledPayment(harness, provider, "TX-R18");
+        var recallId = (await Recall(harness, provider, Body("TX-R18")))["requestMessageId"]!.GetValue<string>();
+        await StatusCallback(provider, harness, GatewayRecallXml.RecallStatus("PAPSS-RS-181", recallId, "TX-R18", "E2E-TX-R18", "RJCT", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, (await StoredRecall(harness, recallId)).PapssOutcome);
+
+        var camt029 = GatewayRecallXml.Resolution("CT02-CXL-181", recallId, payment.MsgId!, "TX-R18", "E2E-TX-R18", reason: "AGNT", from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic);
+        var resolution = await Resolution(provider, harness, camt029);
+        Assert.Equal(PapssEventDisposition.Applied, resolution.Disposition);
+        Assert.Equal(PapssOutcome.RecallRejectedByBeneficiary, (await StoredRecall(harness, recallId)).PapssOutcome);
+        Assert.NotNull((await StoredRecall(harness, recallId)).CompletedAt);
+        // A new recall is now allowed (the earlier one resolved to a final state on its own, no manual close needed).
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        var second = (await Recall(harness, provider, Body("TX-R18", reason: "FRAD")))["requestMessageId"]!.GetValue<string>();
+        Assert.NotEqual(recallId, second);
+    }
+
+    [Fact]
+    public async Task Operator_closes_an_unresolved_recall_and_a_new_recall_is_then_allowed()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var payment = await SettledPayment(harness, provider, "TX-R19");
+        var paymentBefore = Snapshot(await Stored(harness, "TX-R19"));
+        var recallId = (await Recall(harness, provider, Body("TX-R19")))["requestMessageId"]!.GetValue<string>();
+        await StatusCallback(provider, harness, GatewayRecallXml.RecallStatus("PAPSS-RS-191", recallId, "TX-R19", "E2E-TX-R19", "RJCT", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, (await StoredRecall(harness, recallId)).PapssOutcome);
+
+        var closed = await CloseRecall(harness, provider, recallId, "gateway reported RECALL_OUTCOME_UNRESOLVED; confirmed with PAPSS portal that no funds moved after 45 days", "ops.alice");
+        Assert.Equal(("RECALL", "REJECTED", "RECALL_ABANDONED"), (Text(closed, "operation"), Text(closed, "status"), Text(closed, "papssOutcome")));
+        var recall = await StoredRecall(harness, recallId);
+        Assert.Equal(PapssOutcome.RecallAbandoned, recall.PapssOutcome);
+        Assert.NotNull(recall.CompletedAt);
+        Assert.Equal(("OPERATOR_CLOSE", "gateway reported RECALL_OUTCOME_UNRESOLVED; confirmed with PAPSS portal that no funds moved after 45 days"), (recall.StatusReasonCode, recall.AdditionalInfo));
+
+        // Audit event: who, when, why - reusing the existing event log, never applied automatically.
+        var auditEvent = await harness.WithStorageAsync(db => db.PapssOperationEvents.AsNoTracking().SingleAsync(x => x.EventType == PapssEventTypes.RecallClosed && x.OperationId == recall.Id));
+        var audit = PapssRecallMessages.ParseCloseAudit(auditEvent.RawXml);
+        Assert.Equal("ops.alice", audit.ClosedBy);
+        Assert.Contains("RECALL_OUTCOME_UNRESOLVED", audit.Reason);
+        Assert.Equal(harness.Clock.GetUtcNow(), audit.ClosedAt);
+        Assert.Contains("ops.alice", auditEvent.Note);
+        Assert.Contains("RECALL_OUTCOME_UNRESOLVED", auditEvent.Note); // records the previous outcome too
+
+        // Isolation holds: the recalled payment is completely untouched by the manual close.
+        Assert.Equal(paymentBefore, Snapshot(await Stored(harness, "TX-R19")));
+
+        // Releases the one-open-recall lock: a new recall of the same payment now succeeds.
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        var second = (await Recall(harness, provider, Body("TX-R19", reason: "FRAD")))["requestMessageId"]!.GetValue<string>();
+        Assert.NotEqual(recallId, second);
+        var lookup = await Lookup(harness, provider, c => c.GetPayment("TX-R19", null, CancellationToken.None));
+        Assert.Equal([(recallId, "REJECTED", "RECALL_ABANDONED"), (second, "PENDING", "RECALL_PENDING")],
+            lookup["recalls"]!.AsArray().Select(r => (Text(r!, "recallId"), Text(r!, "status"), Text(r!, "papssOutcome"))));
+
+        // Pushed to the bank like any other recall answer (in addition to the earlier RECALL_OUTCOME_UNRESOLVED push).
+        await provider.GetRequiredService<PapssBankPushWorker>().RunOnceAsync(CancellationToken.None);
+        var pushes = harness.Bank.Calls.Where(c => c.Body.ContainsKey("recallId") && Text(c.Body, "recallId") == recallId).ToList();
+        Assert.Equal(["RECALL_OUTCOME_UNRESOLVED", "RECALL_ABANDONED"], pushes.Select(c => Text(c.Body, "outcome")));
+        Assert.Equal("ops.alice", Text(pushes[^1].Body, "responderId"));
+    }
+
+    [Fact]
+    public async Task Close_recall_refuses_unknown_missing_reason_and_an_already_closed_recall()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var payment = await SettledPayment(harness, provider, "TX-R20");
+        var recallId = (await Recall(harness, provider, Body("TX-R20")))["requestMessageId"]!.GetValue<string>();
+
+        // Unknown recall id.
+        Assert.Equal((404, "OPERATION_NOT_FOUND"), await CloseRecallRefusal(harness, provider, PapssFacingSipsClient.Id(), "some reason"));
+        // Missing / blank reason.
+        Assert.Equal((422, "PAPSS_VALIDATION_FAILED"), await CloseRecallRefusal(harness, provider, recallId, null));
+        Assert.Equal((422, "PAPSS_VALIDATION_FAILED"), await CloseRecallRefusal(harness, provider, recallId, "   "));
+        // Nothing was written by any of the refused attempts.
+        Assert.Equal(PapssOutcome.RecallPending, (await StoredRecall(harness, recallId)).PapssOutcome);
+        Assert.Equal(0, await harness.WithStorageAsync(db => db.PapssOperationEvents.CountAsync(x => x.EventType == PapssEventTypes.RecallClosed)));
+
+        // First close succeeds...
+        await CloseRecall(harness, provider, recallId, "operator decision after manual review");
+        Assert.Equal(PapssOutcome.RecallAbandoned, (await StoredRecall(harness, recallId)).PapssOutcome);
+        // ...a second close of the same (already-closed) recall is refused, and nothing changes.
+        Assert.Equal((409, "RECALL_ALREADY_CLOSED"), await CloseRecallRefusal(harness, provider, recallId, "trying again"));
+        Assert.Equal(1, await harness.WithStorageAsync(db => db.PapssOperationEvents.CountAsync(x => x.EventType == PapssEventTypes.RecallClosed)));
+
+        // Closing a recall that is already final for an ordinary reason (PAPSS rejected it) is refused the same way.
+        var second = (await Recall(harness, provider, Body("TX-R20", reason: "FRAD")))["requestMessageId"]!.GetValue<string>();
+        await StatusCallback(provider, harness, GatewayRecallXml.RecallStatus("PAPSS-RS-201", second, "TX-R20", "E2E-TX-R20", "RJCT", from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic));
+        Assert.Equal(PapssOutcome.RecallRejectedByPapss, (await StoredRecall(harness, second)).PapssOutcome);
+        Assert.Equal((409, "RECALL_ALREADY_CLOSED"), await CloseRecallRefusal(harness, provider, second, "not actually stuck"));
+    }
+
+    [Fact]
+    public async Task Close_recall_concurrent_double_close_only_applies_once()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        await SettledPayment(harness, provider, "TX-R21");
+        var recallId = (await Recall(harness, provider, Body("TX-R21")))["requestMessageId"]!.GetValue<string>();
+
+        // Two concurrent close attempts on the same still-open recall: the deterministic audit-event id (keyed on the recall,
+        // not a random guid) means only one can win at the database level even if both pass the application-level open check.
+        var first = CloseRecallRaw(harness, provider, recallId, "attempt A", "ops.a");
+        var second = CloseRecallRaw(harness, provider, recallId, "attempt B", "ops.b");
+        await Task.WhenAll(first, second);
+        var results = new[] { await first, await second };
+        Assert.Single(results, r => r is OkObjectResult);
+        Assert.Equal(1, await harness.WithStorageAsync(db => db.PapssOperationEvents.CountAsync(x => x.EventType == PapssEventTypes.RecallClosed)));
+        Assert.Equal(PapssOutcome.RecallAbandoned, (await StoredRecall(harness, recallId)).PapssOutcome);
+    }
+
+    // ---------------------------------------------------------------------------------------------
 
     private static JsonObject Payment(string txId) => new()
     {
@@ -548,6 +734,32 @@ public sealed class PapssRecallOperationTests
     {
         using var scope = provider.CreateScope();
         var result = Assert.IsAssignableFrom<ObjectResult>(await Controller(harness, scope.ServiceProvider).Recall(body, CancellationToken.None));
+        var json = JsonNode.Parse(JsonSerializer.Serialize(result.Value))!;
+        return (result.StatusCode ?? 200, json["code"]!.GetValue<string>());
+    }
+
+    /// <summary>Calls POST Recall/{recallId}/Close as the named operator (default "ops.test"; the store records this as closedBy).</summary>
+    private static async Task<ActionResult> CloseRecallRaw(PostgresHarness harness, ServiceProvider provider, string recallId, string? reason, string closedBy = "ops.test")
+    {
+        using var scope = provider.CreateScope();
+        var controller = Controller(harness, scope.ServiceProvider);
+        controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+        {
+            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+            {
+                User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                    [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, closedBy)], "Test"))
+            }
+        };
+        return await controller.CloseRecall(recallId, new PapssRecallCloseRequest { Reason = reason }, CancellationToken.None);
+    }
+
+    private static async Task<JsonObject> CloseRecall(PostgresHarness harness, ServiceProvider provider, string recallId, string reason, string closedBy = "ops.test")
+        => (JsonObject)Assert.IsType<OkObjectResult>(await CloseRecallRaw(harness, provider, recallId, reason, closedBy)).Value!;
+
+    private static async Task<(int Status, string Code)> CloseRecallRefusal(PostgresHarness harness, ServiceProvider provider, string recallId, string? reason, string closedBy = "ops.test")
+    {
+        var result = Assert.IsAssignableFrom<ObjectResult>(await CloseRecallRaw(harness, provider, recallId, reason, closedBy));
         var json = JsonNode.Parse(JsonSerializer.Serialize(result.Value))!;
         return (result.StatusCode ?? 200, json["code"]!.GetValue<string>());
     }

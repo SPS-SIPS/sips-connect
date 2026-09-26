@@ -19,7 +19,7 @@ namespace SIPS.Connect.Services;
 /// Pushes stored PAPSS payment events to the bank, using the existing callback mappings:
 /// PAYMENT_STATUS (pacs.002 for a payment or a return) -> CB_CompletionNotification;
 /// RETURN_RECEIVED (inbound pacs.004) -> CB_ReturnRequest; RECALL_STATUS / RECALL_RESOLUTION / RECALL_RETURNED (answers to our
-/// camt.056) -> CB_RecallResult. The PAPSS callback mapping profile and
+/// camt.056) / RECALL_CLOSED (a manual operator close) -> CB_RecallResult. The PAPSS callback mapping profile and
 /// callback URL apply (the push worker establishes the participant binding). The domestic SmartVista
 /// path is not involved.
 /// </summary>
@@ -93,16 +93,18 @@ public sealed class PapssPaymentEventDelivery(
                 };
                 return new Push(links.Return ?? string.Empty, CoreConstants.CB_ReturnRequest, headers, body, $"pacs.004 {message.ReturnId} for {message.OriginalTxId}");
             }
-            case PapssEventTypes.RecallStatus or PapssEventTypes.RecallResolution or PapssEventTypes.RecallReturned:
+            case PapssEventTypes.RecallStatus or PapssEventTypes.RecallResolution or PapssEventTypes.RecallReturned or PapssEventTypes.RecallClosed:
             {
                 if (operation is not { Operation: PapssOperationType.Recall })
                     throw new InvalidDataException($"PAPSS recall event {e.SourceMessageId} is not attached to a recall.");
                 // The outcome this event reported (not the recall's current one): each answer is pushed as it happened.
-                var outcome = PapssRecallRules.OutcomeOfEvent(e.EventType, e.Status) ?? throw new InvalidDataException($"PAPSS recall event {e.SourceMessageId} has no recall outcome.");
+                var outcome = PapssRecallRules.OutcomeOfEvent(e.EventType, e.Status, e.ReasonCode) ?? throw new InvalidDataException($"PAPSS recall event {e.SourceMessageId} has no recall outcome.");
                 var responderId = e.EventType switch
                 {
                     PapssEventTypes.RecallStatus => PapssRecallMessages.StatusId(raw),
                     PapssEventTypes.RecallResolution => PapssRecallMessages.ParseResolution(raw).ResponderId,
+                    // RECALL_CLOSED has no PAPSS/gateway message: the "raw" bytes are the operator audit record (JSON), not XML.
+                    PapssEventTypes.RecallClosed => PapssRecallMessages.ParseCloseAudit(e.RawXml).ClosedBy,
                     _ => PapssPaymentMessages.ParseReturn(raw).ReturnId
                 };
                 var outcomeName = UpperSnakeEnumConverter<PapssOutcome>.Of(outcome);

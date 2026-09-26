@@ -146,7 +146,9 @@ public sealed class PapssOperationResult
         {
             // Only RECALL_RETURNED completes a recall; ACCP (RECALL_ACCEPTED_BY_PAPSS) is accepted for processing, still pending.
             if (op.PapssOutcome == Outcome.RecallReturned) return Completed;
-            if (op.PapssOutcome is Outcome.RecallRejectedByPapss or Outcome.RecallRejectedByBeneficiary or Outcome.Rejected || op.GatewayState == PapssGatewayState.Rejected) return Rejected;
+            if (op.PapssOutcome is Outcome.RecallRejectedByPapss or Outcome.RecallRejectedByBeneficiary or Outcome.RecallAbandoned or Outcome.Rejected || op.GatewayState == PapssGatewayState.Rejected) return Rejected;
+            // The gateway could not read PAPSS's outcome: flagged Unknown so operators notice it needs a manual close (or a later answer resolves it normally).
+            if (op.PapssOutcome == Outcome.RecallOutcomeUnresolved) return Unknown;
             if (op.GatewayState == PapssGatewayState.SubmissionUnknown && op.PapssOutcome == Outcome.RecallPending) return Unknown;
             return Pending;
         }

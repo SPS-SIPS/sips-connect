@@ -16,16 +16,17 @@ public sealed partial class PapssOperationStore
     private static readonly string RecallKind = UpperSnakeEnumConverter<PapssOperationType>.Of(PapssOperationType.Recall);
     private static readonly string RecallPendingOutcome = UpperSnakeEnumConverter<PapssOutcome>.Of(PapssOutcome.RecallPending);
     private static readonly string RecallAcceptedOutcome = UpperSnakeEnumConverter<PapssOutcome>.Of(PapssOutcome.RecallAcceptedByPapss);
+    private static readonly string RecallUnresolvedOutcome = UpperSnakeEnumConverter<PapssOutcome>.Of(PapssOutcome.RecallOutcomeUnresolved);
     /// <summary>PAPSS-confirmed 2026-09-26: a return within 7 days of settlement carries exactly the original amount.</summary>
     public static readonly TimeSpan ExactUnwindWindow = TimeSpan.FromDays(7);
 
     public Task<PapssOperation?> FindOutboundRecallAsync(string recallId, CancellationToken ct)
         => db.PapssOperations.AsNoTracking().SingleOrDefaultAsync(x => x.Direction == PapssDirection.Outbound && x.Operation == PapssOperationType.Recall && x.RequestMessageId == recallId, ct);
 
-    /// <summary>The OPEN recall (RECALL_PENDING / RECALL_ACCEPTED_BY_PAPSS) of a payment; at most one exists (ux_papss_op_open_recall).</summary>
+    /// <summary>The OPEN recall (RECALL_PENDING / RECALL_ACCEPTED_BY_PAPSS / RECALL_OUTCOME_UNRESOLVED) of a payment; at most one exists (ux_papss_op_open_recall).</summary>
     public Task<PapssOperation?> FindOpenRecallAsync(Guid paymentId, CancellationToken ct)
         => db.PapssOperations.AsNoTracking().FirstOrDefaultAsync(x => x.OriginalOperationId == paymentId && x.Operation == PapssOperationType.Recall
-            && (x.PapssOutcome == PapssOutcome.RecallPending || x.PapssOutcome == PapssOutcome.RecallAcceptedByPapss), ct);
+            && (x.PapssOutcome == PapssOutcome.RecallPending || x.PapssOutcome == PapssOutcome.RecallAcceptedByPapss || x.PapssOutcome == PapssOutcome.RecallOutcomeUnresolved), ct);
 
     /// <summary>OUTBOUND payments with this EndToEndId (a recall may name the payment by its EndToEndId).</summary>
     public Task<List<PapssOperation>> FindOutboundPaymentsByEndToEndIdAsync(string endToEndId, CancellationToken ct)
@@ -99,13 +100,83 @@ public sealed partial class PapssOperationStore
         => options.Recall.ResponseDeadlineDays is { } days ? admittedAt.AddDays(days) : null;
 
     // ----------------------------------------------------------------------------------------
+    // Manual operator close (recovery for a recall stuck open, e.g. RECALL_OUTCOME_UNRESOLVED)
+    // ----------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Manually, and only manually, closes a recall that is stuck OPEN (never applied automatically). Sets it to the final
+    /// RECALL_ABANDONED outcome, releases the one-open-recall lock (ux_papss_op_open_recall) so a new recall may be submitted
+    /// for the payment, queues a CB_RecallResult push, and records an audit event (who, when, why) reusing the existing
+    /// papss_operation_events log. A recall that is not OPEN (already final) is refused with AlreadyClosed; nothing is written.
+    /// </summary>
+    public async Task<(PapssRecallCloseOutcome Outcome, PapssOperation? Recall)> CloseRecallAsync(string recallId, string reason, string? closedBy, CancellationToken ct)
+    {
+        var now = Now;
+        await using var transaction = await db.BeginTransactionAsync(ct);
+        var recall = await LockOneAsync(db.PapssOperations.FromSqlInterpolated($@"SELECT *, xmin FROM papss_operations
+            WHERE operation = {RecallKind} AND direction = 'OUTBOUND' AND requestmessageid = {recallId}
+            LIMIT 1 FOR UPDATE"), ct);
+        if (recall is null)
+        {
+            await transaction.RollbackAsync(ct);
+            return (PapssRecallCloseOutcome.NotFound, null);
+        }
+        if (!Recall.IsOpen(recall.PapssOutcome))
+        {
+            await transaction.RollbackAsync(ct);
+            return (PapssRecallCloseOutcome.AlreadyClosed, recall);
+        }
+
+        var by = string.IsNullOrWhiteSpace(closedBy) ? "unknown" : closedBy.Trim();
+        var previousOutcome = UpperSnakeEnumConverter<PapssOutcome>.Of(recall.PapssOutcome);
+        recall.PapssOutcome = PapssOutcome.RecallAbandoned;
+        recall.StatusReasonCode = "OPERATOR_CLOSE";
+        recall.AdditionalInfo = reason;
+        recall.StatusAt = now;
+        recall.CompletedAt ??= now;
+        MarkAnswered(recall, now);
+
+        var raw = PapssRecallMessages.BuildCloseAudit(new PapssRecallMessages.PapssRecallCloseAudit(by, reason, now));
+        db.PapssOperationEvents.Add(new PapssOperationEvent
+        {
+            OperationId = recall.Id,
+            EventType = PapssEventTypes.RecallClosed,
+            MessageType = "MANUAL_CLOSE",
+            // Deterministic per recall (not a random id): the application already refused a second close above, and this also
+            // protects against a concurrent duplicate close under the (eventtype, sourcemessageid) unique index.
+            SourceMessageId = $"MANUAL-CLOSE-{recall.RequestMessageId}",
+            RawXml = raw,
+            ReceivedAt = now,
+            PushState = PapssDeliveryState.Pending,
+            PushNextAttemptAt = now,
+            ReasonCode = "OPERATOR_CLOSE",
+            Correlation = PapssCorrelation.None,
+            Disposition = PapssEventDisposition.Applied,
+            OriginalTxId = Truncate(recall.OriginalTxId, 128),
+            OriginalEndToEndId = Truncate(recall.OriginalEndToEndId, 128),
+            Note = Truncate($"Manually closed by {by} (was {previousOutcome}): {reason}", 512)
+        });
+
+        if (!await CommitIngestAsync(transaction, ct))
+        {
+            // Only reachable if another request closed the same recall concurrently (the deterministic SourceMessageId collides).
+            logger.LogInformation("PAPSS recall {RecallId} was already closed concurrently; not closed again", recallId);
+            return (PapssRecallCloseOutcome.AlreadyClosed, await FindOutboundRecallAsync(recallId, ct));
+        }
+        logger.LogWarning("PAPSS recall {RecallId} was manually closed by {ClosedBy} (was {PreviousOutcome}): {Reason}", recallId, by, previousOutcome, reason);
+        return (PapssRecallCloseOutcome.Closed, recall);
+    }
+
+    // ----------------------------------------------------------------------------------------
     // pacs.002 answering our camt.056 (OrgnlMsgNmId camt.056.*, OrgnlMsgId = recall id)
     // ----------------------------------------------------------------------------------------
 
     /// <summary>
     /// PAPSS's immediate answer to our camt.056. Correlated ONLY by OrgnlMsgId = recall id (and its OrgnlTxId/OrgnlEndToEndId must be
     /// the recalled payment's). It carries the payment's TxId/EndToEndId but is never applied to (nor correlated with) the payment.
-    /// ACCP = accepted for processing (the recall stays open); RJCT closes the recall. Uncorrelated answers are stored, not pushed.
+    /// ACCP = accepted for processing (the recall stays open); RJCT closes the recall. The gateway's RECALL_OUTCOME_UNRESOLVED
+    /// signal (carried in the reason, see PapssRecallMessages.UnresolvedStatus) also keeps the recall open (RECALL_OUTCOME_UNRESOLVED),
+    /// pending a later answer or a manual operator close. Uncorrelated answers are stored, not pushed.
     /// </summary>
     public async Task<PapssIngestResult> IngestRecallStatusAsync(string rawXml, PapssStatusReport report, CancellationToken ct)
     {
@@ -128,13 +199,13 @@ public sealed partial class PapssOperationStore
             }
         }
 
-        var disposition = recall is null ? PapssEventDisposition.Uncorrelated : Recall.EvaluatePapssStatus(recall.PapssOutcome, report.Status);
+        var disposition = recall is null ? PapssEventDisposition.Uncorrelated : Recall.EvaluatePapssStatus(recall.PapssOutcome, report.Status, report.ReasonCode);
         if (recall is not null)
         {
             switch (disposition)
             {
                 case PapssEventDisposition.Applied:
-                    var next = Recall.OutcomeOfPapssStatus(report.Status)!.Value;
+                    var next = Recall.OutcomeOfPapssAnswer(report.Status, report.ReasonCode)!.Value;
                     recall.PapssOutcome = next;
                     recall.PaymentStatus = report.Status;
                     recall.StatusReasonCode = Truncate(report.ReasonCode, 64);
@@ -220,7 +291,7 @@ public sealed partial class PapssOperationStore
         {
             var candidates = await db.PapssOperations.FromSqlInterpolated($@"SELECT *, xmin FROM papss_operations
                 WHERE operation = {RecallKind} AND direction = 'OUTBOUND' AND originaltxid = {message.OriginalTxId}
-                  AND papssoutcome IN ({RecallPendingOutcome}, {RecallAcceptedOutcome})
+                  AND papssoutcome IN ({RecallPendingOutcome}, {RecallAcceptedOutcome}, {RecallUnresolvedOutcome})
                 ORDER BY createdat LIMIT 2 FOR UPDATE").ToListAsync(ct);
             candidates = candidates.Where(x => MatchesRecall(x, message.OriginalTxId, message.OriginalEndToEndId)).ToList();
             if (candidates.Count == 1)
@@ -304,7 +375,7 @@ public sealed partial class PapssOperationStore
     {
         var recall = await LockOneAsync(db.PapssOperations.FromSqlInterpolated($@"SELECT *, xmin FROM papss_operations
             WHERE operation = {RecallKind} AND direction = 'OUTBOUND' AND originaloperationid = {payment.Id}
-              AND papssoutcome IN ({RecallPendingOutcome}, {RecallAcceptedOutcome})
+              AND papssoutcome IN ({RecallPendingOutcome}, {RecallAcceptedOutcome}, {RecallUnresolvedOutcome})
             LIMIT 1 FOR UPDATE"), ct);
         if (recall is null) return null;
         var note = $"pacs.004 RtrId {message.ReturnId} attributed to the open recall of payment {payment.TxId}";

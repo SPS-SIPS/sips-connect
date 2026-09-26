@@ -483,7 +483,7 @@ namespace SIPS.PostgreSQL.Migrations
                     b.HasIndex(new[] { "OriginalOperationId" }, "ux_papss_op_open_recall")
                         .IsUnique()
                         .HasDatabaseName("ux_papss_op_open_recall")
-                        .HasFilter("operation = 'RECALL' AND originaloperationid IS NOT NULL AND papssoutcome IN ('RECALL_PENDING', 'RECALL_ACCEPTED_BY_PAPSS')");
+                        .HasFilter("operation = 'RECALL' AND originaloperationid IS NOT NULL AND papssoutcome IN ('RECALL_PENDING', 'RECALL_ACCEPTED_BY_PAPSS', 'RECALL_OUTCOME_UNRESOLVED')");
 
                     b.ToTable("papss_operations", (string)null);
                 });

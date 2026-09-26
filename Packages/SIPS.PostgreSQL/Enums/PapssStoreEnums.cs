@@ -46,9 +46,12 @@ public enum PapssGatewayState
 /// Payment / return: the payment outcome derived from the pacs.002 sequence (the raw ISO status is kept separately
 /// in papss_operations.paymentstatus and per event). ACCEPTED covers ACCP and ACSP; SETTLED is ACSC; REJECTED is RJCT;
 /// RETURNED marks a payment against which a return has settled. SETTLED, REJECTED and RETURNED are final.
-/// Recall (camt.056): RECALL_PENDING (submitted, no PAPSS answer yet) and RECALL_ACCEPTED_BY_PAPSS (pacs.002 ACCP: accepted
-/// for processing, NOT completed) are open; RECALL_REJECTED_BY_PAPSS (pacs.002 RJCT), RECALL_REJECTED_BY_BENEFICIARY
-/// (camt.029 RJCR) and RECALL_RETURNED (pacs.004 received) are final. A recall the gateway rejected is REJECTED.
+/// Recall (camt.056): RECALL_PENDING (submitted, no PAPSS answer yet), RECALL_ACCEPTED_BY_PAPSS (pacs.002 ACCP: accepted
+/// for processing, NOT completed) and RECALL_OUTCOME_UNRESOLVED (the gateway could not determine PAPSS's outcome for the
+/// recall; reported on the same recall-result callback/lookup path as the other answers) are open; RECALL_REJECTED_BY_PAPSS
+/// (pacs.002 RJCT), RECALL_REJECTED_BY_BENEFICIARY (camt.029 RJCR), RECALL_RETURNED (pacs.004 received) and RECALL_ABANDONED
+/// (a manual operator close of a recall stuck open, see <c>POST Recall/{recallId}/Close</c>) are final. A recall the gateway
+/// rejected before submission is REJECTED.
 /// </summary>
 public enum PapssOutcome
 {
@@ -64,7 +67,18 @@ public enum PapssOutcome
     RecallAcceptedByPapss,
     RecallRejectedByPapss,
     RecallRejectedByBeneficiary,
-    RecallReturned
+    RecallReturned,
+    /// <summary>
+    /// The gateway could not read a definite ACCP/RJCT outcome from PAPSS for the recall (ambiguous/unreadable). Still OPEN:
+    /// blocks a new recall on the same payment (ux_papss_op_open_recall) until an operator closes it or a later, legitimate
+    /// answer (camt.029 / pacs.004) resolves it normally.
+    /// </summary>
+    RecallOutcomeUnresolved,
+    /// <summary>
+    /// An operator manually closed a recall stuck open (e.g. RECALL_OUTCOME_UNRESOLVED). Final; releases the one-open-recall
+    /// lock so a new recall may be submitted. Never applied automatically.
+    /// </summary>
+    RecallAbandoned
 }
 
 /// <summary>
@@ -107,6 +121,8 @@ public static class PapssEventTypes
     public const string RecallResolution = "RECALL_RESOLUTION";
     /// <summary>pacs.004 received while a recall was open on the payment: the recall is RETURNED (the return itself is RETURN_RECEIVED).</summary>
     public const string RecallReturned = "RECALL_RETURNED";
+    /// <summary>An operator manually closed a recall stuck open (e.g. RECALL_OUTCOME_UNRESOLVED). Audit record, never applied automatically.</summary>
+    public const string RecallClosed = "RECALL_CLOSED";
 }
 
 /// <summary>How a received pacs.002 / pacs.004 was matched to a stored operation (papss_operation_events.correlation).</summary>

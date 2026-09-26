@@ -163,8 +163,8 @@ public sealed class UpperSnakeEnumConverter<TEnum>() : ValueConverter<TEnum, str
 
 public sealed class PapssOperationConfiguration : IEntityTypeConfiguration<PapssOperation>
 {
-    /// <summary>The partial-index predicate of ux_papss_op_open_recall (RECALL_PENDING and RECALL_ACCEPTED_BY_PAPSS are open).</summary>
-    public const string OpenRecallFilter = "operation = 'RECALL' AND originaloperationid IS NOT NULL AND papssoutcome IN ('RECALL_PENDING', 'RECALL_ACCEPTED_BY_PAPSS')";
+    /// <summary>The partial-index predicate of ux_papss_op_open_recall (RECALL_PENDING, RECALL_ACCEPTED_BY_PAPSS and RECALL_OUTCOME_UNRESOLVED are open).</summary>
+    public const string OpenRecallFilter = "operation = 'RECALL' AND originaloperationid IS NOT NULL AND papssoutcome IN ('RECALL_PENDING', 'RECALL_ACCEPTED_BY_PAPSS', 'RECALL_OUTCOME_UNRESOLVED')";
 
     public void Configure(EntityTypeBuilder<PapssOperation> builder)
     {
