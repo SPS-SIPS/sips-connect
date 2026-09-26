@@ -20,7 +20,12 @@ public enum PapssOperationType
     /// <summary>pacs.028 sent for a stored (outbound) payment; linked to it by OriginalOperationId.</summary>
     StatusEnquiry,
     /// <summary>pacs.004: OUTBOUND = return this participant sends; INBOUND = return received from PAPSS.</summary>
-    Return
+    Return,
+    /// <summary>
+    /// camt.056 (OUTBOUND): the bank recalls one of its settled payments; linked to it by OriginalOperationId. The recall id is
+    /// the RequestMessageId. PAPSS answers with pacs.002 (ACCP/RJCT), the beneficiary later with pacs.004 or camt.029 (RJCR).
+    /// </summary>
+    Recall
 }
 
 /// <summary>
@@ -41,6 +46,9 @@ public enum PapssGatewayState
 /// Payment / return: the payment outcome derived from the pacs.002 sequence (the raw ISO status is kept separately
 /// in papss_operations.paymentstatus and per event). ACCEPTED covers ACCP and ACSP; SETTLED is ACSC; REJECTED is RJCT;
 /// RETURNED marks a payment against which a return has settled. SETTLED, REJECTED and RETURNED are final.
+/// Recall (camt.056): RECALL_PENDING (submitted, no PAPSS answer yet) and RECALL_ACCEPTED_BY_PAPSS (pacs.002 ACCP: accepted
+/// for processing, NOT completed) are open; RECALL_REJECTED_BY_PAPSS (pacs.002 RJCT), RECALL_REJECTED_BY_BENEFICIARY
+/// (camt.029 RJCR) and RECALL_RETURNED (pacs.004 received) are final. A recall the gateway rejected is REJECTED.
 /// </summary>
 public enum PapssOutcome
 {
@@ -51,7 +59,12 @@ public enum PapssOutcome
     Unknown,
     Accepted,
     Settled,
-    Returned
+    Returned,
+    RecallPending,
+    RecallAcceptedByPapss,
+    RecallRejectedByPapss,
+    RecallRejectedByBeneficiary,
+    RecallReturned
 }
 
 /// <summary>
@@ -88,6 +101,12 @@ public static class PapssEventTypes
     public const string PaymentReceived = "PAYMENT_RECEIVED";
     /// <summary>pacs.004 received from the gateway (a return of a payment this participant sent).</summary>
     public const string ReturnReceived = "RETURN_RECEIVED";
+    /// <summary>pacs.002 answering our camt.056 (OrgnlMsgNmId camt.056.*): PAPSS accepted (ACCP) or rejected (RJCT) the recall.</summary>
+    public const string RecallStatus = "RECALL_STATUS";
+    /// <summary>camt.029 received: the beneficiary refused our recall (RJCR).</summary>
+    public const string RecallResolution = "RECALL_RESOLUTION";
+    /// <summary>pacs.004 received while a recall was open on the payment: the recall is RETURNED (the return itself is RETURN_RECEIVED).</summary>
+    public const string RecallReturned = "RECALL_RETURNED";
 }
 
 /// <summary>How a received pacs.002 / pacs.004 was matched to a stored operation (papss_operation_events.correlation).</summary>

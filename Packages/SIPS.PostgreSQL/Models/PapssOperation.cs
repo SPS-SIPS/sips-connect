@@ -54,7 +54,7 @@ public class PapssOperation
     /// For OUTBOUND payments and returns this is the value the gateway echoes as pacs.002 OrgnlMsgId.</summary>
     public string? MsgId { get; set; }
     public string? ReturnId { get; set; }
-    /// <summary>RETURN -> the payment it returns; STATUS_ENQUIRY -> the payment it asks about.</summary>
+    /// <summary>RETURN -> the payment it returns; STATUS_ENQUIRY -> the payment it asks about; RECALL -> the payment it recalls.</summary>
     public Guid? OriginalOperationId { get; set; }
     public PapssOperation? OriginalOperation { get; set; }
     /// <summary>RETURN / STATUS_ENQUIRY: the original payment TxId / EndToEndId as sent or received.</summary>
@@ -163,6 +163,9 @@ public sealed class UpperSnakeEnumConverter<TEnum>() : ValueConverter<TEnum, str
 
 public sealed class PapssOperationConfiguration : IEntityTypeConfiguration<PapssOperation>
 {
+    /// <summary>The partial-index predicate of ux_papss_op_open_recall (RECALL_PENDING and RECALL_ACCEPTED_BY_PAPSS are open).</summary>
+    public const string OpenRecallFilter = "operation = 'RECALL' AND originaloperationid IS NOT NULL AND papssoutcome IN ('RECALL_PENDING', 'RECALL_ACCEPTED_BY_PAPSS')";
+
     public void Configure(EntityTypeBuilder<PapssOperation> builder)
     {
         builder.ToTable("papss_operations");
@@ -208,6 +211,10 @@ public sealed class PapssOperationConfiguration : IEntityTypeConfiguration<Papss
             .HasFilter("operation = 'PAYMENT' AND txid IS NOT NULL").HasDatabaseName("ux_papss_op_payment_txid");
         builder.HasIndex(x => new { x.Direction, x.ReturnId }).IsUnique()
             .HasFilter("operation = 'RETURN' AND returnid IS NOT NULL").HasDatabaseName("ux_papss_op_return_id");
+        // [SAFETY INVARIANT]: at most one OPEN recall per payment. PAPSS answers to a camt.056 (pacs.002, camt.029, pacs.004) do
+        // not all carry our recall id, so an answer can only be attributed when the payment has a single open recall.
+        builder.HasIndex(x => x.OriginalOperationId, "ux_papss_op_open_recall").IsUnique()
+            .HasFilter(OpenRecallFilter).HasDatabaseName("ux_papss_op_open_recall");
         builder.HasIndex(x => x.MsgId).HasDatabaseName("ix_papss_op_msg_id");
         builder.HasIndex(x => x.TxId).HasDatabaseName("ix_papss_op_tx_id");
         builder.HasIndex(x => x.EndToEndId).HasDatabaseName("ix_papss_op_end_to_end_id");
