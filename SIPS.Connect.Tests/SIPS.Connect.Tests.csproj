@@ -24,9 +24,12 @@
     <None Include="../docs/schemas/SPS.PAPSS.PROVENANCE.001.xsd" Link="ProvenanceSchemas/SPS.PAPSS.PROVENANCE.001.xsd" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Packages/SIPS.ISO20022/Schemas/pacs.002.001.12.xsd" Link="ProvenanceSchemas/pacs.002.001.12.xsd" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Packages/SIPS.ISO20022/Schemas/pacs.004.001.11.xsd" Link="ProvenanceSchemas/pacs.004.001.11.xsd" CopyToOutputDirectory="PreserveNewest" />
-    <!-- The literal, unmodified bytes the Gateway POSTed for the S3 RECALL_OUTCOME_UNRESOLVED signal; see
-         art/papss/evidence/recall-outcome-unresolved-callback-20260926.md. SHA-256:
-         031a4692cc5eafb313b55e90236f9d35437ec07dfb25e7d6037df30c53f8cac3 -->
+    <!-- The literal, unmodified bytes the Gateway POSTed for the S3 RECALL_OUTCOME_UNRESOLVED signal, paired with the
+         gateway's own public signer certificate (no private key) from the same test run; see
+         art/papss/evidence/recall-outcome-unresolved-callback-20260926.md. SHA-256 of the XML:
+         aede643226bbc9b3cc6213c5a61ab1abdaf141e04619b7ac01862916edda4660. Certificate SHA-256 fingerprint:
+         20306b94c7ca54327dc4bd2c1df7c60bcd49960b3846222ffbc9e2411c16e3e7 (CN=PAPSS, issuer CN=WP-HOST SIPS Test CA). -->
     <None Include="Fixtures/recall-outcome-unresolved-callback-20260926.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures/recall-outcome-unresolved-callback-signer-20260926.pem" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

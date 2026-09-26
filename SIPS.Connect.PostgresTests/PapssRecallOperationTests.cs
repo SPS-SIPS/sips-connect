@@ -756,7 +756,7 @@ public sealed class PapssRecallOperationTests
     private static string LoadCapturedUnresolvedFixture()
     {
         var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "recall-outcome-unresolved-callback-20260926.xml"));
-        Assert.Equal("031a4692cc5eafb313b55e90236f9d35437ec07dfb25e7d6037df30c53f8cac3", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(xml))).ToLowerInvariant());
+        Assert.Equal("aede643226bbc9b3cc6213c5a61ab1abdaf141e04619b7ac01862916edda4660", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(xml))).ToLowerInvariant());
         return xml;
     }
 
