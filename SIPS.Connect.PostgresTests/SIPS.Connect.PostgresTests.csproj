@@ -28,5 +28,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../SIPS.Connect.Tests/GatewayProvenanceXml.cs" Link="GatewayProvenanceXml.cs" />
+    <Compile Include="../SIPS.Connect.Tests/GatewayRecallXml.cs" Link="GatewayRecallXml.cs" />
   </ItemGroup>
 </Project>
