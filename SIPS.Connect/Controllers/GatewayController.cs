@@ -316,6 +316,36 @@ public class GatewayController(
         _ => null
     };
 
+    /// <summary>
+    /// Operator recovery: manually closes a recall stuck OPEN, for example RECALL_OUTCOME_UNRESOLVED (the gateway could not
+    /// read a definite PAPSS outcome for the camt.056). Sets the final RECALL_ABANDONED outcome, releases the one-open-recall
+    /// lock (ux_papss_op_open_recall) so a new recall may be submitted for the payment, pushes CB_RecallResult, and records
+    /// who/when/why as an audited papss_operation_events entry. Manual only: SIPS Connect never applies this by itself.
+    /// </summary>
+    [HttpPost("Recall/{recallId}/Close")]
+    [Authorize(Roles = Recon)]
+    public async Task<ActionResult> CloseRecall([FromRoute] string recallId, [FromBody] PapssRecallCloseRequest body, CancellationToken ct)
+    {
+        var reason = body?.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+            return UnprocessableEntity(new { code = "PAPSS_VALIDATION_FAILED", message = "A reason is required to close a recall manually." });
+        if (string.IsNullOrWhiteSpace(recallId) || recallId.Length > 128)
+            return BadRequest(new { code = "INVALID_LOOKUP_KEY", message = "recallId is required (max 128 characters)." });
+
+        var closedBy = User?.Identity?.Name;
+        var (outcome, recall) = await papssStore.CloseRecallAsync(recallId, reason, closedBy, ct);
+        return outcome switch
+        {
+            PapssRecallCloseOutcome.NotFound => NotFound(new { code = "OPERATION_NOT_FOUND", message = "No PAPSS recall is stored for this recallId." }),
+            PapssRecallCloseOutcome.AlreadyClosed => Conflict(new
+            {
+                code = "RECALL_ALREADY_CLOSED",
+                message = $"Recall {recallId} is already {UpperSnakeEnumConverter<PapssOutcome>.Of(recall!.PapssOutcome)}; it cannot be closed again."
+            }),
+            _ => Ok(_jsonAdapter.Transform(await _papssPayments.DescribeAsync(recall!, ct), OperationResultMapping))
+        };
+    }
+
     [HttpPost("Retry/{id}")]
     [Authorize(Roles = Recon)]
     public async Task<ActionResult> Retry([FromRoute] string id, CancellationToken ct)

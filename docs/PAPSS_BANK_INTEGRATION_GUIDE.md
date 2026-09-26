@@ -324,12 +324,14 @@ Refusals (nothing is sent to PAPSS):
 How it proceeds (states in `papssOutcome` of the recall):
 
 1. `RECALL_PENDING`: stored with the signed camt.056 before it is submitted. An ambiguous submission shows `status: "UNKNOWN"`: re-send the same request with the same `recallId`.
-2. PAPSS answers at once: `RECALL_ACCEPTED_BY_PAPSS` (ACCP). This means **accepted for processing, not completed**: the money has not moved and your payment is still `SETTLED`. Or `RECALL_REJECTED_BY_PAPSS` (RJCT, the reason code in `reasonCode`, final).
+2. PAPSS answers at once: `RECALL_ACCEPTED_BY_PAPSS` (ACCP). This means **accepted for processing, not completed**: the money has not moved and your payment is still `SETTLED`. Or `RECALL_REJECTED_BY_PAPSS` (RJCT, the reason code in `reasonCode`, final). Occasionally the gateway cannot determine which: `RECALL_OUTCOME_UNRESOLVED` (not final; see below).
 3. The beneficiary bank answers (PAPSS allows it 30 days; `deadlineAt` on the recall, `responseOverdue: true` after it, record-only):
    - funds returned: a pacs.004 arrives; your payment becomes `RETURNED` (the usual [return callback](#return-received-from-papss)) and the recall `RECALL_RETURNED` (final);
    - refused: a camt.029; the recall becomes `RECALL_REJECTED_BY_BENEFICIARY` (final, with the reason, for example `CUST`, `AGNT`, `LEGL`).
 
-Each answer is pushed on the [recall result callback](#recall-result-callback). Follow a recall with `GET /api/v1/Gateway/Recall/{recallId}` (summary `status`: `PENDING` until returned or rejected, `COMPLETED` when returned, `REJECTED`, `UNKNOWN`), and on the payment lookup (`recalls`). The recall lookup shows `originalRequestMessageId`, `originalTxId`, `originalEndToEndId`, `originalPaymentOutcome`, `reason` (yours), `statusReasonCode` (the answer's reason), `returnId`, `deadlineAt`, `responseOverdue` and the `statusHistory` of the answers. PAPSS has no recall status enquiry.
+A recall stuck at `RECALL_OUTCOME_UNRESOLVED` is still open: a later, legitimate answer above still resolves it normally, no action needed on your side. If none ever arrives, SPS operations may close it manually (`POST Recall/{recallId}/Close`, final `RECALL_ABANDONED`) so a new recall of the same payment can be submitted; this is never done automatically.
+
+Each answer is pushed on the [recall result callback](#recall-result-callback). Follow a recall with `GET /api/v1/Gateway/Recall/{recallId}` (summary `status`: `PENDING` until returned or rejected, `COMPLETED` when returned, `REJECTED` (including a manually abandoned recall), `UNKNOWN` (including `RECALL_OUTCOME_UNRESOLVED`)), and on the payment lookup (`recalls`). The recall lookup shows `originalRequestMessageId`, `originalTxId`, `originalEndToEndId`, `originalPaymentOutcome`, `reason` (yours), `statusReasonCode` (the answer's reason), `returnId`, `deadlineAt`, `responseOverdue` and the `statusHistory` of the answers. PAPSS has no recall status enquiry.
 
 Fees: PAPSS confirmed that a recall returned within 7 days of settlement gives back exactly the original amount. A different amount is noted on the recall's history, never blocked; beyond 7 days the fee treatment is not established by PAPSS.
 
@@ -488,7 +490,7 @@ Every answer to one of your recalls is pushed with the mapping `<profile>.CB_Rec
 }
 ```
 
-- `outcome`: `RECALL_ACCEPTED_BY_PAPSS` (not final), `RECALL_REJECTED_BY_PAPSS`, `RECALL_REJECTED_BY_BENEFICIARY` or `RECALL_RETURNED` (final). A recall normally produces two callbacks: PAPSS's answer, then the beneficiary's.
+- `outcome`: `RECALL_ACCEPTED_BY_PAPSS` or `RECALL_OUTCOME_UNRESOLVED` (not final, the gateway could not determine PAPSS's outcome), `RECALL_REJECTED_BY_PAPSS`, `RECALL_REJECTED_BY_BENEFICIARY`, `RECALL_RETURNED` or `RECALL_ABANDONED` (SPS operations closed the recall manually; `responderId` names the operator) - all final except the first two. A recall normally produces two callbacks: PAPSS's answer, then the beneficiary's.
 - Headers: `X-Idempotency-Key: <recallId>:<outcome>`, `X-Recall-Id`, `X-Transaction-Id`, `X-Papss-Operation: RECALL`, `X-Papss-Source-Message-Id`.
 - PAPSS's answer to a recall carries your payment's TxId/EndToEndId, but it is **not** a payment status: no `CB_CompletionNotification` is sent for it and your payment's state does not change. When the funds come back you receive both `CB_ReturnRequest` (the pacs.004, as for any return) and `CB_RecallResult` with `RECALL_RETURNED`.
 - An answer SIPS Connect cannot attribute to a recall is stored for SPS operations (`Operations/Unresolved`) and not pushed.

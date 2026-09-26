@@ -55,13 +55,31 @@ public sealed class PapssRecallResultPush
     public string RecallId { get; set; } = string.Empty;
     public string? TxId { get; set; }
     public string? EndToEndId { get; set; }
-    /// <summary>RECALL_ACCEPTED_BY_PAPSS, RECALL_REJECTED_BY_PAPSS, RECALL_REJECTED_BY_BENEFICIARY or RECALL_RETURNED.</summary>
+    /// <summary>RECALL_ACCEPTED_BY_PAPSS, RECALL_REJECTED_BY_PAPSS, RECALL_REJECTED_BY_BENEFICIARY, RECALL_RETURNED, RECALL_OUTCOME_UNRESOLVED or RECALL_ABANDONED.</summary>
     public string Outcome { get; set; } = string.Empty;
     public string? ReasonCode { get; set; }
     /// <summary>The answering party's id: pacs.002 StsId, camt.029 CxlStsId or pacs.004 RtrId.</summary>
     public string? ResponderId { get; set; }
     public string SourceMessageId { get; set; } = string.Empty;
     public string ReceivedAt { get; set; } = string.Empty;
+}
+
+/// <summary>Operator request for <c>POST /api/v1/Gateway/Recall/{recallId}/Close</c> (a manual, audited close of a recall stuck open).</summary>
+public sealed class PapssRecallCloseRequest
+{
+    /// <summary>Required: the operator's reason for closing the recall manually (e.g. why the gateway's outcome could not be trusted/resolved).</summary>
+    public string? Reason { get; set; }
+}
+
+/// <summary>Result of <see cref="PapssOperationStore.CloseRecallAsync"/>.</summary>
+public enum PapssRecallCloseOutcome
+{
+    /// <summary>No stored recall has this recallId.</summary>
+    NotFound,
+    /// <summary>The recall is not OPEN (already final): nothing was written.</summary>
+    AlreadyClosed,
+    /// <summary>Closed to RECALL_ABANDONED; the one-open-recall lock on the payment is released.</summary>
+    Closed
 }
 
 /// <summary>
@@ -77,6 +95,16 @@ public static partial class PapssRecallMessages
     /// <summary>Root of the SIPS envelope. The gateway reads AppHdr and Document under the root and does not check the root name.</summary>
     public const string EnvelopeNamespace = "urn:iso:std:iso:20022:tech:xsd:paymentRecall_request";
     public const string RejectedConfirmation = "RJCR";
+    /// <summary>
+    /// The recall-result signal the gateway uses (S3) when it could not read a definite ACCP/RJCT outcome from PAPSS for a
+    /// camt.056 answer. Carried in the pacs.002 <c>StsRsnInf/Rsn</c> (Cd or Prtry), read the same way as any other reason code
+    /// (<see cref="PapssPaymentMessages.ParseStatusReport"/>) and recognized here regardless of TxSts: pacs.002 TxSts is an ISO
+    /// ExternalPaymentTransactionStatus1Code, hard-capped at 4 characters (see PaymentResponse.cs
+    /// ExternalPaymentTransactionStatus1Code.TypeDefinition), so this literal cannot itself be the TxSts value. Provisional:
+    /// the gateway's finalized wire representation is being agreed separately; SIPS Connect recognizes exactly this literal,
+    /// in the reason, until that contract is confirmed.
+    /// </summary>
+    public const string UnresolvedStatus = "RECALL_OUTCOME_UNRESOLVED";
 
     /// <summary>OrgnlMsgNmId of a pacs.002 that answers our camt.056 (any camt.056 version): never a payment status.</summary>
     public static bool IsRecallAnswer(string? originalMessageType)
@@ -166,20 +194,44 @@ public static partial class PapssRecallMessages
         var (_, document) = M.Load(pacs002, "FIToFIPmtStsRpt");
         return M.Text(M.Children(document, "TxInfAndSts").FirstOrDefault(), "StsId");
     }
+
+    /// <summary>
+    /// The audit record of a manual operator close, stored as the RECALL_CLOSED event's "raw" bytes (JSON, not XML: there is no
+    /// PAPSS/gateway message for this action). <see cref="BuildCloseAudit"/> and <see cref="ParseCloseAudit"/> round-trip it.
+    /// </summary>
+    public sealed record PapssRecallCloseAudit(string ClosedBy, string Reason, DateTimeOffset ClosedAt);
+
+    public static byte[] BuildCloseAudit(PapssRecallCloseAudit audit)
+        => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(audit);
+
+    public static PapssRecallCloseAudit ParseCloseAudit(byte[] raw)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<PapssRecallCloseAudit>(raw)
+                ?? throw new InvalidDataException("The recall close audit record could not be read.");
+        }
+        catch (System.Text.Json.JsonException error)
+        {
+            throw new InvalidDataException("The recall close audit record could not be read.", error);
+        }
+    }
 }
 
 /// <summary>
-/// Recall state rules. Open: RECALL_PENDING, RECALL_ACCEPTED_BY_PAPSS. Final: RECALL_REJECTED_BY_PAPSS,
-/// RECALL_REJECTED_BY_BENEFICIARY, RECALL_RETURNED (and REJECTED when the gateway refused the camt.056). An answer is applied
-/// only to an open recall; the same final answer again is DUPLICATE_FINAL; a contradicting answer is flagged (CONFLICT).
+/// Recall state rules. Open: RECALL_PENDING, RECALL_ACCEPTED_BY_PAPSS, RECALL_OUTCOME_UNRESOLVED. Final:
+/// RECALL_REJECTED_BY_PAPSS, RECALL_REJECTED_BY_BENEFICIARY, RECALL_RETURNED, RECALL_ABANDONED (and REJECTED when the gateway
+/// refused the camt.056). An answer is applied only to an open recall; the same final answer again is DUPLICATE_FINAL; a
+/// contradicting answer is flagged (CONFLICT). A recall stuck at RECALL_OUTCOME_UNRESOLVED can still be resolved normally by a
+/// later, legitimate camt.029/pacs.004 answer; the manual close (RECALL_ABANDONED) is a fallback for when none ever arrives.
 /// </summary>
 public static class PapssRecallRules
 {
-    public static readonly PapssOutcome[] OpenOutcomes = [PapssOutcome.RecallPending, PapssOutcome.RecallAcceptedByPapss];
+    public static readonly PapssOutcome[] OpenOutcomes = [PapssOutcome.RecallPending, PapssOutcome.RecallAcceptedByPapss, PapssOutcome.RecallOutcomeUnresolved];
 
-    public static bool IsOpen(PapssOutcome outcome) => outcome is PapssOutcome.RecallPending or PapssOutcome.RecallAcceptedByPapss;
+    public static bool IsOpen(PapssOutcome outcome) => outcome is PapssOutcome.RecallPending or PapssOutcome.RecallAcceptedByPapss or PapssOutcome.RecallOutcomeUnresolved;
 
-    /// <summary>The recall outcome a PAPSS pacs.002 status means (ACCP / RJCT only).</summary>
+    /// <summary>The recall outcome a PAPSS pacs.002 TxSts means (ACCP / RJCT only; TxSts is ISO-capped at 4 characters).</summary>
     public static PapssOutcome? OutcomeOfPapssStatus(string? status) => status switch
     {
         PapssPaymentStatusRules.ACCP => PapssOutcome.RecallAcceptedByPapss,
@@ -187,17 +239,34 @@ public static class PapssRecallRules
         _ => null
     };
 
-    /// <summary>What PAPSS's immediate pacs.002 (ACCP/RJCT) does to a recall currently in <paramref name="current"/>.</summary>
-    public static string EvaluatePapssStatus(PapssOutcome current, string? status)
+    /// <summary>
+    /// The recall outcome a PAPSS pacs.002 answer means: the gateway's RECALL_OUTCOME_UNRESOLVED signal (carried in the reason,
+    /// see <see cref="PapssRecallMessages.UnresolvedStatus"/>) takes precedence over TxSts; otherwise ACCP / RJCT from TxSts.
+    /// </summary>
+    public static PapssOutcome? OutcomeOfPapssAnswer(string? status, string? reasonCode)
+        => string.Equals(reasonCode, PapssRecallMessages.UnresolvedStatus, StringComparison.OrdinalIgnoreCase)
+            ? PapssOutcome.RecallOutcomeUnresolved
+            : OutcomeOfPapssStatus(status);
+
+    /// <summary>What PAPSS's immediate pacs.002 (ACCP/RJCT, or the gateway's "outcome unresolved" signal) does to a recall currently in <paramref name="current"/>.</summary>
+    public static string EvaluatePapssStatus(PapssOutcome current, string? status, string? reasonCode)
     {
-        if (OutcomeOfPapssStatus(status) is not { } next) return PapssEventDisposition.UnknownStatus;
+        if (OutcomeOfPapssAnswer(status, reasonCode) is not { } next) return PapssEventDisposition.UnknownStatus;
+        // "Unresolved" conveys no more than "PAPSS's outcome could not be determined": from RECALL_PENDING it is new
+        // information (the recall is now known to be open-but-unresolved, Applied); from anywhere else it is strictly less
+        // specific than what is already known, so it never contradicts anything and is always harmless history.
+        if (next == PapssOutcome.RecallOutcomeUnresolved)
+            return current == PapssOutcome.RecallPending ? PapssEventDisposition.Applied : PapssEventDisposition.NotAdvancing;
         return current switch
         {
             PapssOutcome.RecallPending => PapssEventDisposition.Applied,
+            // A definite ACCP/RJCT now available is a legitimate clarification of an unresolved answer.
+            PapssOutcome.RecallOutcomeUnresolved => PapssEventDisposition.Applied,
             PapssOutcome.RecallAcceptedByPapss => next == PapssOutcome.RecallAcceptedByPapss ? PapssEventDisposition.NotAdvancing : PapssEventDisposition.Conflict,
             PapssOutcome.RecallRejectedByPapss => next == PapssOutcome.RecallRejectedByPapss ? PapssEventDisposition.DuplicateFinal : PapssEventDisposition.Conflict,
-            // The beneficiary already answered: a late ACCP is history, a late RJCT contradicts it.
-            PapssOutcome.RecallRejectedByBeneficiary or PapssOutcome.RecallReturned => next == PapssOutcome.RecallAcceptedByPapss ? PapssEventDisposition.NotAdvancing : PapssEventDisposition.Conflict,
+            // The beneficiary already answered (or the recall was manually closed): a late ACCP is history, a late RJCT contradicts it.
+            PapssOutcome.RecallRejectedByBeneficiary or PapssOutcome.RecallReturned or PapssOutcome.RecallAbandoned =>
+                next == PapssOutcome.RecallAcceptedByPapss ? PapssEventDisposition.NotAdvancing : PapssEventDisposition.Conflict,
             _ => PapssEventDisposition.Conflict
         };
     }
@@ -211,11 +280,12 @@ public static class PapssRecallRules
     }
 
     /// <summary>The outcome a stored recall answer event reports to the bank (independent of later answers).</summary>
-    public static PapssOutcome? OutcomeOfEvent(string eventType, string? status) => eventType switch
+    public static PapssOutcome? OutcomeOfEvent(string eventType, string? status, string? reasonCode) => eventType switch
     {
-        PapssEventTypes.RecallStatus => OutcomeOfPapssStatus(status),
+        PapssEventTypes.RecallStatus => OutcomeOfPapssAnswer(status, reasonCode),
         PapssEventTypes.RecallResolution => PapssOutcome.RecallRejectedByBeneficiary,
         PapssEventTypes.RecallReturned => PapssOutcome.RecallReturned,
+        PapssEventTypes.RecallClosed => PapssOutcome.RecallAbandoned,
         _ => null
     };
 }

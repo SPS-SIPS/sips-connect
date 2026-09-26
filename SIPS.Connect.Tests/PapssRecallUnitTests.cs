@@ -1,7 +1,10 @@
 using System.Xml.Linq;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SIPS.Connect.Config;
+using SIPS.Connect.Controllers;
 using SIPS.Connect.Services;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
@@ -101,9 +104,43 @@ public sealed class PapssRecallUnitTests
     [InlineData("RECALL_REJECTED_BY_BENEFICIARY", "ACCP", "NOT_ADVANCING")]
     [InlineData("RECALL_RETURNED", "ACCP", "NOT_ADVANCING")]
     [InlineData("RECALL_RETURNED", "RJCT", "CONFLICT")]
+    [InlineData("RECALL_ABANDONED", "ACCP", "NOT_ADVANCING")]
+    [InlineData("RECALL_ABANDONED", "RJCT", "CONFLICT")]
     [InlineData("REJECTED", "ACCP", "CONFLICT")]
+    // A definite ACCP/RJCT now available is a legitimate clarification of a previously unresolved answer.
+    [InlineData("RECALL_OUTCOME_UNRESOLVED", "ACCP", "APPLIED")]
+    [InlineData("RECALL_OUTCOME_UNRESOLVED", "RJCT", "APPLIED")]
     public void Papss_recall_status_applies_only_to_an_open_recall(string current, string? status, string expected)
-        => Assert.Equal(expected, PapssRecallRules.EvaluatePapssStatus(Parse<PapssOutcome>(current), status));
+        => Assert.Equal(expected, PapssRecallRules.EvaluatePapssStatus(Parse<PapssOutcome>(current), status, null));
+
+    /// <summary>
+    /// S3: the gateway's RECALL_OUTCOME_UNRESOLVED signal (carried in the reason, not TxSts, and taking precedence over
+    /// whatever TxSts says) keeps the recall open from RECALL_PENDING (new information); from anywhere else it conveys
+    /// strictly less than what is already known, so it is always harmless history, never a conflict.
+    /// </summary>
+    [Theory]
+    [InlineData("RECALL_PENDING", "RJCT", "APPLIED")]
+    [InlineData("RECALL_ACCEPTED_BY_PAPSS", "RJCT", "NOT_ADVANCING")]
+    [InlineData("RECALL_OUTCOME_UNRESOLVED", "RJCT", "NOT_ADVANCING")]
+    [InlineData("RECALL_OUTCOME_UNRESOLVED", null, "NOT_ADVANCING")]
+    [InlineData("RECALL_REJECTED_BY_PAPSS", "RJCT", "NOT_ADVANCING")]
+    [InlineData("RECALL_REJECTED_BY_BENEFICIARY", "ACCP", "NOT_ADVANCING")]
+    [InlineData("RECALL_ABANDONED", "RJCT", "NOT_ADVANCING")]
+    public void Recall_outcome_unresolved_signal_takes_precedence_over_txsts_and_never_conflicts(string current, string? status, string expected)
+        => Assert.Equal(expected, PapssRecallRules.EvaluatePapssStatus(Parse<PapssOutcome>(current), status, PapssRecallMessages.UnresolvedStatus));
+
+    [Fact]
+    public void Outcome_of_papss_answer_prefers_the_unresolved_reason_over_txsts()
+    {
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, PapssRecallRules.OutcomeOfPapssAnswer("ACCP", PapssRecallMessages.UnresolvedStatus));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, PapssRecallRules.OutcomeOfPapssAnswer("RJCT", "recall_outcome_unresolved"));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, PapssRecallRules.OutcomeOfPapssAnswer(null, PapssRecallMessages.UnresolvedStatus));
+        Assert.Equal(PapssOutcome.RecallAcceptedByPapss, PapssRecallRules.OutcomeOfPapssAnswer("ACCP", "AGNT"));
+        Assert.Equal(PapssOutcome.RecallRejectedByPapss, PapssRecallRules.OutcomeOfPapssAnswer("RJCT", null));
+        Assert.Null(PapssRecallRules.OutcomeOfPapssAnswer("ACSC", null));
+        // TxSts is ISO-capped at 4 characters: this literal was never a plausible TxSts value in the first place.
+        Assert.Null(PapssRecallRules.OutcomeOfPapssStatus(PapssRecallMessages.UnresolvedStatus));
+    }
 
     [Theory]
     [InlineData("RECALL_PENDING", "RJCR", "APPLIED")]
@@ -117,21 +154,28 @@ public sealed class PapssRecallUnitTests
         => Assert.Equal(expected, PapssRecallRules.EvaluateResolution(Parse<PapssOutcome>(current), confirmation));
 
     [Fact]
-    public void Recall_outcomes_are_stored_upper_snake_and_only_pending_and_accepted_are_open()
+    public void Recall_outcomes_are_stored_upper_snake_and_only_pending_accepted_and_unresolved_are_open()
     {
         Assert.Equal("RECALL", UpperSnakeEnumConverter<PapssOperationType>.Of(PapssOperationType.Recall));
-        Assert.Equal(["RECALL_PENDING", "RECALL_ACCEPTED_BY_PAPSS", "RECALL_REJECTED_BY_PAPSS", "RECALL_REJECTED_BY_BENEFICIARY", "RECALL_RETURNED"],
-            new[] { PapssOutcome.RecallPending, PapssOutcome.RecallAcceptedByPapss, PapssOutcome.RecallRejectedByPapss, PapssOutcome.RecallRejectedByBeneficiary, PapssOutcome.RecallReturned }
+        Assert.Equal(["RECALL_PENDING", "RECALL_ACCEPTED_BY_PAPSS", "RECALL_REJECTED_BY_PAPSS", "RECALL_REJECTED_BY_BENEFICIARY", "RECALL_RETURNED", "RECALL_OUTCOME_UNRESOLVED", "RECALL_ABANDONED"],
+            new[] { PapssOutcome.RecallPending, PapssOutcome.RecallAcceptedByPapss, PapssOutcome.RecallRejectedByPapss, PapssOutcome.RecallRejectedByBeneficiary, PapssOutcome.RecallReturned, PapssOutcome.RecallOutcomeUnresolved, PapssOutcome.RecallAbandoned }
                 .Select(UpperSnakeEnumConverter<PapssOutcome>.Of));
         Assert.Equal(PapssOutcome.RecallAcceptedByPapss, Parse<PapssOutcome>("RECALL_ACCEPTED_BY_PAPSS"));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, Parse<PapssOutcome>("RECALL_OUTCOME_UNRESOLVED"));
+        Assert.Equal(PapssOutcome.RecallAbandoned, Parse<PapssOutcome>("RECALL_ABANDONED"));
         Assert.Equal(PapssRecallRules.OpenOutcomes, Enum.GetValues<PapssOutcome>().Where(PapssRecallRules.IsOpen));
-        // The partial unique index names exactly the open outcomes.
+        Assert.True(PapssRecallRules.IsOpen(PapssOutcome.RecallOutcomeUnresolved));
+        Assert.False(PapssRecallRules.IsOpen(PapssOutcome.RecallAbandoned));
+        // The partial unique index names exactly the open outcomes (regression guard: this also catches a filter that forgot
+        // to list a newly-added open outcome, or one that wrongly lists a final one).
         foreach (var outcome in Enum.GetValues<PapssOutcome>())
             Assert.Equal(PapssRecallRules.IsOpen(outcome), PapssOperationConfiguration.OpenRecallFilter.Contains($"'{UpperSnakeEnumConverter<PapssOutcome>.Of(outcome)}'"));
-        Assert.Equal(PapssOutcome.RecallRejectedByBeneficiary, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallResolution, "RJCR"));
-        Assert.Equal(PapssOutcome.RecallReturned, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallReturned, null));
-        Assert.Equal(PapssOutcome.RecallRejectedByPapss, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallStatus, "RJCT"));
-        Assert.Null(PapssRecallRules.OutcomeOfEvent(PapssEventTypes.PaymentStatus, "ACCP"));
+        Assert.Equal(PapssOutcome.RecallRejectedByBeneficiary, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallResolution, "RJCR", null));
+        Assert.Equal(PapssOutcome.RecallReturned, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallReturned, null, null));
+        Assert.Equal(PapssOutcome.RecallRejectedByPapss, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallStatus, "RJCT", null));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallStatus, "RJCT", PapssRecallMessages.UnresolvedStatus));
+        Assert.Equal(PapssOutcome.RecallAbandoned, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallClosed, null, null));
+        Assert.Null(PapssRecallRules.OutcomeOfEvent(PapssEventTypes.PaymentStatus, "ACCP", null));
     }
 
     [Theory]
@@ -144,6 +188,10 @@ public sealed class PapssRecallUnitTests
     [InlineData("RECALL_REJECTED_BY_BENEFICIARY", "ADMITTED", "REJECTED")]
     [InlineData("RECALL_RETURNED", "ADMITTED", "COMPLETED")]
     [InlineData("REJECTED", "REJECTED", "REJECTED")]
+    // The gateway could not determine PAPSS's outcome: flagged UNKNOWN so operators notice it needs attention.
+    [InlineData("RECALL_OUTCOME_UNRESOLVED", "ADMITTED", "UNKNOWN")]
+    // A manual operator close is a final, unsuccessful closure: REJECTED (never RETURNED/COMPLETED).
+    [InlineData("RECALL_ABANDONED", "ADMITTED", "REJECTED")]
     public void Recall_summary_status_is_derived_from_the_recall_outcome(string outcome, string gateway, string expected)
     {
         var recall = new PapssOperation { Direction = PapssDirection.Outbound, Operation = PapssOperationType.Recall, PapssOutcome = Parse<PapssOutcome>(outcome), GatewayState = Parse<PapssGatewayState>(gateway), CreatedAt = DateTimeOffset.UtcNow };
@@ -208,6 +256,32 @@ public sealed class PapssRecallUnitTests
             Assert.Equal(expected, (await Assert.ThrowsAsync<ParticipantRailException>(() => service.RecallAsync(binding, request, CancellationToken.None))).Code);
         db.VerifyNoOtherCalls();
         gateway.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void Recall_close_audit_round_trips_who_when_and_why()
+    {
+        var at = new DateTimeOffset(2026, 9, 26, 9, 0, 0, TimeSpan.Zero);
+        var raw = PapssRecallMessages.BuildCloseAudit(new PapssRecallMessages.PapssRecallCloseAudit("ops.alice", "gateway reported RECALL_OUTCOME_UNRESOLVED and no further answer arrived after 45 days", at));
+        var parsed = PapssRecallMessages.ParseCloseAudit(raw);
+        Assert.Equal(("ops.alice", "gateway reported RECALL_OUTCOME_UNRESOLVED and no further answer arrived after 45 days", at), (parsed.ClosedBy, parsed.Reason, parsed.ClosedAt));
+        Assert.Throws<InvalidDataException>(() => PapssRecallMessages.ParseCloseAudit(System.Text.Encoding.UTF8.GetBytes("not json")));
+    }
+
+    /// <summary>
+    /// Operator-only recovery: the endpoint that manually closes a recall stuck open must require the Recon role (the same
+    /// operator role as the existing Retry recovery action), not the Gateway role that submits/looks up recalls. This is the
+    /// "wrong role" guard for POST Recall/{recallId}/Close: a caller authenticated only as Gateway is refused by the framework.
+    /// </summary>
+    [Fact]
+    public void Close_recall_endpoint_requires_the_operator_role_not_the_gateway_role()
+    {
+        var method = typeof(GatewayController).GetMethod(nameof(GatewayController.CloseRecall))!;
+        var authorize = method.GetCustomAttributes(typeof(AuthorizeAttribute), false).Cast<AuthorizeAttribute>().Single();
+        Assert.Equal(SIPS.Connect.KnownRoles.Recon, authorize.Roles);
+        Assert.DoesNotContain(SIPS.Connect.KnownRoles.Gateway, authorize.Roles!.Split(','));
+        var route = method.GetCustomAttributes(typeof(HttpPostAttribute), false).Cast<HttpPostAttribute>().Single();
+        Assert.Equal("Recall/{recallId}/Close", route.Template);
     }
 
     private static T Parse<T>(string value) where T : struct, Enum => Enum.Parse<T>(value.Replace("_", string.Empty), true);
