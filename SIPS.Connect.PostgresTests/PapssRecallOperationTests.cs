@@ -628,6 +628,41 @@ public sealed class PapssRecallOperationTests
         Assert.Equal("ops.alice", Text(pushes[^1].Body, "responderId"));
     }
 
+    /// <summary>
+    /// The second of the three required authorization cases, exercised through the full ingestion+audit pipeline
+    /// (not just the authorization-decision logic, which the unit-test theory already covers): an API party
+    /// authenticated via ApiKeyDefaults.AuthenticationScheme and granted only the narrow KnownRoles.RecallClose
+    /// capability (on top of the ordinary Gateway baseline every API key gets - never the human Recon role) can
+    /// close a recall stuck OPEN, and the resulting RECALL_CLOSED audit event records API_PARTY as the auth path.
+    /// </summary>
+    [Fact]
+    public async Task Api_party_with_the_narrow_capability_closes_an_unresolved_recall()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        await SettledPayment(harness, provider, "TX-R19B");
+        var recallId = (await Recall(harness, provider, Body("TX-R19B")))["requestMessageId"]!.GetValue<string>();
+        await StatusCallback(provider, harness, GatewayRecallXml.RecallStatus("PAPSS-RS-19B", recallId, "TX-R19B", "E2E-TX-R19B", "PDNG", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, (await StoredRecall(harness, recallId)).PapssOutcome);
+
+        var closed = await CloseRecall(harness, provider, recallId, "automated closure per playbook after 45 days", "svc.recall-uat", asApiParty: true);
+        Assert.Equal(("RECALL", "REJECTED", "RECALL_ABANDONED"), (Text(closed, "operation"), Text(closed, "status"), Text(closed, "papssOutcome")));
+        var recall = await StoredRecall(harness, recallId);
+        Assert.Equal(PapssOutcome.RecallAbandoned, recall.PapssOutcome);
+
+        var auditEvent = await harness.WithStorageAsync(db => db.PapssOperationEvents.AsNoTracking().SingleAsync(x => x.EventType == PapssEventTypes.RecallClosed && x.OperationId == recall.Id));
+        var audit = PapssRecallMessages.ParseCloseAudit(auditEvent.RawXml);
+        Assert.Equal("svc.recall-uat", audit.ClosedBy);
+        Assert.Equal(PapssRecallCloseAuthPath.ApiParty, audit.AuthPath);
+        Assert.Contains("svc.recall-uat", auditEvent.Note);
+        Assert.Contains(PapssRecallCloseAuthPath.ApiParty, auditEvent.Note);
+
+        // Releases the one-open-recall lock just like the operator path does.
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        var second = (await Recall(harness, provider, Body("TX-R19B", reason: "FRAD")))["requestMessageId"]!.GetValue<string>();
+        Assert.NotEqual(recallId, second);
+    }
+
     [Fact]
     public async Task Close_recall_refuses_unknown_missing_reason_and_an_already_closed_recall()
     {
@@ -821,24 +856,38 @@ public sealed class PapssRecallOperationTests
         return (result.StatusCode ?? 200, json["code"]!.GetValue<string>());
     }
 
-    /// <summary>Calls POST Recall/{recallId}/Close as the named operator (default "ops.test"; the store records this as closedBy).</summary>
-    private static async Task<ActionResult> CloseRecallRaw(PostgresHarness harness, ServiceProvider provider, string recallId, string? reason, string closedBy = "ops.test")
+    /// <summary>
+    /// Calls POST Recall/{recallId}/Close as the named operator (default "ops.test"; the store records this as closedBy).
+    /// Pass <paramref name="asApiParty"/> true to authenticate the call the way a real API party would: an
+    /// ApiKeyDefaults.AuthenticationScheme identity carrying the narrow KnownRoles.RecallClose claim (in addition to
+    /// the ordinary Gateway baseline every API key gets), so the controller's own auth-path detection resolves this
+    /// to PapssRecallCloseAuthPath.ApiParty end-to-end through the real ingestion+audit pipeline.
+    /// </summary>
+    private static async Task<ActionResult> CloseRecallRaw(PostgresHarness harness, ServiceProvider provider, string recallId, string? reason, string closedBy = "ops.test", bool asApiParty = false)
     {
         using var scope = provider.CreateScope();
         var controller = Controller(harness, scope.ServiceProvider);
+        var identity = asApiParty
+            ? new System.Security.Claims.ClaimsIdentity(
+                [
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, closedBy),
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, SIPS.Connect.KnownRoles.Gateway),
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, SIPS.Connect.KnownRoles.RecallClose)
+                ], SIPS.Connect.Services.ApiKeyDefaults.AuthenticationScheme)
+            : new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, closedBy)], "Test");
         controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
         {
             HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
             {
-                User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
-                    [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, closedBy)], "Test"))
+                User = new System.Security.Claims.ClaimsPrincipal(identity)
             }
         };
         return await controller.CloseRecall(recallId, new PapssRecallCloseRequest { Reason = reason }, CancellationToken.None);
     }
 
-    private static async Task<JsonObject> CloseRecall(PostgresHarness harness, ServiceProvider provider, string recallId, string reason, string closedBy = "ops.test")
-        => (JsonObject)Assert.IsType<OkObjectResult>(await CloseRecallRaw(harness, provider, recallId, reason, closedBy)).Value!;
+    private static async Task<JsonObject> CloseRecall(PostgresHarness harness, ServiceProvider provider, string recallId, string reason, string closedBy = "ops.test", bool asApiParty = false)
+        => (JsonObject)Assert.IsType<OkObjectResult>(await CloseRecallRaw(harness, provider, recallId, reason, closedBy, asApiParty)).Value!;
 
     private static async Task<(int Status, string Code)> CloseRecallRefusal(PostgresHarness harness, ServiceProvider provider, string recallId, string? reason, string closedBy = "ops.test")
     {

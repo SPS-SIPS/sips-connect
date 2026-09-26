@@ -39,14 +39,19 @@ public class ApiKeyAuthenticationHandler(
             var cfgSecret = key.Secret;
             var cfgKey = key.Key;
 
-            var identity = new ClaimsIdentity([
-                new Claim(ClaimTypes.Name, cfgName),
-                new Claim("Type", "ApiKey"),
-                new Claim(ClaimTypes.Role, Gateway),
-                new Claim(ClaimTypes.Role, QR),
-                new Claim(ClaimTypes.Role, ManageTransactions),
-                new Claim(ClaimTypes.Role, ManageMassages)
-                ], ApiKeyDefaults.AuthenticationScheme);
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.Name, cfgName),
+                new("Type", "ApiKey"),
+                new(ClaimTypes.Role, Gateway),
+                new(ClaimTypes.Role, QR),
+                new(ClaimTypes.Role, ManageTransactions),
+                new(ClaimTypes.Role, ManageMassages)
+            };
+            // Narrow, per-key additional roles (e.g. RecallClose) on top of the fixed baseline above; empty by
+            // default, so a key gets nothing beyond the baseline unless explicitly configured with ApiKey.Roles.
+            claims.AddRange(key.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
+            var identity = new ClaimsIdentity(claims, ApiKeyDefaults.AuthenticationScheme);
             var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), ApiKeyDefaults.AuthenticationScheme);
             return Task.FromResult(AuthenticateResult.Success(ticket));
         }

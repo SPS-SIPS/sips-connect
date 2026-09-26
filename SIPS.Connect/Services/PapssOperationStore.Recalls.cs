@@ -106,10 +106,11 @@ public sealed partial class PapssOperationStore
     /// <summary>
     /// Manually, and only manually, closes a recall that is stuck OPEN (never applied automatically). Sets it to the final
     /// RECALL_ABANDONED outcome, releases the one-open-recall lock (ux_papss_op_open_recall) so a new recall may be submitted
-    /// for the payment, queues a CB_RecallResult push, and records an audit event (who, when, why) reusing the existing
+    /// for the payment, queues a CB_RecallResult push, and records an audit event (who, when, why, and which of the two
+    /// authorized paths - <paramref name="authPath"/>, PapssRecallCloseAuthPath.Operator or .ApiParty) reusing the existing
     /// papss_operation_events log. A recall that is not OPEN (already final) is refused with AlreadyClosed; nothing is written.
     /// </summary>
-    public async Task<(PapssRecallCloseOutcome Outcome, PapssOperation? Recall)> CloseRecallAsync(string recallId, string reason, string? closedBy, CancellationToken ct)
+    public async Task<(PapssRecallCloseOutcome Outcome, PapssOperation? Recall)> CloseRecallAsync(string recallId, string reason, string? closedBy, string authPath, CancellationToken ct)
     {
         var now = Now;
         await using var transaction = await db.BeginTransactionAsync(ct);
@@ -136,7 +137,7 @@ public sealed partial class PapssOperationStore
         recall.CompletedAt ??= now;
         MarkAnswered(recall, now);
 
-        var raw = PapssRecallMessages.BuildCloseAudit(new PapssRecallMessages.PapssRecallCloseAudit(by, reason, now));
+        var raw = PapssRecallMessages.BuildCloseAudit(new PapssRecallMessages.PapssRecallCloseAudit(by, reason, now, authPath));
         db.PapssOperationEvents.Add(new PapssOperationEvent
         {
             OperationId = recall.Id,
@@ -154,7 +155,7 @@ public sealed partial class PapssOperationStore
             Disposition = PapssEventDisposition.Applied,
             OriginalTxId = Truncate(recall.OriginalTxId, 128),
             OriginalEndToEndId = Truncate(recall.OriginalEndToEndId, 128),
-            Note = Truncate($"Manually closed by {by} (was {previousOutcome}): {reason}", 512)
+            Note = Truncate($"Manually closed by {by} via {authPath} (was {previousOutcome}): {reason}", 512)
         });
 
         if (!await CommitIngestAsync(transaction, ct))
@@ -163,7 +164,7 @@ public sealed partial class PapssOperationStore
             logger.LogInformation("PAPSS recall {RecallId} was already closed concurrently; not closed again", recallId);
             return (PapssRecallCloseOutcome.AlreadyClosed, await FindOutboundRecallAsync(recallId, ct));
         }
-        logger.LogWarning("PAPSS recall {RecallId} was manually closed by {ClosedBy} (was {PreviousOutcome}): {Reason}", recallId, by, previousOutcome, reason);
+        logger.LogWarning("PAPSS recall {RecallId} was manually closed by {ClosedBy} via {AuthPath} (was {PreviousOutcome}): {Reason}", recallId, by, authPath, previousOutcome, reason);
         return (PapssRecallCloseOutcome.Closed, recall);
     }
 

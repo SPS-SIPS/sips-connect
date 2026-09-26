@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using System.Xml.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SIPS.Connect.Config;
@@ -281,13 +283,16 @@ public sealed class PapssRecallUnitTests
     }
 
     [Fact]
-    public void Recall_close_audit_round_trips_who_when_and_why()
+    public void Recall_close_audit_round_trips_who_when_why_and_which_auth_path()
     {
         var at = new DateTimeOffset(2026, 9, 26, 9, 0, 0, TimeSpan.Zero);
-        var raw = PapssRecallMessages.BuildCloseAudit(new PapssRecallMessages.PapssRecallCloseAudit("ops.alice", "gateway reported RECALL_OUTCOME_UNRESOLVED and no further answer arrived after 45 days", at));
+        var raw = PapssRecallMessages.BuildCloseAudit(new PapssRecallMessages.PapssRecallCloseAudit("ops.alice", "gateway reported RECALL_OUTCOME_UNRESOLVED and no further answer arrived after 45 days", at, PapssRecallCloseAuthPath.Operator));
         var parsed = PapssRecallMessages.ParseCloseAudit(raw);
-        Assert.Equal(("ops.alice", "gateway reported RECALL_OUTCOME_UNRESOLVED and no further answer arrived after 45 days", at), (parsed.ClosedBy, parsed.Reason, parsed.ClosedAt));
+        Assert.Equal(("ops.alice", "gateway reported RECALL_OUTCOME_UNRESOLVED and no further answer arrived after 45 days", at, PapssRecallCloseAuthPath.Operator), (parsed.ClosedBy, parsed.Reason, parsed.ClosedAt, parsed.AuthPath));
         Assert.Throws<InvalidDataException>(() => PapssRecallMessages.ParseCloseAudit(System.Text.Encoding.UTF8.GetBytes("not json")));
+
+        var apiParty = PapssRecallMessages.BuildCloseAudit(new PapssRecallMessages.PapssRecallCloseAudit("svc.recall-uat", "automated closure per playbook", at, PapssRecallCloseAuthPath.ApiParty));
+        Assert.Equal(PapssRecallCloseAuthPath.ApiParty, PapssRecallMessages.ParseCloseAudit(apiParty).AuthPath);
     }
 
     /// <summary>
@@ -296,14 +301,72 @@ public sealed class PapssRecallUnitTests
     /// "wrong role" guard for POST Recall/{recallId}/Close: a caller authenticated only as Gateway is refused by the framework.
     /// </summary>
     [Fact]
-    public void Close_recall_endpoint_requires_the_operator_role_not_the_gateway_role()
+    public void Close_recall_endpoint_allows_the_operator_role_or_the_narrow_api_party_capability_but_never_gateway()
     {
         var method = typeof(GatewayController).GetMethod(nameof(GatewayController.CloseRecall))!;
         var authorize = method.GetCustomAttributes(typeof(AuthorizeAttribute), false).Cast<AuthorizeAttribute>().Single();
-        Assert.Equal(SIPS.Connect.KnownRoles.Recon, authorize.Roles);
-        Assert.DoesNotContain(SIPS.Connect.KnownRoles.Gateway, authorize.Roles!.Split(','));
+        var roles = authorize.Roles!.Split(',');
+        Assert.Equal([SIPS.Connect.KnownRoles.Recon, SIPS.Connect.KnownRoles.RecallClose], roles);
+        // Neither path is the broad Gateway role every API key already carries, nor does the API-party capability imply Recon.
+        Assert.DoesNotContain(SIPS.Connect.KnownRoles.Gateway, roles);
         var route = method.GetCustomAttributes(typeof(HttpPostAttribute), false).Cast<HttpPostAttribute>().Single();
         Assert.Equal("Recall/{recallId}/Close", route.Template);
+    }
+
+    /// <summary>
+    /// The three required authorization cases for POST Recall/{recallId}/Close, evaluated the way ASP.NET's own pipeline
+    /// evaluates [Authorize(Roles = "...")]: build the real policy from the endpoint's actual attribute (via reflection, so
+    /// this fails if the attribute ever drifts from what is asserted here) and run it through IAuthorizationService against
+    /// three principals shaped exactly like production would produce them - a Keycloak/JWT operator with the Recon realm
+    /// role, an API-key party granted the narrow RecallClose capability, and an API-key party without it. A fourth,
+    /// unauthenticated principal confirms there is no anonymous/blanket access (requirement 3).
+    /// </summary>
+    [Theory]
+    [InlineData("recon_operator", true)]
+    [InlineData("api_party_with_recall_close", true)]
+    [InlineData("api_party_without_recall_close", false)]
+    [InlineData("anonymous", false)]
+    public async Task Close_recall_authorization_allows_exactly_the_two_intended_paths(string scenario, bool expectedAllowed)
+    {
+        var method = typeof(GatewayController).GetMethod(nameof(GatewayController.CloseRecall))!;
+        var authorize = method.GetCustomAttributes(typeof(AuthorizeAttribute), false).Cast<AuthorizeAttribute>().Single();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorizationCore(options =>
+        {
+            var policy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireRole(authorize.Roles!.Split(',')).Build();
+            options.DefaultPolicy = policy;
+        });
+        await using var provider = services.BuildServiceProvider();
+        var authorizationService = provider.GetRequiredService<IAuthorizationService>();
+        var policyProvider = provider.GetRequiredService<IAuthorizationPolicyProvider>();
+        var defaultPolicy = await policyProvider.GetDefaultPolicyAsync();
+
+        ClaimsPrincipal user = scenario switch
+        {
+            // A human operator, authenticated via Keycloak/JWT (see Config/Service.cs AddJwtBearer): the Recon realm role
+            // is mapped into a ClaimTypes.Role claim on token validation.
+            "recon_operator" => new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Name, "preferred_username_or_similar"), new Claim(ClaimTypes.Role, SIPS.Connect.KnownRoles.Recon)],
+                Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)),
+            // An API party authenticated via API key (ApiKeyAuthenticationHandler), carrying the fixed baseline roles
+            // every key gets PLUS the narrow RecallClose capability because this specific key was configured with it
+            // (ApiKey.Roles) - never the broad Recon role.
+            "api_party_with_recall_close" => new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Name, "svc-recall-uat"), new Claim(ClaimTypes.Role, SIPS.Connect.KnownRoles.Gateway), new Claim(ClaimTypes.Role, SIPS.Connect.KnownRoles.RecallClose)],
+                ApiKeyDefaults.AuthenticationScheme)),
+            // An ordinary API party (the fixed baseline only): must be refused, not silently allowed just because it is
+            // an authenticated, otherwise-legitimate API key.
+            "api_party_without_recall_close" => new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Name, "svc-plain"), new Claim(ClaimTypes.Role, SIPS.Connect.KnownRoles.Gateway), new Claim(ClaimTypes.Role, SIPS.Connect.KnownRoles.QR)],
+                ApiKeyDefaults.AuthenticationScheme)),
+            "anonymous" => new ClaimsPrincipal(new ClaimsIdentity()), // unauthenticated: no scheme, no roles
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
+        };
+
+        var result = await authorizationService.AuthorizeAsync(user, resource: null, defaultPolicy);
+        Assert.Equal(expectedAllowed, result.Succeeded);
     }
 
     private static T Parse<T>(string value) where T : struct, Enum => Enum.Parse<T>(value.Replace("_", string.Empty), true);

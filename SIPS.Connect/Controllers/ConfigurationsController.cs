@@ -349,6 +349,7 @@ public class ConfigurationsController(
         {
             existing.Name = request.Name;
             existing.Secret = request.Secret;
+            existing.Roles = request.Roles;
         }
         else
         {
