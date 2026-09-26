@@ -538,9 +538,9 @@ public sealed class PapssRecallOperationTests
         var paymentBefore = Snapshot(await Stored(harness, "TX-R17"));
         var recallId = (await Recall(harness, provider, Body("TX-R17")))["requestMessageId"]!.GetValue<string>();
 
-        // The gateway's ambiguous signal is carried in the reason (StsRsnInf/Rsn), not TxSts (ISO-capped at 4 characters);
-        // TxSts itself is kept as a valid code (RJCT here, the conservative default) per the current gateway design.
-        var xml = GatewayRecallXml.RecallStatus("PAPSS-RS-171", recallId, "TX-R17", "E2E-TX-R17", "RJCT", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic);
+        // Gateway-confirmed real wire shape: TxSts=PDNG with StsRsnInf/Rsn/Prtry=RECALL_OUTCOME_UNRESOLVED. The ambiguous signal
+        // is carried in the reason (ISO's TxSts is capped at 4 characters), so SIPS Connect never hard-requires a particular TxSts.
+        var xml = GatewayRecallXml.RecallStatus("PAPSS-RS-171", recallId, "TX-R17", "E2E-TX-R17", "PDNG", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic);
         var result = await StatusCallback(provider, harness, xml);
         Assert.Equal((PapssCorrelation.MessageId, PapssEventDisposition.Applied, true), (result.Correlation, result.Disposition, result.Pushed));
         var recall = await StoredRecall(harness, recallId);
@@ -568,7 +568,7 @@ public sealed class PapssRecallOperationTests
         await using var provider = harness.BuildProvider();
         var payment = await SettledPayment(harness, provider, "TX-R18");
         var recallId = (await Recall(harness, provider, Body("TX-R18")))["requestMessageId"]!.GetValue<string>();
-        await StatusCallback(provider, harness, GatewayRecallXml.RecallStatus("PAPSS-RS-181", recallId, "TX-R18", "E2E-TX-R18", "RJCT", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic));
+        await StatusCallback(provider, harness, GatewayRecallXml.RecallStatus("PAPSS-RS-181", recallId, "TX-R18", "E2E-TX-R18", "PDNG", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic));
         Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, (await StoredRecall(harness, recallId)).PapssOutcome);
 
         var camt029 = GatewayRecallXml.Resolution("CT02-CXL-181", recallId, payment.MsgId!, "TX-R18", "E2E-TX-R18", reason: "AGNT", from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic);
@@ -590,7 +590,7 @@ public sealed class PapssRecallOperationTests
         var payment = await SettledPayment(harness, provider, "TX-R19");
         var paymentBefore = Snapshot(await Stored(harness, "TX-R19"));
         var recallId = (await Recall(harness, provider, Body("TX-R19")))["requestMessageId"]!.GetValue<string>();
-        await StatusCallback(provider, harness, GatewayRecallXml.RecallStatus("PAPSS-RS-191", recallId, "TX-R19", "E2E-TX-R19", "RJCT", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic));
+        await StatusCallback(provider, harness, GatewayRecallXml.RecallStatus("PAPSS-RS-191", recallId, "TX-R19", "E2E-TX-R19", "PDNG", reason: PapssRecallMessages.UnresolvedStatus, from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic));
         Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, (await StoredRecall(harness, recallId)).PapssOutcome);
 
         var closed = await CloseRecall(harness, provider, recallId, "gateway reported RECALL_OUTCOME_UNRESOLVED; confirmed with PAPSS portal that no funds moved after 45 days", "ops.alice");

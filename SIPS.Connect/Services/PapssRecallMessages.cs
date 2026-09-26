@@ -97,12 +97,13 @@ public static partial class PapssRecallMessages
     public const string RejectedConfirmation = "RJCR";
     /// <summary>
     /// The recall-result signal the gateway uses (S3) when it could not read a definite ACCP/RJCT outcome from PAPSS for a
-    /// camt.056 answer. Carried in the pacs.002 <c>StsRsnInf/Rsn</c> (Cd or Prtry), read the same way as any other reason code
-    /// (<see cref="PapssPaymentMessages.ParseStatusReport"/>) and recognized here regardless of TxSts: pacs.002 TxSts is an ISO
-    /// ExternalPaymentTransactionStatus1Code, hard-capped at 4 characters (see PaymentResponse.cs
-    /// ExternalPaymentTransactionStatus1Code.TypeDefinition), so this literal cannot itself be the TxSts value. Provisional:
-    /// the gateway's finalized wire representation is being agreed separately; SIPS Connect recognizes exactly this literal,
-    /// in the reason, until that contract is confirmed.
+    /// camt.056 answer. Gateway-confirmed 2026-09-26 wire shape: a real, gateway-synthesized pacs.002.001.12 (correlated the
+    /// same as any other recall answer: OrgnlMsgId = recall id, OrgnlMsgNmId = camt.056.001.08, delivered idempotently
+    /// through the normal signed/durable pipeline) with TxSts=PDNG and <c>StsRsnInf/Rsn/Prtry</c> (not Cd) equal to this
+    /// literal. Read the same way as any other reason code (<see cref="PapssPaymentMessages.ParseStatusReport"/>, which falls
+    /// back from Cd to Prtry) and recognized regardless of TxSts: pacs.002 TxSts is an ISO ExternalPaymentTransactionStatus1Code,
+    /// hard-capped at 4 characters (see PaymentResponse.cs ExternalPaymentTransactionStatus1Code.TypeDefinition), so this
+    /// literal could never itself be the TxSts value.
     /// </summary>
     public const string UnresolvedStatus = "RECALL_OUTCOME_UNRESOLVED";
 
