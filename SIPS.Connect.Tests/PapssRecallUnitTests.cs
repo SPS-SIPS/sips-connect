@@ -92,6 +92,28 @@ public sealed class PapssRecallUnitTests
         Assert.Equal("PS0099", PapssRecallMessages.StatusId(xml));
     }
 
+    /// <summary>
+    /// The real, gateway-confirmed wire shape of the S3 signal: TxSts=PDNG with StsRsnInf/Rsn/Prtry (not Cd) =
+    /// RECALL_OUTCOME_UNRESOLVED, delivered as an ordinary signed pacs.002.001.12 on /api/v1/Incoming. Confirms
+    /// PapssPaymentMessages reads the reason from Prtry and PapssRecallRules never hard-requires a particular TxSts.
+    /// </summary>
+    [Fact]
+    public void Recall_outcome_unresolved_is_carried_in_rsn_prtry_with_txsts_pdng()
+    {
+        var xml = GatewayRecallXml.RecallStatus("PAPSS-R-2", RecallId, "TX-2", "E2E-2", "PDNG", reason: PapssRecallMessages.UnresolvedStatus, statusId: "PS0100");
+        var document = XDocument.Parse(xml);
+        var rsn = document.Descendants().Single(x => x.Name.LocalName == "StsRsnInf").Elements().Single(x => x.Name.LocalName == "Rsn");
+        Assert.Null(rsn.Elements().SingleOrDefault(x => x.Name.LocalName == "Cd"));
+        Assert.Equal(PapssRecallMessages.UnresolvedStatus, rsn.Elements().Single(x => x.Name.LocalName == "Prtry").Value);
+
+        var report = PapssPaymentMessages.ParseStatusReport(xml);
+        Assert.Equal(("PDNG", PapssRecallMessages.UnresolvedStatus), (report.Status, report.ReasonCode));
+        Assert.Equal(PapssOutcome.RecallOutcomeUnresolved, PapssRecallRules.OutcomeOfPapssAnswer(report.Status, report.ReasonCode));
+        Assert.Equal(PapssEventDisposition.Applied, PapssRecallRules.EvaluatePapssStatus(PapssOutcome.RecallPending, report.Status, report.ReasonCode));
+        // TxSts alone (PDNG, with no Rsn/Prtry signal) is not itself a recognized ACCP/RJCT/unresolved outcome.
+        Assert.Null(PapssRecallRules.OutcomeOfPapssAnswer("PDNG", null));
+    }
+
     [Theory]
     [InlineData("RECALL_PENDING", "ACCP", "APPLIED")]
     [InlineData("RECALL_PENDING", "RJCT", "APPLIED")]
