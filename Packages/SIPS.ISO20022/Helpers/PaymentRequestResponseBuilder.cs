@@ -130,6 +130,12 @@ public static class PaymentRequestResponseBuilder
         {
             FIToFIPmtStsRpt = new FIToFIPaymentStatusReportV12
             {
+                // Ownership of a pacs.002.001.12 is bound to InstdAgt, not InstgAgt (the agreed WP-SIPS profile; see
+                // SIPS.XMLDsig.Xades.Helpers.XmlSecurityHelpers.CheckTransactionOwnerAgainstCertificate), so InstdAgt must
+                // carry the signer (request.From, the bank) and InstgAgt the counterpart (request.To, the switch) -- the
+                // reverse of pacs.008.001.10, whose signer is bound to InstgAgt instead. Swapping this silently rejects
+                // every otherwise-valid signed decision: the PAPSS adapter reads InstdAgt as the certificate owner, finds
+                // the switch identity there instead of the bank's, and refuses the message as a certificate mismatch.
                 GrpHdr = new GroupHeader101
                 {
                     MsgId = Transformers.GenerateId(request.From),
@@ -140,7 +146,7 @@ public static class PaymentRequestResponseBuilder
                         {
                             Othr = new Schemas.PRRDocument.GenericFinancialIdentification1
                             {
-                                Id = request.From
+                                Id = request.To
                             }
                         }
                     },
@@ -150,7 +156,7 @@ public static class PaymentRequestResponseBuilder
                         {
                             Othr = new Schemas.PRRDocument.GenericFinancialIdentification1
                             {
-                                Id = request.To
+                                Id = request.From
                             }
                         }
                     }
