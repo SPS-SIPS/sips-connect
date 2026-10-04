@@ -234,16 +234,23 @@ public sealed class IncomingPaymentStatusReportHandler(
             };
         }
 
-        if (transaction.Amount != request.Original?.Amount)
+        // The sender may genuinely have reported no amount/currency at all (both OrgnlTxRef/IntrBkSttlmAmt and OrgnlTxRef/Amt are
+        // optional per the pacs.002.001.12 schema); request.AmountKnown is false exactly then. Comparing our real stored amount
+        // against an absent one would always "mismatch" - that is not an amount discrepancy, so the check is skipped entirely
+        // rather than rejecting a status report that never claimed an amount in the first place.
+        if (request.AmountKnown)
         {
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Amount", "Invalid Amount", "Invalid Amount", dbCt);
-            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Invalid Transaction Amount!"));
-        }
+            if (transaction.Amount != request.Original?.Amount)
+            {
+                await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Amount", "Invalid Amount", "Invalid Amount", dbCt);
+                return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Invalid Transaction Amount!"));
+            }
 
-        if (transaction.Currency != request.Original?.Currency)
-        {
-            await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Currency", "Invalid Currency", "Invalid Currency", dbCt);
-            return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Invalid Transaction Currency!"));
+            if (transaction.Currency != request.Original?.Currency)
+            {
+                await _isoService.PersistStatusResponseAsync(record, TransactionStatus.Failed, "Invalid Currency", "Invalid Currency", "Invalid Currency", dbCt);
+                return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.TechnicalError, "Invalid Transaction Currency!"));
+            }
         }
 
         if ((transaction.DebtorAccount != request.Original?.Debtor?.Account) || (transaction.CreditorAccount != request.Original?.Creditor?.Account))
