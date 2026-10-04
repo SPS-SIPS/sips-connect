@@ -119,11 +119,20 @@ public class IncomingPaymentStatusReportHandler_Tests
     private static class TestHelpers
     {
         public static string CreateSamplePacs002(string txId, string status = "ACSC", decimal amount = 100.00m, string currency = "USD",
-            string debtorAccount = "123456789", string creditorAccount = "987654321")
+            string debtorAccount = "123456789", string creditorAccount = "987654321", bool includeAmount = true)
         {
             // Create proper FPEnvelope format that PaymentRequestResponseBuilder.Parse expects
             var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
             var msgId = $"MSG-{txId}";
+            // Both IntrBkSttlmAmt and OrgnlTxRef/Amt are optional per the pacs.002.001.12 schema: a sender that never reported
+            // an amount (e.g. a payment-family status relayed with no proven originating payment) omits both entirely, not a
+            // fabricated 0 - includeAmount=false reproduces exactly that wire shape.
+            var amountElements = includeAmount
+                ? $@"<document:IntrBkSttlmAmt Ccy=""{currency}"">{amount}</document:IntrBkSttlmAmt>
+          <document:Amt>
+            <document:InstdAmt Ccy=""{currency}"">{amount}</document:InstdAmt>
+          </document:Amt>"
+                : string.Empty;
 
             return $@"<FPEnvelope
   xmlns:header=""urn:iso:std:iso:20022:tech:xsd:head.001.001.03""
@@ -163,10 +172,7 @@ public class IncomingPaymentStatusReportHandler_Tests
         <document:OrgnlTxId>{txId}</document:OrgnlTxId>
         <document:TxSts>{status}</document:TxSts>
         <document:OrgnlTxRef>
-          <document:IntrBkSttlmAmt Ccy=""{currency}"">{amount}</document:IntrBkSttlmAmt>
-          <document:Amt>
-            <document:InstdAmt Ccy=""{currency}"">{amount}</document:InstdAmt>
-          </document:Amt>
+          {amountElements}
           <document:Dbtr>
             <document:Pty>
               <document:Nm>John Doe</document:Nm>
@@ -561,6 +567,42 @@ public class IncomingPaymentStatusReportHandler_Tests
                 "CoreBank SHOULD be called for RJCT status (Active Rejection Notification)");
 
             // Using REAL StatusOrchestrator - no need to verify mock calls
+        }
+
+        /// <summary>
+        /// Amount-less pacs.002 callback fix (gateway TVR UAT follow-up): an RJCT whose incoming OrgnlTxRef carries no
+        /// IntrBkSttlmAmt/Amt at all (the sender genuinely reported none, not a wrong value) is still applied as a normal
+        /// rejection - never bounced as "Invalid Transaction Amount!" merely because the amount is absent.
+        /// </summary>
+        [Fact]
+        public async Task HandleAsync_WhenRjctReceivedWithNoAmountReported_ShouldStillApplyRejectionNotReturnInvalidAmount()
+        {
+            const string txId = "TX-HAPPY-003C";
+            var pendingTransaction = ISOMessageBuilder.CreatePendingTransaction(txId);
+
+            MockPersistence
+                .Setup(x => x.GetISOMessageWithTransactionsByTxIdAsync(txId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(pendingTransaction);
+
+            MockPersistence
+                .Setup(x => x.RecordISOMessageStatusAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ISOMessageStatus { ISOMessage = pendingTransaction });
+
+            MockPersistence
+                .Setup(x => x.ISOMessageStatusResponseAsync(It.IsAny<ISOMessageStatus>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ISOMessageStatus { ISOMessage = pendingTransaction });
+
+            var handler = CreateHandler(includeCoreBankOnListing: false);
+            var pacs002Message = TestHelpers.CreateSamplePacs002(txId, "RJCT", includeAmount: false);
+
+            var result = await handler.HandleAsync(pacs002Message, CancellationToken.None);
+
+            result.Should().NotBeNullOrEmpty();
+            pendingTransaction.Status.Should().Be(TransactionStatus.Failed,
+                "an amount-less RJCT must still be applied as a rejection");
+            pendingTransaction.Reason.Should().Be("Received rejection confirmation",
+                "the real stored amount is never compared against an amount the sender never reported - " +
+                "\"Invalid Amount\" would mean the (incorrect) old amount-mismatch gate fired instead");
         }
 
         [Fact]

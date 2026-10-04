@@ -22,6 +22,14 @@ public static class PaymentRequestResponseBuilder
         public DateTime? AcceptanceDate { get; set; }
         public string TxId { get; set; } = string.Empty;
         public SIPS.ISO20022.Enums.Pacs002Role Role { get; set; } = SIPS.ISO20022.Enums.Pacs002Role.StatusUpdate;
+        /// <summary>
+        /// Whether the sender actually reported an original amount/currency for this status (true by default: every existing
+        /// caller sets a real amount). False means <see cref="PaymentRequestBuilder.Request.Amount"/>/<see cref="PaymentRequestBuilder.Request.Currency"/>
+        /// on <see cref="Original"/> are placeholders, not a claimed value - <see cref="Build"/> omits OrgnlTxRef/IntrBkSttlmAmt
+        /// and OrgnlTxRef/Amt entirely (both are optional per the pacs.002.001.12 schema) rather than send a fabricated amount,
+        /// and <see cref="Parse"/> sets this to false when the incoming message carries neither element.
+        /// </summary>
+        public bool AmountKnown { get; set; } = true;
     }
     /// <summary>
     /// Creates the AppHdr for a pacs.002 response message.
@@ -176,11 +184,13 @@ public static class PaymentRequestResponseBuilder
                         StsRsnInf = GetStatusReasonInformation(request),
                         AccptncDtTm = request.Status == "RJCT" ? null : request.AcceptanceDate,
                         OrgnlTxRef = new OriginalTransactionReference35 {
-                            IntrBkSttlmAmt = new ActiveOrHistoricCurrencyAndAmount {
+                            // Both elements are optional per the pacs.002.001.12 schema (minOccurs="0"): when the sender never
+                            // reported an amount, omitting them is the authentic representation, never a fabricated 0.
+                            IntrBkSttlmAmt = !request.AmountKnown ? null : new ActiveOrHistoricCurrencyAndAmount {
                                 Ccy = orig.Currency,
                                 TypedValue = orig.Amount
                             },
-                            Amt = new AmountType4Choice {
+                            Amt = !request.AmountKnown ? null : new AmountType4Choice {
                                 InstdAmt = new ActiveOrHistoricCurrencyAndAmount {
                                     Ccy = orig.Currency,
                                     TypedValue = orig.Amount
@@ -278,6 +288,9 @@ public static class PaymentRequestResponseBuilder
             Amount = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.TypedValue ?? 0,
             Currency = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt?.Ccy ?? "USD"
         };
+        // Absence of Amt/InstdAmt is the sender genuinely reporting no amount (schema: both optional), never a real 0/"USD" -
+        // callers must check this before comparing Original.Amount/Currency against anything.
+        rsp.AmountKnown = document.FIToFIPmtStsRpt.TxInfAndSts[0].OrgnlTxRef?.Amt?.InstdAmt != null;
 
 
         if (rsp.Original?.Debtor != null)
