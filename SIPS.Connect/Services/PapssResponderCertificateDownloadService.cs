@@ -22,10 +22,18 @@ public sealed class PapssResponderCertificateDownloadService(
     public async Task<(CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(
         string serialNumber,
         string issuerDN,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool applyPapssTrustBinding = false)
     {
         var (record, error) = await inner.GetCertificatesAsync(serialNumber, issuerDN, cancellationToken);
-        if (record is null || !options.Enabled || HasCompleteProvenance(record)) return (record, error);
+        // Only a WP-SIPS/PAPSS lookup (applyPapssTrustBinding=true, set by the caller from the signature's own
+        // XAdES profile) may ever be rejected or enriched for PAPSS's owner/trust-pin binding. A domestic IPS
+        // (SmartVista/SVIP) certificate lookup has no PAPSS provenance to begin with - that is expected, not an
+        // error - and must be returned as-is. Previously this ran unconditionally for every certificate lookup
+        // in the process (there is only one ICertificateDownloadService registration), so any SVIP-signed message
+        // was rejected with "The PAPSS responder certificate owner does not match the configured WP-SIPS identity"
+        // before its own (profile-correct) certificate validation in NativeVerifier ever ran.
+        if (!applyPapssTrustBinding || record is null || !options.Enabled || HasCompleteProvenance(record)) return (record, error);
 
         if (record.Revoked ||
             !StringComparer.OrdinalIgnoreCase.Equals(record.Owner?.Trim(), options.RemoteWpSipsIdentity.Trim()))

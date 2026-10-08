@@ -31,7 +31,7 @@ public sealed class PapssResponderCertificateDownloadServiceTests
         var options = Options(fingerprint);
         var service = Service(new CertificateDownloadResponse(pem, "papss"), options);
 
-        var (result, error) = await service.GetCertificatesAsync("1", "CN=issuer");
+        var (result, error) = await service.GetCertificatesAsync("1", "CN=issuer", applyPapssTrustBinding: true);
 
         Assert.Null(error);
         Assert.NotNull(result);
@@ -52,10 +52,37 @@ public sealed class PapssResponderCertificateDownloadServiceTests
         var pem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
         var service = Service(new CertificateDownloadResponse(pem, "papss"), Options(new string('0', 64)));
 
-        var (result, error) = await service.GetCertificatesAsync("1", "CN=issuer");
+        var (result, error) = await service.GetCertificatesAsync("1", "CN=issuer", applyPapssTrustBinding: true);
 
         Assert.Null(result);
         Assert.Contains("SHA-256 pin", error);
+    }
+
+    /// <summary>
+    /// TVR UAT 2026-10-08: SVIP (the domestic switch) signs IPS/SmartVista-legacy traffic with its own certificate,
+    /// whose owner is never "PAPSS" and which the legacy certificate repository never enriches with PAPSS provenance.
+    /// Before this fix, every certificate lookup in the process ran through this one PAPSS-wrapping decorator
+    /// unconditionally, so every SVIP-signed message was rejected with "The PAPSS responder certificate owner does
+    /// not match the configured WP-SIPS identity" before NativeVerifier's own (profile-correct) certificate checks
+    /// ever ran. A lookup that does not ask for the PAPSS trust binding must get the raw legacy record back
+    /// untouched, regardless of its owner.
+    /// </summary>
+    [Fact]
+    public async Task Domestic_IPS_lookup_is_returned_unrestricted_regardless_of_owner()
+    {
+        using var key = RSA.Create(2048);
+        var request = new X509CertificateRequest("CN=svip", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        var pem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+        var service = Service(new CertificateDownloadResponse(pem, "svip"), Options(new string('0', 64)));
+
+        var (result, error) = await service.GetCertificatesAsync("1", "CN=issuer", applyPapssTrustBinding: false);
+
+        Assert.Null(error);
+        Assert.NotNull(result);
+        Assert.Equal("svip", result.Owner);
+        Assert.Null(result.Authority);
+        Assert.Null(result.RepresentedParticipant);
     }
 
     private static PapssFacingOptions Options(string fingerprint) => new()

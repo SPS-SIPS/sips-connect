@@ -164,6 +164,6 @@ public sealed class PapssCallbackGuardTests
         }
 
         public void Dispose() => Directory.Delete(directory,true);
-        private sealed class Download(CertificateDownloadResponse value):ICertificateDownloadService{public Task<(CertificateDownloadResponse? Certificates,string? Error)> GetCertificatesAsync(string serialNumber,string issuerDN,CancellationToken cancellationToken=default)=>Task.FromResult<(CertificateDownloadResponse?,string?)>((value,null));}
+        private sealed class Download(CertificateDownloadResponse value):ICertificateDownloadService{public Task<(CertificateDownloadResponse? Certificates,string? Error)> GetCertificatesAsync(string serialNumber,string issuerDN,CancellationToken cancellationToken=default,bool applyPapssTrustBinding=false)=>Task.FromResult<(CertificateDownloadResponse?,string?)>((value,null));}
     }
 }

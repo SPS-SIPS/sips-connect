@@ -14,7 +14,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
     private readonly IAuthService _authService = authService;
     private readonly ICacheService _cacheService = cacheService;
 
-    public async Task<(CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string sn, string issuerDN, CancellationToken cancellationToken = default)
+    public async Task<(CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string sn, string issuerDN, CancellationToken cancellationToken = default, bool applyPapssTrustBinding = false)
     {
         var serialNumber = sn.Trim();
         var normalizedIssuerDN = NormalizeIssuerDN(issuerDN);
