@@ -95,7 +95,8 @@ public class IncomingVerificationHandler_Tests
             It.IsAny<System.Text.Json.JsonSerializerOptions>(),
             It.IsAny<SIPS.Core.Services.Callback.ICallbackClient>(),
             It.IsAny<CancellationToken>(),
-            It.IsAny<string>()))
+            It.IsAny<string>(),
+            It.IsAny<bool>()))
         .ReturnsAsync(() => httpResultFactory());
     var isoService = new SIPS.Core.Services.Implementations.ISOMessageService(persistence);
     var coreOptions = Microsoft.Extensions.Options.Options.Create(new SIPS.Core.Options.CoreOptions());
@@ -187,8 +188,9 @@ public class IncomingVerificationHandler_Tests
                 It.IsAny<System.Text.Json.JsonSerializerOptions>(),
                 It.IsAny<SIPS.Core.Services.Callback.ICallbackClient>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string>()))
-            .ReturnsAsync((string url, IDictionary<string, string> headers, object dto, string key, IJsonAdapter ja, SIPS.Core.Services.Correlation.ICorrelationService cs, System.Text.Json.JsonSerializerOptions so, SIPS.Core.Services.Callback.ICallbackClient cc, CancellationToken ct, string cid) =>
+                It.IsAny<string>(),
+                It.IsAny<bool>()))
+            .ReturnsAsync((string url, IDictionary<string, string> headers, object dto, string key, IJsonAdapter ja, SIPS.Core.Services.Correlation.ICorrelationService cs, System.Text.Json.JsonSerializerOptions so, SIPS.Core.Services.Callback.ICallbackClient cc, CancellationToken ct, string cid, bool bypassParticipantBinding) =>
             {
                 var jo = dto is CBVerificationRequestDto verificationDto
                     ? ja.Transform(verificationDto, key)

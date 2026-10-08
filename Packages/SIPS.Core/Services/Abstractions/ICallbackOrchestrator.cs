@@ -14,5 +14,6 @@ public interface ICallbackOrchestrator
         System.Text.Json.JsonSerializerOptions serializerOptions,
         SIPS.Core.Services.Callback.ICallbackClient callback,
         System.Threading.CancellationToken ct,
-        string correlationId);
+        string correlationId,
+        bool bypassParticipantBinding = false);
 }

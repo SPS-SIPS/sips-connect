@@ -42,8 +42,18 @@ public sealed class ParticipantCallbackJsonAdapter(JsonAdapter inner, JsonAdapte
 
 public sealed class ParticipantCallbackClient(CallbackClient inner, IParticipantCallbackContext context) : ICallbackClient
 {
-    public Task<Response<JsonObject?>> SendAsync(string url, Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null)
+    public Task<Response<JsonObject?>> SendAsync(string url, Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null, bool bypassParticipantBinding = false)
     {
+        // bypassParticipantBinding=true is a question asked of the bank's own corebank (e.g. CB_Verify, answering
+        // an inbound PAPSS enquiry): it must reach the exact url its caller built from the configured corebank
+        // endpoint, never the participant's bank-notification CallbackUrl. Previously this override applied
+        // unconditionally to every call made while a PAPSS participant binding was active - which is correct for
+        // delivering an outcome/notification to the bank (e.g. IncomingVerificationResponseHandler.DeliverAsync,
+        // which deliberately reuses options.Verification as its own url and relies on this override to redirect
+        // it to the bank's CallbackUrl) but silently redirected CoreBankVerificationClient's /CB/Verify corebank
+        // lookup to that same CallbackUrl too, so every inbound PAPSS acmt.023 enquiry was answered from whatever
+        // the CallbackUrl happened to return instead of a real corebank verification.
+        if (bypassParticipantBinding) return inner.SendAsync(url, headers, content, ct, correlationId);
         var destination = context.Binding?.CallbackUrl ?? url;
         if (context.Binding is not null && string.IsNullOrWhiteSpace(context.Binding.CallbackUrl))
             throw new InvalidOperationException("The PAPSS participant callback URL is not configured.");

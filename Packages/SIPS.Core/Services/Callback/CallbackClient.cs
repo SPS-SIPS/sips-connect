@@ -9,7 +9,14 @@ namespace SIPS.Core.Services.Callback;
 
 public interface ICallbackClient
 {
-    Task<Response<JsonObject?>> SendAsync(string url, Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null);
+    /// <param name="bypassParticipantBinding">
+    /// True for a call that must reach the exact <paramref name="url"/> it was given - a question asked of the
+    /// bank's own corebank (e.g. CB_Verify) - rather than the PAPSS participant's configured bank-notification
+    /// CallbackUrl. False (the default) preserves the existing behaviour: delivering an outcome/notification to
+    /// the participant bank's own callback endpoint, which ParticipantCallbackClient resolves from the active
+    /// PAPSS participant binding when one is present.
+    /// </param>
+    Task<Response<JsonObject?>> SendAsync(string url, Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null, bool bypassParticipantBinding = false);
 }
 
 // Backward-compatible constructor for tests and older code paths
@@ -27,7 +34,7 @@ public sealed partial class CallbackClient(IInterfaceHttpClient httpClient, ILog
     private readonly ICorrelationService _correlation = correlation;
     private readonly CoreOptions _core = coreOptions.Value;
 
-    public async Task<Response<JsonObject?>> SendAsync(string url, Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null)
+    public async Task<Response<JsonObject?>> SendAsync(string url, Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null, bool bypassParticipantBinding = false)
     {
         var cid = correlationId ?? _correlation.Create();
         if (!headers.ContainsKey("X-Correlation-Id"))

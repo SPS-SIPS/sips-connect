@@ -94,7 +94,7 @@ public class IncomingTransactionHandlerConcurrencyTests
         _isoService.Setup(x => x.TryRecordIncomingTransactionAsync(request, rawXml, It.IsAny<CancellationToken>()))
             .ReturnsAsync((new ISOMessage { TxId = "TX1" }, true));
 
-        _callbacks.Setup(x => x.SendJsonAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, string>>(), It.IsAny<object>(), It.IsAny<string>(), It.IsAny<IJsonAdapter>(), It.IsAny<ICorrelationService>(), It.IsAny<System.Text.Json.JsonSerializerOptions>(), It.IsAny<ICallbackClient>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
+        _callbacks.Setup(x => x.SendJsonAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, string>>(), It.IsAny<object>(), It.IsAny<string>(), It.IsAny<IJsonAdapter>(), It.IsAny<ICorrelationService>(), It.IsAny<System.Text.Json.JsonSerializerOptions>(), It.IsAny<ICallbackClient>(), It.IsAny<CancellationToken>(), It.IsAny<string>(), It.IsAny<bool>()))
             .ReturnsAsync(SIPS.ISO20022.Models.DTOs.Response<JsonObject?>.Success(new JsonObject()));
 
         var result = await _handler.HandleAsync(rawXml, CancellationToken.None);
@@ -128,7 +128,7 @@ public class IncomingTransactionHandlerConcurrencyTests
 
         Assert.NotNull(result);
         // Verify we DID NOT call callback
-        _callbacks.Verify(x => x.SendJsonAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, string>>(), It.IsAny<object>(), It.IsAny<string>(), It.IsAny<IJsonAdapter>(), It.IsAny<ICorrelationService>(), It.IsAny<System.Text.Json.JsonSerializerOptions>(), It.IsAny<ICallbackClient>(), It.IsAny<CancellationToken>(), It.IsAny<string>()), Times.Never);
+        _callbacks.Verify(x => x.SendJsonAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, string>>(), It.IsAny<object>(), It.IsAny<string>(), It.IsAny<IJsonAdapter>(), It.IsAny<ICorrelationService>(), It.IsAny<System.Text.Json.JsonSerializerOptions>(), It.IsAny<ICallbackClient>(), It.IsAny<CancellationToken>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public class IncomingTransactionHandlerConcurrencyTests
             .ReturnsAsync((record, true));
         _responseFactory.Setup(x => x.BuildPaymentInitial(It.IsAny<PaymentRequestBuilder.Request>()))
             .Returns((PaymentRequestBuilder.Request req) => new ResponseFactory().BuildPaymentInitial(req));
-        _callbacks.Setup(x => x.SendJsonAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, string>>(), It.IsAny<object>(), It.IsAny<string>(), It.IsAny<IJsonAdapter>(), It.IsAny<ICorrelationService>(), It.IsAny<System.Text.Json.JsonSerializerOptions>(), It.IsAny<ICallbackClient>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
+        _callbacks.Setup(x => x.SendJsonAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, string>>(), It.IsAny<object>(), It.IsAny<string>(), It.IsAny<IJsonAdapter>(), It.IsAny<ICorrelationService>(), It.IsAny<System.Text.Json.JsonSerializerOptions>(), It.IsAny<ICallbackClient>(), It.IsAny<CancellationToken>(), It.IsAny<string>(), It.IsAny<bool>()))
             .ReturnsAsync(SIPS.ISO20022.Models.DTOs.Response<JsonObject?>.Success(new JsonObject { ["ok"] = true }));
         _jsonAdapter.Setup(x => x.Transform(It.IsAny<JsonObject>(), It.IsAny<string>()))
             .Returns(new JsonObject { ["mapped"] = true });
