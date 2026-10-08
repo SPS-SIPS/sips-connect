@@ -1,6 +1,7 @@
 using SIPS.PostgreSQL.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Linq;
 using System.Text.Json;
 using Npgsql;
 namespace SIPS.PostgreSQL.Gateway;
@@ -245,12 +246,15 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
 
     private void DetachGraph(ISOMessage entity)
     {
-        foreach (var transaction in entity.Transactions)
+        // Detaching a child triggers EF's relationship fixup, which removes it from these
+        // navigation collections - snapshot each one first or the foreach below throws
+        // "Collection was modified; enumeration operation may not execute" mid-iteration.
+        foreach (var transaction in entity.Transactions.ToList())
         {
             _storage.Detach(transaction);
         }
 
-        foreach (var status in entity.Statuses)
+        foreach (var status in entity.Statuses.ToList())
         {
             _storage.Detach(status);
         }
