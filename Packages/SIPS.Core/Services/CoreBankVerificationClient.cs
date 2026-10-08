@@ -84,9 +84,13 @@ public sealed class CoreBankVerificationClient(
         Response<JsonObject?>? result;
         try
         {
+            // This asks the corebank to verify an account for an inbound PAPSS enquiry - it must reach
+            // options.Verification itself, never the PAPSS participant's bank-notification CallbackUrl that a
+            // participant binding would otherwise redirect it to (TVR UAT 2026-10-08: every inbound PAPSS
+            // acmt.023 was answered from that CallbackUrl's response instead of a real corebank lookup).
             result = await callbacks.SendJsonAsync(
                 options.Verification!, BuildHeaders(request), BuildRequest(request), CB_VerificationRequest,
-                jsonAdapter, correlation, SerializerOptions, callback, coreBankCts.Token, correlationId);
+                jsonAdapter, correlation, SerializerOptions, callback, coreBankCts.Token, correlationId, bypassParticipantBinding: true);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {

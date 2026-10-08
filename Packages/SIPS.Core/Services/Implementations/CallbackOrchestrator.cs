@@ -20,13 +20,14 @@ public sealed class CallbackOrchestrator : ICallbackOrchestrator
         JsonSerializerOptions serializerOptions,
         ICallbackClient callback,
         CancellationToken ct,
-        string correlationId)
+        string correlationId,
+        bool bypassParticipantBinding = false)
     {
         JsonObject md = jsonAdapter.Transform(dto, transformKey);
         var body = JsonSerializer.Serialize(md, serializerOptions);
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var concreteHeaders = headers is Dictionary<string, string> d ? d : new Dictionary<string, string>(headers);
-        var rsp = await callback.SendAsync(url, concreteHeaders, content, ct, correlationId);
+        var rsp = await callback.SendAsync(url, concreteHeaders, content, ct, correlationId, bypassParticipantBinding);
         return rsp;
     }
 }

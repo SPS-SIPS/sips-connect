@@ -363,7 +363,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(TestHelpers.CreateSuccessCallbackResponse());
         }
 
@@ -383,7 +384,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(Response<JsonObject?>.Fail("CoreBank error", HttpStatusCode.InternalServerError));
         }
     }
@@ -436,7 +438,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Once,
                 "CoreBank should be called exactly once for ACSC status");
 
@@ -494,7 +497,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Once,
                 "CoreBank should still be called");
 
@@ -532,7 +536,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(Response<JsonObject?>.Success(new JsonObject()));
 
             // Using REAL StatusOrchestrator - no mocking needed!
@@ -562,7 +567,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Once,
                 "CoreBank SHOULD be called for RJCT status (Active Rejection Notification)");
 
@@ -643,7 +649,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank was not listed for this incoming payment");
 
@@ -695,7 +702,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(TestHelpers.CreateSuccessCallbackResponse());
 
             // Using REAL StatusOrchestrator - no mocking needed!
@@ -726,7 +734,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank Return endpoint should NOT be called - automatic return completion not implemented");
 
@@ -765,7 +774,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(TestHelpers.CreateSuccessCallbackResponse());
 
             // Using REAL StatusOrchestrator - no mocking needed!
@@ -801,7 +811,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank Return should NOT be called - automatic return completion not implemented");
         }
@@ -837,7 +848,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync((Response<JsonObject?>?)null!);
 
             MockStatusOrchestrator
@@ -875,7 +887,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank Return should NOT be called - automatic return completion not implemented");
 
@@ -931,7 +944,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank should NOT be called for already completed transactions");
         }
@@ -975,7 +989,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank should NOT be called for already failed transactions");
         }
@@ -1024,7 +1039,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank should NOT be called when transaction is not found");
         }
@@ -1060,7 +1076,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync((Response<JsonObject?>?)null!);
 
             // Using REAL StatusOrchestrator - no mocking needed!
@@ -1090,7 +1107,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Once,
                 "CoreBank should be called even if it returns null");
         }
@@ -1128,7 +1146,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(nullDataResponse);
 
             // Using REAL StatusOrchestrator - no mocking needed!
@@ -1158,7 +1177,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Once,
                 "CoreBank should be called");
         }
@@ -1197,7 +1217,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank should NOT be called when signature is invalid");
         }
@@ -1256,7 +1277,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank should NOT be called for duplicate pacs.002 on already successful transaction");
 
@@ -1315,7 +1337,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "CoreBank should NOT be called for duplicate pacs.002 on already failed transaction");
 
@@ -1461,7 +1484,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(Response<JsonObject?>.Success(new JsonObject()));
 
             // Setup StatusOrchestrator to match
@@ -1495,7 +1519,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Once,
                 "CoreBank SHOULD be called for RJCT status");
 
@@ -1562,7 +1587,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()))
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(responseWrapper);
 
             // CreateHandler is likely a helper method. If it's in the outer class (instance), we can't access it easily from a nested class inheriting TestBase?
@@ -1612,7 +1638,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Once,
                 "Should call CoreBank Return endpoint for ReturnRequest");
 
@@ -1628,7 +1655,8 @@ public class IncomingPaymentStatusReportHandler_Tests
                     It.IsAny<JsonSerializerOptions>(),
                     It.IsAny<ICallbackClient>(),
                     It.IsAny<CancellationToken>(),
-                    It.IsAny<string>()),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()),
                 Times.Never,
                 "Should NOT call Payment endpoint for ReturnRequest");
         }

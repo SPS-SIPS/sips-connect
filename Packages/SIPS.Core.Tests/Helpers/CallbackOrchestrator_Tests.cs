@@ -24,7 +24,7 @@ public class CallbackOrchestrator_Tests
             .Returns(new JsonObject());
         var correlation = new Mock<ICorrelationService>();
         var callback = new Mock<ICallbackClient>();
-        callback.Setup(c => c.SendAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<System.Net.Http.StringContent>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
+        callback.Setup(c => c.SendAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<System.Net.Http.StringContent>(), It.IsAny<CancellationToken>(), It.IsAny<string>(), It.IsAny<bool>()))
             .ReturnsAsync(Response<JsonObject?>.Success(new JsonObject()));
 
         var orchestrator = new CallbackOrchestrator();
@@ -32,7 +32,7 @@ public class CallbackOrchestrator_Tests
         var rsp = await orchestrator.SendJsonAsync("http://cb", headers, new { }, "key", jsonAdapter.Object, correlation.Object, new JsonSerializerOptions(), callback.Object, CancellationToken.None, "cid");
 
         Assert.True(rsp.IsSuccess);
-        callback.Verify(c => c.SendAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<System.Net.Http.StringContent>(), It.IsAny<CancellationToken>(), It.IsAny<string>()), Times.Once);
+        callback.Verify(c => c.SendAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<System.Net.Http.StringContent>(), It.IsAny<CancellationToken>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Once);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class CallbackOrchestrator_Tests
             .Returns(new JsonObject());
         var correlation = new Mock<ICorrelationService>();
         var callback = new Mock<ICallbackClient>();
-        callback.Setup(c => c.SendAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<System.Net.Http.StringContent>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
+        callback.Setup(c => c.SendAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<System.Net.Http.StringContent>(), It.IsAny<CancellationToken>(), It.IsAny<string>(), It.IsAny<bool>()))
             .ReturnsAsync(Response<JsonObject?>.Fail("bad", System.Net.HttpStatusCode.BadRequest));
 
         var orchestrator = new CallbackOrchestrator();
@@ -52,6 +52,6 @@ public class CallbackOrchestrator_Tests
 
         Assert.False(rsp.IsSuccess);
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, rsp.StatusCode);
-        callback.Verify(c => c.SendAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<System.Net.Http.StringContent>(), It.IsAny<CancellationToken>(), It.IsAny<string>()), Times.Once);
+        callback.Verify(c => c.SendAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>(), It.IsAny<System.Net.Http.StringContent>(), It.IsAny<CancellationToken>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Once);
     }
 }

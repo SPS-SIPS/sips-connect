@@ -102,7 +102,7 @@ public sealed class IncomingTransactionStatusHandler_Token_Tests
         public JsonObject Transform(JsonObject json, string mappingName) => json;
         public JsonObject Transform<T>(T localObject, string mappingName) => new JsonObject();
         public T ToObject<T>(JsonObject json) => default!;
-        public Task<Response<JsonObject?>> SendAsync(string url, System.Collections.Generic.Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null) => Task.FromResult(Response<JsonObject?>.Success(new JsonObject()));
+        public Task<Response<JsonObject?>> SendAsync(string url, System.Collections.Generic.Dictionary<string, string> headers, StringContent content, CancellationToken ct, string? correlationId = null, bool bypassParticipantBinding = false) => Task.FromResult(Response<JsonObject?>.Success(new JsonObject()));
     }
 
     [Fact]

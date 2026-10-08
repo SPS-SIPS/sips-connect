@@ -185,7 +185,8 @@ public sealed class OutgoingTransactionStatusHandler_CompletionNotification_Test
             JsonSerializerOptions serializerOptions,
             ICallbackClient callback,
             CancellationToken ct,
-            string correlationId)
+            string correlationId,
+            bool bypassParticipantBinding = false)
         {
             CallbacksSent.Add((url, dto, transformKey));
 
