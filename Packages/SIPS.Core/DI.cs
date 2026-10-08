@@ -87,6 +87,7 @@ public static class DI
             sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CoreOptions>>(),
             sp.GetRequiredService<ILogger<CoreBankVerificationClient>>()));
         services.AddSingleton<IInboundAuthenticationContext, NoInboundPreAuthentication>();
+        services.AddSingleton<IInboundPaymentContext, DomesticInboundPaymentContext>();
         services.AddScoped<IReturnRetryHandler, ReturnRetryHandler>();
 
         services.AddScoped<IOutgoingVerificationHandler, OutgoingVerificationHandler>();

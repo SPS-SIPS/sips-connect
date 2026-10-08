@@ -38,10 +38,17 @@ public sealed class PapssPaymentDecisionPublisher(
         if (record.Message.Length != receivedBytes.Length || !CryptographicOperations.FixedTimeEquals(record.Message, receivedBytes))
             throw new ParticipantRailException("DUPLICATE_CONFLICT", "The transaction identifier was reused with a different signed payment payload.");
 
+        if (record.PapssDecisionPublishedAt is not null || record.PapssDecisionFailedAt is not null) return;
+        if (record.Response is null) throw new InvalidOperationException("The bank decision was not durably persisted.");
+        if (record.Status == TransactionStatus.CheckStatus)
+            throw new InvalidOperationException("The PAPSS bank decision is unresolved and requires reconciliation.");
+        var bankResponse = Encoding.UTF8.GetString(record.Response);
+        if (PapssPaymentMessages.DecisionStatus(bankResponse).Status is not ("RJCT" or "ACCP"))
+            throw new InvalidDataException("The stored PAPSS response has no explicit bank acceptance or rejection.");
+
         if (record.PapssDecision is null)
         {
-            if (record.Response is null) throw new InvalidOperationException("The bank decision was not durably persisted.");
-            var decision = CreateSignedDecision(participant, inbound, Encoding.UTF8.GetString(record.Response));
+            var decision = CreateSignedDecision(participant, inbound, bankResponse);
             var bytes = Encoding.UTF8.GetBytes(decision);
             await storage.ISOMessages
                 .Where(x => x.Id == record.Id && x.PapssDecision == null)
@@ -49,7 +56,6 @@ public sealed class PapssPaymentDecisionPublisher(
             record = await storage.ISOMessages.AsNoTracking().SingleAsync(x => x.Id == record.Id, ct);
         }
 
-        if (record.PapssDecisionPublishedAt is not null || record.PapssDecisionFailedAt is not null) return;
         await TrySubmitAsync(participant, record.Id, record.PapssDecision!, ct);
     }
 
@@ -104,7 +110,10 @@ public sealed class PapssPaymentDecisionPublisher(
         else service.Value = options.SecurityProfile;
 
         var status = decision.Descendants().Single(x => x.Name.LocalName == "TxSts");
-        status.Value = status.Value == "RJCT" ? "RJCT" : "ACCP";
+        // An explicit acceptance is persisted only after the PAPSS corebank call succeeds.
+        // Never promote a legacy default ACSC, pending or unknown status to bank acceptance.
+        if (status.Value is not ("RJCT" or "ACCP"))
+            throw new InvalidDataException("The stored PAPSS response has no explicit bank acceptance or rejection.");
         if (status.Value == "RJCT" && !HasRejectionReason(decision))
             throw new InvalidDataException("A rejected PAPSS payment decision requires a reason.");
 

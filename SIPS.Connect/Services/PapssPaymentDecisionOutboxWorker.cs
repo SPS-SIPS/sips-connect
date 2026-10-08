@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SIPS.Connect.Config;
 using SIPS.PostgreSQL.Interfaces;
+using SIPS.PostgreSQL.Enums;
 using SIPS.XMLDsig.Xades.Options;
 
 namespace SIPS.Connect.Services;
@@ -42,8 +43,8 @@ public sealed class PapssPaymentDecisionOutboxWorker(
         while (processed < 25)
         {
             var pending = await storage.ISOMessages.AsNoTracking()
-                .Where(x => x.Id > lastId && x.BusinessService == options.SecurityProfile && x.Response != null && x.PapssDecisionPublishedAt == null && x.PapssDecisionFailedAt == null)
-                .OrderBy(x => x.Id).Take(100).Select(x => new { x.Id, x.Message, x.PapssDecision }).ToArrayAsync(ct);
+                .Where(x => x.Id > lastId && x.BusinessService == options.SecurityProfile && x.Response != null && x.Status != TransactionStatus.CheckStatus && x.PapssDecisionPublishedAt == null && x.PapssDecisionFailedAt == null)
+                .OrderBy(x => x.Id).Take(100).Select(x => new { x.Id, x.Message }).ToArrayAsync(ct);
             if (pending.Length == 0) break;
             lastId = pending[^1].Id;
             foreach (var item in pending)
@@ -53,8 +54,9 @@ public sealed class PapssPaymentDecisionOutboxWorker(
                 processed++;
                 try
                 {
-                    if (item.PapssDecision is null) await publisher.PersistAndSubmitAsync(binding, inbound, ct);
-                    else await publisher.TrySubmitAsync(binding, item.Id, item.PapssDecision, ct);
+                    // Revalidate the persisted bank decision even when signed bytes already exist.
+                    // This prevents retrying a legacy acceptance created without a bank lookup.
+                    await publisher.PersistAndSubmitAsync(binding, inbound, ct);
                 }
                 catch (Exception error) when (error is InvalidDataException or ParticipantRailException or UnauthorizedAccessException)
                 {

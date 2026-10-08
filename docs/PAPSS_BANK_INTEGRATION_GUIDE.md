@@ -496,6 +496,25 @@ Every answer to one of your recalls is pushed with the mapping `<profile>.CB_Rec
 - An answer SIPS Connect cannot attribute to a recall is stored for SPS operations (`Operations/Unresolved`) and not pushed.
 - Delivery works like the other callbacks: stored first, pushed from an outbox with retries, at-least-once.
 
+### Acceptance of inbound PAPSS payments
+
+An authenticated PAPSS `pacs.008` always calls the bank's configured `ISO20022:Transfer`
+endpoint using the PAPSS profile's `CB_PaymentRequest` / `CB_PaymentResponse` mappings.
+`Core:IncludeCoreBankOnListing` controls domestic listing only; setting it to `false`
+does not skip this PAPSS bank decision. The transfer call uses the transaction ID as its
+idempotency key and bypasses the participant notification `CallbackUrl` override.
+
+A successful HTTP response with bank status `ACCP`, `ACSC` or `SUCC` produces a stored
+`ACCP` decision for PAPSS; an explicit rejection produces `RJCT` with the bank's reason.
+An empty, unsuccessful or unrecognized response, including a timeout, is recorded for
+reconciliation and no bank decision is submitted to PAPSS. Later network
+settlement reports remain separate from this initial acceptance decision. Redelivery reuses
+the persisted decision and does not repeat the transfer call.
+
+Existing payments that were accepted without a bank call are not transferred again by this
+change. An unpublished legacy default `ACSC` decision is not promoted to `ACCP`; it needs
+reconciliation. Use a new transaction ID when validating the bank-acceptance path in UAT.
+
 ### Verification enquiries from other PAPSS countries
 
 When a participant in another country verifies one of your accounts:

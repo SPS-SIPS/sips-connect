@@ -24,6 +24,7 @@ using SIPS.ISO20022.Models.DTOs.CB;
 using SIPS.ISO20022.Enums;
 using Microsoft.Extensions.Options;
 using SIPS.Core.Options;
+using SIPS.Core.Interfaces;
 using static SIPS.Core.Constants;
 namespace SIPS.Core.Services;
 
@@ -73,7 +74,8 @@ public sealed class IncomingTransactionHandler(
     IInboundMessageService inbound,
     ICallbackOrchestrator callbacks,
     IISOMessageService isoService,
-    IOptions<CoreOptions> coreOptions
+    IOptions<CoreOptions> coreOptions,
+    IInboundPaymentContext? paymentContext = null
     ) : IIncomingTransactionHandler
 {
     private readonly ISO20022Options _callbackLinks = options;
@@ -88,6 +90,7 @@ public sealed class IncomingTransactionHandler(
     private readonly ICallbackOrchestrator _callbacks = callbacks;
     private readonly IISOMessageService _isoService = isoService;
     private readonly CoreOptions _core = coreOptions.Value;
+    private readonly IInboundPaymentContext _paymentContext = paymentContext ?? new DomesticInboundPaymentContext();
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -110,12 +113,13 @@ public sealed class IncomingTransactionHandler(
         IResponseFactory responseFactory,
         IPersistenceGateway persistence,
         ICorrelationService correlation,
-        IOptions<CoreOptions> coreOptions)
+        IOptions<CoreOptions> coreOptions,
+        IInboundPaymentContext? paymentContext = null)
         : this(options, logger, signer, jsonAdapter, parser, callback, responseFactory, correlation,
               new InboundMessageService(signature),
               new CallbackOrchestrator(),
               new ISOMessageService(persistence),
-              coreOptions)
+              coreOptions, paymentContext)
     {
     }
 
@@ -137,8 +141,9 @@ public sealed class IncomingTransactionHandler(
         IInboundMessageService inbound,
         ICallbackOrchestrator callbacks,
         IISOMessageService isoService,
-        IOptions<CoreOptions> coreOptions)
-        : this(options, logger, signer, jsonAdapter, parser, callback, responseFactory, correlation, inbound, callbacks, isoService, coreOptions)
+        IOptions<CoreOptions> coreOptions,
+        IInboundPaymentContext? paymentContext = null)
+        : this(options, logger, signer, jsonAdapter, parser, callback, responseFactory, correlation, inbound, callbacks, isoService, coreOptions, paymentContext)
     {
     }
     public async Task<string> HandleAsync(string message, CancellationToken ct)
@@ -147,6 +152,7 @@ public sealed class IncomingTransactionHandler(
         var sw = System.Diagnostics.Stopwatch.StartNew();
         string path = "Normal";
         string cid = _correlation.Create();
+        var requiresCoreBankAcceptance = _paymentContext.RequiresCoreBankAcceptance;
 
         // [CHANGE GUARD]: Internal watchdog budget ensures contractual Compliance with BPC 10s SLA.
         using var globalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -279,8 +285,9 @@ public sealed class IncomingTransactionHandler(
 
             try
             {
-                // CoreBank Integration (Optional)
-                if (_core.IncludeCoreBankOnListing)
+                // Domestic acceptance remains configurable; authenticated PAPSS payments require
+                // the bank's decision even when domestic listing skips the corebank.
+                if (_core.IncludeCoreBankOnListing || requiresCoreBankAcceptance)
                 {
                     try
                     {
@@ -344,16 +351,20 @@ public sealed class IncomingTransactionHandler(
                                 _jsonSerializerOptions,
                                 _callback,
                                 coreBankCts.Token,
-                                cid
+                                cid,
+                                bypassParticipantBinding: requiresCoreBankAcceptance
                             );
                         }
 
-                        if (result?.Data != null)
+                        if (result?.Data != null && (!requiresCoreBankAcceptance || (int)result.StatusCode is >= 200 and <= 299))
                         {
                             var cbResponse = ParseCallbackResult(result.Data);
                             if (IsCoreBankSuccess(cbResponse.Status))
                             {
-                                _logger.LogInformation("[{CorrelationId}] CoreBank returned success status {Status} for transaction {TxId}. Proceeding with ACSC.", cid, cbResponse.Status, request.TxId);
+                                // PAPSS admission is bank acceptance, not network settlement. This
+                                // explicit status also prevents publishing old default ACSC responses.
+                                if (requiresCoreBankAcceptance) response.Status = "ACCP";
+                                _logger.LogInformation("[{CorrelationId}] CoreBank accepted transaction {TxId} with status {Status}. Response status={ResponseStatus}.", cid, request.TxId, cbResponse.Status, response.Status);
                                 response.AcceptanceDate = IsoResponseGuard.ValidAcceptanceDate(cbResponse.AcceptanceDate, request.CreDt);
                                 if (cbResponse.AcceptanceDate != null && response.AcceptanceDate == null)
                                     _logger.LogWarning("[{CorrelationId}] Ignoring impossible CoreBank acceptance timestamp {AcceptanceDate} for TxId {TxId}.", cid, cbResponse.AcceptanceDate, request.TxId);
@@ -362,13 +373,14 @@ public sealed class IncomingTransactionHandler(
                             {
                                 _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}. Reason: {Reason}", cid, request.TxId, cbResponse.Reason);
                                 response.Status = RJCT;
-                                response.Reason = "MS03";
+                                response.Reason = requiresCoreBankAcceptance ? IsoText.StatusReasonCode(cbResponse.Reason) : "MS03";
                                 response.AdditionalInfo = IsoText.StatusAdditionalInfo(
                                     cbResponse.AdditionalInfo,
                                     cbResponse.Reason);
                             }
                             else
                             {
+                                if (requiresCoreBankAcceptance) path = "CoreBankUnresolved";
                                 var returnedStatus = string.IsNullOrWhiteSpace(cbResponse.Status) ? "<empty>" : cbResponse.Status;
                                 _logger.LogWarning("[{CorrelationId}] CoreBank returned non-success status {Status} for transaction {TxId}. Rejecting for safety.", cid, returnedStatus, request.TxId);
                                 response.Status = RJCT;
@@ -381,7 +393,8 @@ public sealed class IncomingTransactionHandler(
                         }
                         else
                         {
-                            _logger.LogWarning("[{CorrelationId}] CoreBank callback returned null or empty data for TxId {TxId}. Fast-failing with RJCT (Safe mode).", cid, request.TxId);
+                            if (requiresCoreBankAcceptance) path = "CoreBankUnresolved";
+                            _logger.LogWarning("[{CorrelationId}] CoreBank callback returned an unusable response (HTTP={StatusCode}) for TxId {TxId}. Returning RJCT.", cid, result?.StatusCode, request.TxId);
                             response.Status = RJCT;
                             response.Reason = "MS03";
                             response.AdditionalInfo = "CoreBank returned empty response.";
@@ -415,7 +428,7 @@ public sealed class IncomingTransactionHandler(
                     }
                     catch (Exception ex)
                     {
-                        path = "CoreBankError";
+                        path = requiresCoreBankAcceptance ? "CoreBankUnresolved" : "CoreBankError";
                         _logger.LogWarning(ex, "[{CorrelationId}] Failed to call CoreBank for TxId {TxId} (Connectivity issue). Rejecting for safety.", cid, request.TxId);
                         response.Status = RJCT;
                         response.Reason = "MS03";
@@ -430,7 +443,7 @@ public sealed class IncomingTransactionHandler(
                 }
 
                 var rsp = PaymentRequestResponseBuilder.Build(response);
-                var finalStatus = path == "CoreBankTimeout"
+                var finalStatus = path is "CoreBankTimeout" or "CoreBankUnresolved"
                     ? TransactionStatus.CheckStatus
                     : string.Equals(response.Status, RJCT, StringComparison.OrdinalIgnoreCase)
                         ? TransactionStatus.Failed
@@ -469,7 +482,7 @@ public sealed class IncomingTransactionHandler(
                 try {
                     using var dbCts2 = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
                     await _isoService.PersistTransactionResponseAsync(record,
-                        TransactionStatus.Failed,
+                        requiresCoreBankAcceptance ? TransactionStatus.CheckStatus : TransactionStatus.Failed,
                         "Internal System Error during processing",
                         rspFallback.AdditionalInfo,
                         rspBody,
