@@ -113,7 +113,7 @@ public class NoOpCertificateServiceTests
 
     private class MockCertificateDownloadService : ICertificateDownloadService
     {
-        public Task<(SIPS.XMLDsig.Xades.Models.CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string serialNumber, string issuerName, System.Threading.CancellationToken ct = default)
+        public Task<(SIPS.XMLDsig.Xades.Models.CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string serialNumber, string issuerName, System.Threading.CancellationToken ct = default, bool applyPapssTrustBinding = false)
             => Task.FromResult<(SIPS.XMLDsig.Xades.Models.CertificateDownloadResponse?, string?)>((null, "Not implemented in mock"));
     }
 

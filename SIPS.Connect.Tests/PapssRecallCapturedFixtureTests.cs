@@ -129,7 +129,7 @@ public sealed class PapssRecallCapturedFixtureTests
         var fingerprint = CertificateSha256;
 
         var download = new Mock<ICertificateDownloadService>();
-        download.Setup(x => x.GetCertificatesAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        download.Setup(x => x.GetCertificatesAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()))
             .ReturnsAsync((new CertificateDownloadResponse(pem, RemoteWpSipsIdentity, false, "SPS-AUTH", "TEST", RemoteWpSipsIdentity, fingerprint, "v1", RequiredEku), (string?)null));
 
         using var pki = new ThrowawayCertificateService();

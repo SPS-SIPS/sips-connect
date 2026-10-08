@@ -31,7 +31,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         var keyInfo = GetReferencedKeyInfo(signature);
         var serial = keyInfo.GetElementsByTagName("X509SerialNumber", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single().InnerText;
         var issuer = keyInfo.GetElementsByTagName("X509IssuerName", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single().InnerText.Trim();
-        var (record, error) = await _cdService.GetCertificatesAsync(serial, issuer, cancellationToken);
+        var (record, error) = await _cdService.GetCertificatesAsync(serial, issuer, cancellationToken, applyPapssTrustBinding: profile == XadesProfile.WpSipsPapss);
         if (record is null || profile == XadesProfile.WpSipsPapss &&
             (record.Revoked || string.IsNullOrWhiteSpace(record.Authority) || string.IsNullOrWhiteSpace(record.Environment) || string.IsNullOrWhiteSpace(record.RepresentedParticipant) || string.IsNullOrWhiteSpace(record.CertificateSha256) || string.IsNullOrWhiteSpace(record.TrustProfileVersion) || string.IsNullOrWhiteSpace(record.RequiredExtendedKeyUsageOid)))
         {
@@ -308,7 +308,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         while (normalizedIssuer.Contains("  ")) normalizedIssuer = normalizedIssuer.Replace("  ", " ");
 
         var certificate=suppliedRecord;string? error=null;
-        if(certificate is null)(certificate,error)=await _cdService.GetCertificatesAsync(sn.InnerText, normalizedIssuer, cancellationToken);
+        if(certificate is null)(certificate,error)=await _cdService.GetCertificatesAsync(sn.InnerText, normalizedIssuer, cancellationToken, applyPapssTrustBinding: profile == XadesProfile.WpSipsPapss);
         if (certificate is null)
         {
             _logger.LogError("Could not download the certificate: {error}", error);
