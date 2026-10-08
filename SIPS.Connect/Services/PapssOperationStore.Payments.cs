@@ -589,7 +589,7 @@ public sealed partial class PapssOperationStore
 
     /// <summary>
     /// Mirrors the isomessages row of an inbound payment into its operation: the bank decision (CB_PaymentRequest answer,
-    /// ACCP/RJCT as the decision publisher maps it) and the PAPSS decision outbox state (gateway state).
+    /// explicit ACCP/RJCT) and the PAPSS decision outbox state (gateway state).
     /// A later PAPSS status that already moved the payment on is never overwritten by the decision.
     /// </summary>
     public async Task SyncInboundPaymentDecisionAsync(Guid operationId, CancellationToken ct)
@@ -615,7 +615,7 @@ public sealed partial class PapssOperationStore
         var operation = await db.PapssOperations.SingleAsync(x => x.Id == operationId, ct);
         var iso = await db.ISOMessages.AsNoTracking()
             .Where(x => x.MessageType == ISOMessageType.TransactionRequest && x.TxId == operation.TxId)
-            .Select(x => new { x.Id, x.Response, x.PapssDecision, x.PapssDecisionAdmissionCode, x.PapssDecisionPublishedAt, x.PapssDecisionFailureCode, x.PapssDecisionFailedAt })
+            .Select(x => new { x.Id, x.Status, x.Response, x.PapssDecision, x.PapssDecisionAdmissionCode, x.PapssDecisionPublishedAt, x.PapssDecisionFailureCode, x.PapssDecisionFailedAt })
             .FirstOrDefaultAsync(ct);
         if (iso is null)
         {
@@ -624,17 +624,20 @@ public sealed partial class PapssOperationStore
         }
 
         operation.IsoMessageId = iso.Id;
-        if (iso.Response is { Length: > 0 } response)
+        if (iso.Status != TransactionStatus.CheckStatus && iso.Response is { Length: > 0 } response)
         {
             // Only the first time: afterwards bankdeliverystate tracks the pushes of later PAPSS statuses.
             if (operation.PaymentStatus is null && operation.PapssOutcome == PapssOutcome.Pending)
             {
-                if (operation.BankDeliveryState == PapssDeliveryState.Pending) operation.BankDeliveryState = PapssDeliveryState.Delivered;
                 try
                 {
                     var (status, reason) = PapssPaymentMessages.DecisionStatus(Encoding.UTF8.GetString(response));
-                    // Same mapping as PapssPaymentDecisionPublisher: anything but RJCT is sent to PAPSS as ACCP.
-                    var decision = status == Rules.RJCT ? Rules.RJCT : Rules.ACCP;
+                    // Match the decision publisher: only explicit bank acceptance/rejection can
+                    // advance the operation. Legacy default ACSC is not a PAPSS bank decision.
+                    if (status is not (Rules.ACCP or Rules.RJCT))
+                        throw new InvalidDataException("The stored PAPSS response has no explicit bank decision.");
+                    if (operation.BankDeliveryState == PapssDeliveryState.Pending) operation.BankDeliveryState = PapssDeliveryState.Delivered;
+                    var decision = status;
                     operation.PaymentStatus = decision;
                     operation.PapssOutcome = decision == Rules.RJCT ? PapssOutcome.Rejected : PapssOutcome.Accepted;
                     operation.StatusReasonCode = decision == Rules.RJCT ? Truncate(reason, 64) : null;

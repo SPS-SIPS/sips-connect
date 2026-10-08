@@ -15,6 +15,7 @@ public class CoreOptions
     public int HttpTimeoutSeconds { get; set; } = 15;
     public int CoreBankTimeoutSeconds { get; set; } = 3;
     public int DbPersistTimeoutSeconds { get; set; } = 10;
+    /// <summary>Optional domestic acceptance lookup. Authenticated PAPSS payments always consult the corebank.</summary>
     public bool IncludeCoreBankOnListing { get; set; } = false;
     public int TransactionTimeoutMinutes { get; set; } = 60;
     public string TimeoutWorkerSchedule { get; set; } = "*/15 * * * *";

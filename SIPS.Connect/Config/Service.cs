@@ -422,6 +422,8 @@ public static class DI
         services.AddSingleton<ICallbackClient, ParticipantCallbackClient>();
         services.RemoveAll<SIPS.Core.Interfaces.IInboundAuthenticationContext>();
         services.AddSingleton<SIPS.Core.Interfaces.IInboundAuthenticationContext>(sp => (ParticipantCallbackContext)sp.GetRequiredService<IParticipantCallbackContext>());
+        services.RemoveAll<SIPS.Core.Interfaces.IInboundPaymentContext>();
+        services.AddSingleton<SIPS.Core.Interfaces.IInboundPaymentContext>(sp => (ParticipantCallbackContext)sp.GetRequiredService<IParticipantCallbackContext>());
         services.RemoveAll<SIPS.Core.Interfaces.IVerificationResultInbox>();
         services.AddScoped<SIPS.Core.Interfaces.IVerificationResultInbox, PapssVerificationResultInbox>();
     }

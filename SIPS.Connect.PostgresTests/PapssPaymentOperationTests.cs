@@ -637,8 +637,33 @@ public sealed class PapssPaymentOperationTests
         return await scope.ServiceProvider.GetRequiredService<IPapssPaymentCallbackService>().HandleReturnAsync(harness.Binding(), pacs004, CancellationToken.None);
     }
 
-    /// <summary>Simulates the legacy pacs.008 handler (isomessages row + bank decision) followed by the operation recording.</summary>
-    private static async Task<PapssOperation> RecordInbound(ServiceProvider provider, PostgresHarness harness, string sourceId, string txId, string endToEndId, string decision, string? reason = null, bool insertIso = true)
+    [Theory]
+    [InlineData("ACSC")]
+    [InlineData("PDNG")]
+    public async Task Inbound_payment_does_not_promote_a_default_or_pending_response_to_bank_acceptance(string status)
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var operation = await RecordInbound(provider, harness, "PAPSS-NO-BANK-DECISION", "TX-NO-DECISION", "E2E-NO-DECISION", status);
+        Assert.Equal(PapssOutcome.Pending, operation.PapssOutcome);
+        Assert.Null(operation.PaymentStatus);
+        Assert.Equal(PapssDeliveryState.Pending, operation.BankDeliveryState);
+    }
+
+    [Fact]
+    public async Task Inbound_payment_timeout_does_not_mirror_a_rejection_as_the_bank_decision()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var operation = await RecordInbound(provider, harness, "PAPSS-BANK-TIMEOUT", "TX-BANK-TIMEOUT", "E2E-BANK-TIMEOUT", "RJCT",
+            reason: "MS03", isoStatus: TransactionStatus.CheckStatus);
+        Assert.Equal(PapssOutcome.Pending, operation.PapssOutcome);
+        Assert.Null(operation.PaymentStatus);
+        Assert.Null(operation.CompletedAt);
+    }
+
+    /// <summary>Simulates the pacs.008 handler (isomessages row + bank decision) followed by the operation recording.</summary>
+    private static async Task<PapssOperation> RecordInbound(ServiceProvider provider, PostgresHarness harness, string sourceId, string txId, string endToEndId, string decision, string? reason = null, bool insertIso = true, TransactionStatus isoStatus = TransactionStatus.Success)
     {
         var pacs008 = PostgresHarness.InboundPayment(sourceId, txId, endToEndId);
         if (insertIso)
@@ -646,7 +671,7 @@ public sealed class PapssPaymentOperationTests
             {
                 db.ISOMessages.Add(new ISOMessage
                 {
-                    MessageType = ISOMessageType.TransactionRequest, Status = TransactionStatus.Success, MsgId = "MSG-" + txId, BizMsgIdr = sourceId, MsgDefIdr = "pacs.008.001.10",
+                    MessageType = ISOMessageType.TransactionRequest, Status = isoStatus, MsgId = "MSG-" + txId, BizMsgIdr = sourceId, MsgDefIdr = "pacs.008.001.10",
                     BusinessService = harness.Options.SecurityProfile, TxId = txId, EndToEndId = endToEndId, Date = DateTimeOffset.UtcNow, FromBIC = PostgresHarness.Gateway, ToBIC = PostgresHarness.LocalBic,
                     Message = Encoding.UTF8.GetBytes(pacs008), Response = Encoding.UTF8.GetBytes(PostgresHarness.Decision(txId, endToEndId, decision, reason)),
                     PapssDecision = Encoding.UTF8.GetBytes("<signed-decision/>")
