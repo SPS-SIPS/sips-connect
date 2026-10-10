@@ -325,11 +325,33 @@ public class GatewayController(
         }
     }
 
+    /// <summary>
+    /// R2: the core bank's accept/reject decision on an inbound recall (a counterparty recalling a payment this institution
+    /// received, visible via GET Recall/Inbound). ACCEPT submits a pacs.004 via the existing return path; REJECT submits a
+    /// camt.029.001.08 rejection. Both are idempotent on retry (same recallId + same decision replays safely); a retry with
+    /// the OPPOSITE decision, or any retry once the recall has already reached REPLY_SUBMITTED, is refused (409).
+    /// </summary>
+    [HttpPost("Recall/Inbound/{recallId}/Decision")]
+    [Authorize(Roles = Gateway)]
+    public async Task<ActionResult> DecideInboundRecall([FromRoute] string recallId, [FromBody] PapssInboundRecallDecisionRequest body, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(recallId) || recallId.Length > 128)
+            return BadRequest(new { code = "INVALID_LOOKUP_KEY", message = "recallId is required (max 128 characters)." });
+        try
+        {
+            return await Papss(async () => Ok(await _papssPayments.DecideInboundRecallAsync(Binding(), recallId, body, ct)));
+        }
+        catch (ParticipantRailException e) when (RecallRefusalStatus(e.Code) is { } status)
+        {
+            return StatusCode(status, new { code = e.Code, message = e.Message });
+        }
+    }
+
     /// <summary>Recall refusals raised before anything is submitted; other codes keep the common PAPSS mapping (400).</summary>
     private static int? RecallRefusalStatus(string code) => code switch
     {
-        "ORIGINAL_PAYMENT_NOT_FOUND" => StatusCodes.Status404NotFound,
-        "RECALL_ALREADY_OPEN" or "ORIGINAL_NOT_SETTLED" or "RECALL_WINDOW_EXPIRED" => StatusCodes.Status409Conflict,
+        "ORIGINAL_PAYMENT_NOT_FOUND" or "OPERATION_NOT_FOUND" => StatusCodes.Status404NotFound,
+        "RECALL_ALREADY_OPEN" or "ORIGINAL_NOT_SETTLED" or "RECALL_WINDOW_EXPIRED" or "DECISION_ALREADY_MADE" => StatusCodes.Status409Conflict,
         "RECALL_NOT_ALLOWED" => StatusCodes.Status422UnprocessableEntity,
         _ => null
     };
