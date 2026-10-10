@@ -44,10 +44,13 @@ public sealed class PapssRecallOperationTests
         Assert.Contains("RECALL_PENDING", definition);
         Assert.Contains("RECALL_ACCEPTED_BY_PAPSS", definition);
         // RECALL_OUTCOME_UNRESOLVED (S3 recovery) is also OPEN; RECALL_ABANDONED (the manual close outcome) and the other
-        // RECALL_REJECTED_* outcomes are final and must never appear in the open-recall filter.
+        // (OUTBOUND) RECALL_REJECTED_* outcomes are final and must never appear in the open-recall filter. Quoted exact
+        // tokens: R2 added its own, unrelated 'INBOUND_RECALL_REJECTED_BY_BANK' to the SAME (shared) filter, which contains
+        // the substring "RECALL_REJECTED" too -- see PapssInboundRecallOperationTests for its own regression guard.
         Assert.Contains("RECALL_OUTCOME_UNRESOLVED", definition);
-        Assert.DoesNotContain("RECALL_REJECTED", definition);
-        Assert.DoesNotContain("RECALL_ABANDONED", definition);
+        Assert.DoesNotContain("'RECALL_REJECTED_BY_PAPSS'", definition);
+        Assert.DoesNotContain("'RECALL_REJECTED_BY_BENEFICIARY'", definition);
+        Assert.DoesNotContain("'RECALL_ABANDONED'", definition);
     }
 
     [Fact]

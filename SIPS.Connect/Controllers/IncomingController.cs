@@ -54,6 +54,13 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
                         await paymentCallbacks.HandleRecallResolutionAsync(route, body, ct);
                         return Ok();
                     }
+                    // R2: a counterparty recalled a payment this institution received. Stored and linked to the received
+                    // payment (never applied to it); the core bank decides via POST Recall/Inbound/{recallId}/Decision.
+                    if (definition == PapssRecallMessages.InboundRecallDefinition)
+                    {
+                        await paymentCallbacks.HandleInboundRecallAsync(route, body, ct);
+                        return Ok();
+                    }
                 }
                 var handled = await _isoService.Handle(body, ct);
                 if (definition == "acmt.024.001.03" && !string.IsNullOrEmpty(handled))

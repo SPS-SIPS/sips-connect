@@ -163,8 +163,15 @@ public sealed class UpperSnakeEnumConverter<TEnum>() : ValueConverter<TEnum, str
 
 public sealed class PapssOperationConfiguration : IEntityTypeConfiguration<PapssOperation>
 {
-    /// <summary>The partial-index predicate of ux_papss_op_open_recall (RECALL_PENDING, RECALL_ACCEPTED_BY_PAPSS and RECALL_OUTCOME_UNRESOLVED are open).</summary>
-    public const string OpenRecallFilter = "operation = 'RECALL' AND originaloperationid IS NOT NULL AND papssoutcome IN ('RECALL_PENDING', 'RECALL_ACCEPTED_BY_PAPSS', 'RECALL_OUTCOME_UNRESOLVED')";
+    /// <summary>
+    /// The partial-index predicate of ux_papss_op_open_recall: at most one OPEN recall per payment, OUTBOUND (RECALL_PENDING,
+    /// RECALL_ACCEPTED_BY_PAPSS, RECALL_OUTCOME_UNRESOLVED) or INBOUND (INBOUND_RECALL_AWAITING_DECISION,
+    /// INBOUND_RECALL_ACCEPTED_BY_BANK, INBOUND_RECALL_REJECTED_BY_BANK, INBOUND_RECALL_UNRESOLVED -- R2's own, separate state
+    /// machine). The two can never actually collide on the same originaloperationid (an inbound and an outbound payment are
+    /// always different stored rows with different ids), so this is simply "one open recall per specific payment", regardless
+    /// of which direction recalled it.
+    /// </summary>
+    public const string OpenRecallFilter = "operation = 'RECALL' AND originaloperationid IS NOT NULL AND papssoutcome IN ('RECALL_PENDING', 'RECALL_ACCEPTED_BY_PAPSS', 'RECALL_OUTCOME_UNRESOLVED', 'INBOUND_RECALL_AWAITING_DECISION', 'INBOUND_RECALL_ACCEPTED_BY_BANK', 'INBOUND_RECALL_REJECTED_BY_BANK', 'INBOUND_RECALL_UNRESOLVED')";
 
     public void Configure(EntityTypeBuilder<PapssOperation> builder)
     {
