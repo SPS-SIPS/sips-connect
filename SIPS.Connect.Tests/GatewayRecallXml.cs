@@ -71,4 +71,46 @@ internal static class GatewayRecallXml
                             new XElement(d + "CxlStsRsnInf", new XElement(d + "Rsn", new XElement(d + "Cd", reason)), new XElement(d + "AddtlInf", "customer declined")))))));
         return envelope.ToString(SaveOptions.DisableFormatting);
     }
+
+    public const string Camt056001_09Namespace = "urn:iso:std:iso:20022:tech:xsd:camt.056.001.09";
+
+    /// <summary>
+    /// R2: camt.056.001.09 FIToFIPmtCxlReq exactly as the gateway's SipsInboundRecallMessage.Build delivers it: AppHdr Fr = the
+    /// gateway's own WP-SIPS identity (the signer), To = this institution's BIC; Assgnr = the ORIGINAL RECALLING BANK's PAPSS
+    /// participant id (business data about who recalled the payment, never the signer); Assgne = this institution's BIC.
+    /// </summary>
+    public static string InboundRecallNotification(string sourceMessageId, string cancellationId, string originalMessageId, string txId, string endToEndId,
+        decimal amount = 1m, string currency = "USD", string reason = "DUPL", string from = "PAPSS", string to = "ZKBASOS0",
+        string recallingParticipantId = "PAPSS-AGRO", string? businessService = null)
+    {
+        XNamespace h = HeaderNamespace, d = Camt056001_09Namespace, e = "urn:iso:std:iso:20022:tech:xsd:inboundRecall_notification";
+        XElement Party(string name, string id) => new(h + name, new XElement(h + "FIId", new XElement(h + "FinInstnId", new XElement(h + "Othr", new XElement(h + "Id", id)))));
+        var created = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
+        var envelope = new XElement(e + "FPEnvelope",
+            new XAttribute(XNamespace.Xmlns + "header", HeaderNamespace),
+            new XAttribute(XNamespace.Xmlns + "document", Camt056001_09Namespace),
+            new XAttribute("Id", "BL-" + sourceMessageId),
+            new XElement(h + "AppHdr",
+                Party("Fr", from), Party("To", to),
+                new XElement(h + "BizMsgIdr", sourceMessageId),
+                new XElement(h + "MsgDefIdr", "camt.056.001.09"),
+                businessService is null ? null : new XElement(h + "BizSvc", businessService),
+                new XElement(h + "CreDt", created)),
+            new XElement(d + "Document",
+                new XElement(d + "FIToFIPmtCxlReq",
+                    new XElement(d + "Assgnmt",
+                        new XElement(d + "Id", sourceMessageId),
+                        new XElement(d + "Assgnr", new XElement(d + "Agt", new XElement(d + "FinInstnId", new XElement(d + "Othr", new XElement(d + "Id", recallingParticipantId))))),
+                        new XElement(d + "Assgne", new XElement(d + "Agt", new XElement(d + "FinInstnId", new XElement(d + "BICFI", to)))),
+                        new XElement(d + "CreDtTm", created)),
+                    new XElement(d + "Undrlyg",
+                        new XElement(d + "TxInf",
+                            new XElement(d + "CxlId", cancellationId),
+                            new XElement(d + "OrgnlGrpInf", new XElement(d + "OrgnlMsgId", originalMessageId), new XElement(d + "OrgnlMsgNmId", "pacs.008.001.07")),
+                            new XElement(d + "OrgnlEndToEndId", endToEndId),
+                            new XElement(d + "OrgnlTxId", txId),
+                            new XElement(d + "OrgnlIntrBkSttlmAmt", new XAttribute("Ccy", currency), amount.ToString("0.00")),
+                            new XElement(d + "CxlRsnInf", new XElement(d + "Rsn", new XElement(d + "Cd", reason))))))));
+        return envelope.ToString(SaveOptions.DisableFormatting);
+    }
 }
