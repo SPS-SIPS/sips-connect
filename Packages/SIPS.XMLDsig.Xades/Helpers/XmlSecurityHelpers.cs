@@ -125,7 +125,12 @@ public static class XmlSecurityHelpers
             return assgnr is not null && StringComparer.OrdinalIgnoreCase.Equals(assgnr.InnerText.Trim(), certificateOwner.Trim());
         }
 
-        if (messageType is "urn:iso:std:iso:20022:tech:xsd:admi.009.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.010.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.002.001.01" or "urn:iso:std:iso:20022:tech:xsd:pacs.028.001.05" or "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.11")
+        // camt.056.001.09 (R2): the gateway's own notification that an inbound recall exists, not the recalling bank's request
+        // (that is camt.056.001.08, handled above). Its Assgnr carries the ORIGINAL RECALLING BANK's PAPSS id -- business data
+        // about the recall, not the signer -- so it must not be compared against the certificate owner the way camt.056.001.08's
+        // Assgnr is. The signer here is the gateway itself, already proven by the generic AppHdr/Fr check above; no further
+        // document-level ownership binding applies, the same as the admi.*/pacs.028/pacs.004 bucket below.
+        if (messageType is "urn:iso:std:iso:20022:tech:xsd:admi.009.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.010.001.02" or "urn:iso:std:iso:20022:tech:xsd:admi.002.001.01" or "urn:iso:std:iso:20022:tech:xsd:pacs.028.001.05" or "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.11" or "urn:iso:std:iso:20022:tech:xsd:camt.056.001.09")
         {
             return true;
         }

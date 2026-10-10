@@ -1,10 +1,26 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Xml.Linq;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using SIPS.Adapter.Models;
+using SIPS.Connect.Controllers;
 using SIPS.Connect.Services;
+using SIPS.Core.Interfaces;
+using SIPS.ISO20022.Helpers;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Models;
+using SIPS.XMLDsig.Xades.Interfaces;
+using SIPS.XMLDsig.Xades.Models;
+using SIPS.XMLDsig.Xades.Options;
+using SIPS.XMLDsig.Xades.Services;
 using Xunit;
+using Moq;
 
 namespace SIPS.Connect.PostgresTests;
 
@@ -30,6 +46,50 @@ public sealed class PapssInboundRecallOperationTests
         Assert.Contains("INBOUND_RECALL_REJECTED_BY_BANK", definition);
         Assert.Contains("INBOUND_RECALL_UNRESOLVED", definition);
         Assert.DoesNotContain("INBOUND_RECALL_REPLY_SUBMITTED", definition);
+    }
+
+    /// <summary>
+    /// Mandatory qualification for the R2 release-blocking fix: drives the FULL real SIPS Connect callback stack -- a genuinely
+    /// signed camt.056.001.09, the real PapssCallbackGuard, the real IncomingController dispatch, the real
+    /// PapssPaymentCallbackService backed by this real PostgreSQL -- instead of a fake endpoint standing in for SIPS Connect.
+    /// Before the PapssCallbackGuard allowed-set fix, this exact request was rejected with 400 Bad Request before
+    /// HandleInboundRecallAsync (and therefore CreateInboundRecallAsync) ever ran; this proves the whole chain the gateway
+    /// depends on for R2 actually works end to end against a real database, not just that the guard's allow-list contains the
+    /// right string.
+    /// </summary>
+    [Fact]
+    public async Task Signed_camt056_001_09_reaches_the_real_guard_controller_and_handler_and_is_durably_recorded()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var payment = await SeedReceivedPayment(harness, "RX-QUAL-1", "E2E-RX-QUAL-1");
+
+        using var pki = new CallbackPki();
+        var signed = pki.Signer.SignEnvelope(
+            InboundRecallNotification("CT02-QUAL-NOTIFY-1", "CXL-QUAL-1", "RX-QUAL-1", "E2E-RX-QUAL-1",
+                from: PostgresHarness.Gateway, to: PostgresHarness.LocalBic, businessService: harness.Options.SecurityProfile),
+            XadesProfile.WpSipsPapss);
+        var verified = await pki.Verifier.VerifyWithProvenance(signed, XadesProfile.WpSipsPapss, CancellationToken.None);
+        Assert.True(verified.Result, $"certificate={verified.Verbose.CertificateStatus}; signature={verified.Verbose.SignatureStatus}; references={verified.Verbose.ReferencesStatus}; ownership={verified.Verbose.OwnershSIPStatus}");
+
+        using var scope = provider.CreateScope();
+        var guard = new PapssCallbackGuard(harness.Options, scope.ServiceProvider.GetRequiredService<XadesOptions>(), scope.ServiceProvider.GetRequiredService<JsonAdapterOptions>(), pki.Verifier);
+        var paymentCallbacks = new PapssPaymentCallbackService(scope.ServiceProvider.GetRequiredService<PapssOperationStore>(), scope.ServiceProvider.GetRequiredService<IPapssOutboxSignal>());
+        var controller = new IncomingController(Mock.Of<IIncoming>(), guard, Mock.Of<IPapssPaymentDecisionPublisher>(), Mock.Of<IPapssInboundVerificationService>(), scope.ServiceProvider.GetRequiredService<IParticipantCallbackContext>(), NullLogger<IncomingController>.Instance, paymentCallbacks)
+        {
+            ControllerContext = new() { HttpContext = new DefaultHttpContext() }
+        };
+        controller.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(signed));
+
+        var result = await controller.Post(CancellationToken.None);
+
+        Assert.IsType<OkResult>(result);
+        var recall = await harness.WithStorageAsync(db => db.PapssOperations.AsNoTracking().SingleAsync(x => x.RequestMessageId == "CT02-QUAL-NOTIFY-1"));
+        Assert.Equal(PapssDirection.Inbound, recall.Direction);
+        Assert.Equal(PapssOperationType.Recall, recall.Operation);
+        Assert.Equal(PapssOutcome.InboundRecallAwaitingDecision, recall.PapssOutcome);
+        Assert.Equal(payment.Id, recall.OriginalOperationId);
+        Assert.Equal("DUPL", recall.Reason);
     }
 
     [Fact]
@@ -204,5 +264,57 @@ public sealed class PapssInboundRecallOperationTests
             await db.SaveChangesAsync(CancellationToken.None);
             return payment;
         });
+    }
+
+    /// <summary>camt.056.001.09 FIToFIPmtCxlReq exactly as the gateway's SipsInboundRecallMessage.Build delivers it (mirrors
+    /// SIPS.Connect.Tests.GatewayRecallXml.InboundRecallNotification -- duplicated here rather than shared across test
+    /// projects): AppHdr Fr = the gateway's own WP-SIPS identity (the signer), To = this institution's BIC; Assgnr = the
+    /// original recalling bank's PAPSS participant id (business data, never the signer); Assgne = this institution's BIC.</summary>
+    private static string InboundRecallNotification(string sourceMessageId, string cancellationId, string originalTxId, string originalEndToEndId,
+        decimal amount = 500m, string currency = "USD", string reason = "DUPL", string from = "WPSIPSGW", string to = "ZKBASOS0",
+        string recallingParticipantId = "PAPSS-FOREIGN", string? businessService = null)
+    {
+        XNamespace h = "urn:iso:std:iso:20022:tech:xsd:head.001.001.03", d = "urn:iso:std:iso:20022:tech:xsd:camt.056.001.09", e = "urn:iso:std:iso:20022:tech:xsd:inboundRecall_notification";
+        XElement Party(string name, string id) => new(h + name, new XElement(h + "FIId", new XElement(h + "FinInstnId", new XElement(h + "Othr", new XElement(h + "Id", id)))));
+        var created = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
+        var envelope = new XElement(e + "FPEnvelope",
+            new XAttribute(XNamespace.Xmlns + "header", h.NamespaceName), new XAttribute(XNamespace.Xmlns + "document", d.NamespaceName), new XAttribute("Id", "BL-" + sourceMessageId),
+            new XElement(h + "AppHdr", Party("Fr", from), Party("To", to), new XElement(h + "BizMsgIdr", sourceMessageId), new XElement(h + "MsgDefIdr", "camt.056.001.09"),
+                businessService is null ? null : new XElement(h + "BizSvc", businessService), new XElement(h + "CreDt", created)),
+            new XElement(d + "Document", new XElement(d + "FIToFIPmtCxlReq",
+                new XElement(d + "Assgnmt", new XElement(d + "Id", sourceMessageId),
+                    new XElement(d + "Assgnr", new XElement(d + "Agt", new XElement(d + "FinInstnId", new XElement(d + "Othr", new XElement(d + "Id", recallingParticipantId))))),
+                    new XElement(d + "Assgne", new XElement(d + "Agt", new XElement(d + "FinInstnId", new XElement(d + "BICFI", to)))),
+                    new XElement(d + "CreDtTm", created)),
+                new XElement(d + "Undrlyg", new XElement(d + "TxInf",
+                    new XElement(d + "CxlId", cancellationId),
+                    new XElement(d + "OrgnlGrpInf", new XElement(d + "OrgnlMsgId", "CT02-" + originalTxId), new XElement(d + "OrgnlMsgNmId", "pacs.008.001.07")),
+                    new XElement(d + "OrgnlEndToEndId", originalEndToEndId),
+                    new XElement(d + "OrgnlTxId", originalTxId),
+                    new XElement(d + "OrgnlIntrBkSttlmAmt", new XAttribute("Ccy", currency), amount.ToString("0.00")),
+                    new XElement(d + "CxlRsnInf", new XElement(d + "Rsn", new XElement(d + "Cd", reason))))))));
+        return envelope.ToString(SaveOptions.DisableFormatting);
+    }
+
+    /// <summary>A real signer/verifier pair (self-signed test CA) for the one qualification test that needs a genuinely signed
+    /// callback instead of a mocked INativeVerifier -- mirrors SIPS.Connect.Tests.PapssDisabledTests.CallbackPki.</summary>
+    private sealed class CallbackPki : IDisposable
+    {
+        private readonly string directory = Path.Combine(Path.GetTempPath(), "papss-callback-pki-pg-" + Guid.NewGuid().ToString("N"));
+        public NativeSigner Signer { get; }
+        public NativeVerifier Verifier { get; }
+
+        public CallbackPki()
+        {
+            Directory.CreateDirectory(directory);
+            using var rootKey = RSA.Create(2048); var rootRequest = new CertificateRequest("CN=PAPSS Test Root", rootKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1); rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true)); rootRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true)); using var root = rootRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+            using var leafKey = RSA.Create(2048); var leafRequest = new CertificateRequest("CN=papss", leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1); leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true)); leafRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true)); leafRequest.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new("1.3.6.1.5.5.7.3.2") }, true)); using var unsigned = leafRequest.Create(root, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(10), RandomNumberGenerator.GetBytes(16)); using var leaf = unsigned.CopyWithPrivateKey(leafKey);
+            var certPem = new string(PemEncoding.Write("CERTIFICATE", leaf.Export(X509ContentType.Cert))); var rootPem = new string(PemEncoding.Write("CERTIFICATE", root.Export(X509ContentType.Cert))); File.WriteAllText(Path.Combine(directory, "leaf.pem"), certPem); File.WriteAllText(Path.Combine(directory, "root.pem"), rootPem); File.WriteAllText(Path.Combine(directory, "key.pem"), leafKey.ExportPkcs8PrivateKeyPem());
+            var xades = new XadesOptions { CertificatePath = Path.Combine(directory, "leaf.pem"), ChainPath = Path.Combine(directory, "root.pem"), PrivateKeyPath = Path.Combine(directory, "key.pem"), BaseDN = leaf.Issuer, Algorithms = ["SHA256withRSA"], DefaultSignatureMethod = "SHA256withRSA", VerificationWindowMinutes = 100 }; var certificates = new CertificateService(xades); Signer = new(xades, NullLogger<NativeSigner>.Instance, certificates);
+            var record = new CertificateDownloadResponse(certPem, "papss", false, "SPS", "UAT", PostgresHarness.Gateway, Convert.ToHexString(SHA256.HashData(leaf.Export(X509ContentType.Cert))).ToLowerInvariant(), "SPS.XADES.BES.001@1.0.0", "1.3.6.1.5.5.7.3.2"); Verifier = new(xades, NullLogger<NativeVerifier>.Instance, certificates, new Download(record));
+        }
+
+        public void Dispose() => Directory.Delete(directory, true);
+        private sealed class Download(CertificateDownloadResponse value) : ICertificateDownloadService { public Task<(CertificateDownloadResponse? Certificates, string? Error)> GetCertificatesAsync(string serialNumber, string issuerDN, CancellationToken cancellationToken = default) => Task.FromResult<(CertificateDownloadResponse?, string?)>((value, null)); }
     }
 }

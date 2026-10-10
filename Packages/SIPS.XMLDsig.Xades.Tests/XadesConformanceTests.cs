@@ -100,6 +100,26 @@ public sealed class XadesConformanceTests : IDisposable
             Assert.False((await PapssVerify(PapssSign(Message("SPS-B")))).Result);
         }
     }
+    /// <summary>
+    /// R2 fix: camt.056.001.09 (the gateway's own notification that an inbound recall exists) is a DIFFERENT message from
+    /// camt.056.001.08 (the recalling bank's own request, tested above) despite sharing a root element name. Its Assgnr carries
+    /// the ORIGINAL RECALLING BANK's PAPSS id -- business data about the recall, never the signer -- so ownership must be proven
+    /// by the generic AppHdr/Fr check alone, exactly like admi.*/pacs.028/pacs.004, never by comparing Assgnr against the
+    /// certificate owner the way camt.056.001.08 is. Before this fix camt.056.001.09 fell through CheckTransactionOwnerAgainstCertificate
+    /// to its default `return false`, so the gateway's own signed notification would have failed ownership regardless of Assgnr.
+    /// </summary>
+    [Fact] public async Task Camt056_001_09_inbound_recall_notification_is_owned_by_its_signer_not_its_assigner()
+    {
+        string Message(string from,string assigner)=>$"<FPEnvelope xmlns='urn:test:recall' xmlns:header='urn:iso:std:iso:20022:tech:xsd:head.001.001.03' xmlns:document='urn:iso:std:iso:20022:tech:xsd:camt.056.001.09' Id='BL-NOTIFY-1'><header:AppHdr><header:Fr><header:FIId><header:FinInstnId><header:Othr><header:Id>{from}</header:Id></header:Othr></header:FinInstnId></header:FIId></header:Fr><header:To><header:FIId><header:FinInstnId><header:Othr><header:Id>SPS-B</header:Id></header:Othr></header:FinInstnId></header:FIId></header:To><header:BizMsgIdr>NOTIFY-1</header:BizMsgIdr><header:MsgDefIdr>camt.056.001.09</header:MsgDefIdr><header:BizSvc>SPS.PAPSS.FINANCIAL.001</header:BizSvc><header:CreDt>{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}</header:CreDt></header:AppHdr><document:Document><document:FIToFIPmtCxlReq><document:Assgnmt><document:Id>NOTIFY-1</document:Id><document:Assgnr><document:Agt><document:FinInstnId><document:Othr><document:Id>{assigner}</document:Id></document:Othr></document:FinInstnId></document:Agt></document:Assgnr></document:Assgnmt></document:FIToFIPmtCxlReq></document:Document></FPEnvelope>";
+        // Positive: signed by SPS-A (the gateway's test identity here); Assgnr is a THIRD party (the original recalling bank) that
+        // is neither the signer nor the recipient -- ownership must still verify, because Assgnr is never consulted for this type.
+        var ownedBySigner=await PapssVerify(PapssSign(Message("SPS-A","ORIGINAL-RECALLING-BANK")));
+        Assert.True(ownedBySigner.Result,$"camt.056.001.09:{ownedBySigner.Verbose.OwnershSIPStatus}/{ownedBySigner.Verbose.SignatureStatus}");
+        Assert.Equal("camt.056.001.09",ownedBySigner.Signer!.MessageDefinitionId);
+        // Negative: AppHdr/Fr does not match the signing certificate's owner -- must fail regardless of what Assgnr says.
+        var signerMismatch=await PapssVerify(PapssSign(Message("SPS-B","ORIGINAL-RECALLING-BANK")));
+        Assert.False(signerMismatch.Result);
+    }
     static PaymentRequestBuilder.Request Payment(string from,string to,DateTime now)=>new(){From=from,To=to,CreDt=now,MsgId="PAY-REQ",TxId="TX1",EndToEndId="E2E",Amount=1,Currency="USD",LocalInstrument="INST",CategoryPurpose="CASH",Ustrd="test",SettlementMethod=SettlementMethod1Code.CLRG,ChargeBearer=ChargeBearerType1Code.SLEV,Debtor=new Person{Name="D",Address="A",Account="D1",AccountType="ACCT",AgentBIC=from,Issuer="I"},Creditor=new Person{Name="C",Address="A",Account="C1",AccountType="ACCT",AgentBIC=to,Issuer="I"}};
     static string Fx(DateTimeOffset at)=>WpSipsInformationMessageBuilder.BuildFxRequest(new("SPS-A","SPS-B","REQ-MSG","admi.009.001.02",WpSipsProfiles.Fx,at),"REQ-1",new("US","KE","USD","KES","BANK1","INST",10,false,null));
     public void Dispose(){Directory.Delete(dir,true);}

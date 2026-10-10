@@ -120,6 +120,59 @@ public sealed class PapssCallbackGuardTests
         await Assert.ThrowsAsync<InvalidDataException>(() => new PapssCallbackGuard(options, LocalXades(), Mappings(), Mock.Of<INativeVerifier>()).ValidateAsync(incomplete.ToString(), CancellationToken.None));
     }
 
+    /// <summary>
+    /// R2 release-blocking fix: a real signed camt.056.001.09 (the gateway's notification that an inbound recall exists) must
+    /// reach IncomingController's dispatch and IPapssPaymentCallbackService.HandleInboundRecallAsync. Before this fix,
+    /// PapssCallbackGuard's allowed-message-type set did not include camt.056.001.09, so ValidateAsync threw InvalidDataException
+    /// before the dispatch switch in IncomingController ever ran: the R2 feature was unreachable in production.
+    /// </summary>
+    [Fact]
+    public async Task Signed_camt056_001_09_inbound_recall_notification_reaches_IncomingController_and_the_inbound_recall_handler()
+    {
+        using var pki = new CallbackPki();
+        var options = Options();
+        var signed = pki.Signer.SignEnvelope(GatewayRecallXml.InboundRecallNotification("CT02-NOTIFY-1", "CXL-1", "CT0200001", "TX-1", "E2E-1", from: "PAPSS", to: "BANKSOSIXXX", businessService: options.SecurityProfile), XadesProfile.WpSipsPapss);
+        var verified = await pki.Verifier.VerifyWithProvenance(signed, XadesProfile.WpSipsPapss, CancellationToken.None);
+        Assert.True(verified.Result, $"certificate={verified.Verbose.CertificateStatus}; signature={verified.Verbose.SignatureStatus}; references={verified.Verbose.ReferencesStatus}; ownership={verified.Verbose.OwnershSIPStatus}");
+
+        var paymentCallbacks = new Mock<IPapssPaymentCallbackService>();
+        paymentCallbacks.Setup(x => x.HandleInboundRecallAsync(It.IsAny<PapssParticipantBinding>(), signed, It.IsAny<CancellationToken>())).ReturnsAsync(new PapssIngestResult(false, null, "CT02-NOTIFY-1", "RECEIVED", true, null));
+        var controller = new IncomingController(Mock.Of<IIncoming>(), new PapssCallbackGuard(options, LocalXades(), Mappings(), pki.Verifier), Mock.Of<IPapssPaymentDecisionPublisher>(), Mock.Of<IPapssInboundVerificationService>(), new ParticipantCallbackContext(), NullLogger<IncomingController>.Instance, paymentCallbacks.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+        controller.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(signed));
+
+        var result = await controller.Post(CancellationToken.None);
+
+        Assert.IsType<OkResult>(result);
+        paymentCallbacks.Verify(x => x.HandleInboundRecallAsync(It.Is<PapssParticipantBinding>(p => p.Bic == "BANKSOSIXXX"), signed, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Negative control: adding camt.056.001.09 to the allowed set must not weaken the pairing check for other message
+    /// types -- a definition the allowed set has never recognized is still rejected before signature verification or dispatch.</summary>
+    [Fact]
+    public async Task Unrecognized_message_definition_under_the_financial_profile_is_still_rejected()
+    {
+        var options = Options();
+        var verifier = new Mock<INativeVerifier>(MockBehavior.Strict);
+        var incoming = new Mock<IIncoming>(MockBehavior.Strict);
+        var paymentCallbacks = new Mock<IPapssPaymentCallbackService>(MockBehavior.Strict);
+        var controller = new IncomingController(incoming.Object, new PapssCallbackGuard(options, LocalXades(), Mappings(), verifier.Object), Mock.Of<IPapssPaymentDecisionPublisher>(), Mock.Of<IPapssInboundVerificationService>(), new ParticipantCallbackContext(), NullLogger<IncomingController>.Instance, paymentCallbacks.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+        var xml = $"<FPEnvelope xmlns:h='urn:iso:std:iso:20022:tech:xsd:head.001.001.03'><h:AppHdr><h:Fr><h:FIId><h:FinInstnId><h:Othr><h:Id>PAPSS</h:Id></h:Othr></h:FinInstnId></h:FIId></h:Fr><h:To><h:FIId><h:FinInstnId><h:Othr><h:Id>BANKSOSIXXX</h:Id></h:Othr></h:FinInstnId></h:FIId></h:To><h:BizMsgIdr>M1</h:BizMsgIdr><h:MsgDefIdr>camt.999.001.01</h:MsgDefIdr><h:BizSvc>{options.SecurityProfile}</h:BizSvc><h:CreDt>2026-01-01T00:00:00Z</h:CreDt></h:AppHdr></FPEnvelope>";
+        controller.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+
+        var result = await controller.Post(CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        incoming.VerifyNoOtherCalls();
+        verifier.VerifyNoOtherCalls();
+        paymentCallbacks.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task PAPSS_identity_with_missing_or_wrong_profile_fails_closed_before_legacy_dispatch()
     {

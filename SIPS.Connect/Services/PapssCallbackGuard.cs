@@ -38,7 +38,7 @@ public sealed class PapssCallbackGuard(PapssFacingOptions options, XadesOptions 
         }
         else
         {
-            var allowed = new HashSet<string>(StringComparer.Ordinal) { "acmt.023.001.03", "acmt.024.001.03", "pacs.008.001.10", "pacs.028.001.05", "pacs.004.001.11", "pacs.002.001.12", PapssRecallMessages.Camt029 };
+            var allowed = new HashSet<string>(StringComparer.Ordinal) { "acmt.023.001.03", "acmt.024.001.03", "pacs.008.001.10", "pacs.028.001.05", "pacs.004.001.11", "pacs.002.001.12", PapssRecallMessages.Camt029, PapssRecallMessages.InboundRecallDefinition };
             if (!allowed.Contains(messageDefinition)) throw new InvalidDataException("The PAPSS financial callback message/profile pairing is invalid.");
             ValidateFinancialReferences(Document(xml), messageDefinition);
         }
@@ -66,7 +66,7 @@ public sealed class PapssCallbackGuard(PapssFacingOptions options, XadesOptions 
     private static void ValidateFinancialReferences(XDocument document, string messageDefinition)
     {
         bool Has(string name) => document.Descendants().Any(x => x.Name.LocalName == name && !string.IsNullOrWhiteSpace(x.Value));
-        if (messageDefinition is "pacs.002.001.12" or "pacs.004.001.11" or "pacs.028.001.05" or PapssRecallMessages.Camt029)
+        if (messageDefinition is "pacs.002.001.12" or "pacs.004.001.11" or "pacs.028.001.05" or PapssRecallMessages.Camt029 or PapssRecallMessages.InboundRecallDefinition)
         {
             if (!Has("OrgnlTxId") || !Has("OrgnlEndToEndId")) throw new InvalidDataException("The callback original transaction references are incomplete.");
         }
