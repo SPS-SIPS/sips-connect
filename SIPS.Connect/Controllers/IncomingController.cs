@@ -82,8 +82,10 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
             // Distinct from PAPSS_CALLBACK_NOT_STORED (503): nothing about re-POSTing this exact callback can
             // resolve it, since the ambiguity is in the stored CoreBank decision, not the delivery. 409 tells the
             // gateway to quarantine for an operator immediately instead of retrying for up to an hour.
+            // No body: the controller's [Produces("application/xml")] can't negotiate an anonymous JSON object,
+            // which silently downgrades the response to 406 and masks the 409 the gateway needs to see.
             logger.LogWarning(error, "PAPSS payment decision cannot be published; CoreBank's outcome requires reconciliation");
-            return StatusCode(StatusCodes.Status409Conflict, new { code = "PAPSS_BANK_DECISION_UNRESOLVED", message = error.Message });
+            return StatusCode(StatusCodes.Status409Conflict);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
