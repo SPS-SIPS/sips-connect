@@ -16,6 +16,13 @@ public interface IPapssPaymentDecisionPublisher
     Task PersistAndSubmitAsync(PapssParticipantBinding participant, string inboundPacs008, CancellationToken ct);
 }
 
+/// <summary>Thrown when a PAPSS bank decision cannot be published because CoreBank's own outcome for this payment is
+/// itself unresolved (TransactionStatus.CheckStatus) - distinct from a transient delivery problem: retrying the exact
+/// same callback can never change this, since what's ambiguous is the stored decision, not the delivery. The gateway
+/// maps this to a 409 so it stops retrying and quarantines the work for an operator instead of exhausting its retry
+/// budget.</summary>
+public sealed class PapssBankDecisionUnresolvedException(string message) : Exception(message);
+
 public sealed class PapssPaymentDecisionPublisher(
     IStorageBroker storage,
     IPapssFacingSipsClient papss,
@@ -45,7 +52,7 @@ public sealed class PapssPaymentDecisionPublisher(
         if (record.PapssDecisionPublishedAt is not null || record.PapssDecisionFailedAt is not null) return;
         if (record.Response is null) throw new InvalidOperationException("The bank decision was not durably persisted.");
         if (record.Status == TransactionStatus.CheckStatus)
-            throw new InvalidOperationException("The PAPSS bank decision is unresolved and requires reconciliation.");
+            throw new PapssBankDecisionUnresolvedException("The PAPSS bank decision is unresolved and requires reconciliation.");
         var bankResponse = Encoding.UTF8.GetString(record.Response);
         if (PapssPaymentMessages.DecisionStatus(bankResponse).Status is not ("RJCT" or "ACCP"))
             throw new InvalidDataException("The stored PAPSS response has no explicit bank acceptance or rejection.");

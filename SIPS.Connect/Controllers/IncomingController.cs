@@ -77,6 +77,14 @@ public class IncomingController(IIncoming isoService, IPapssCallbackGuard papssG
         {
             return BadRequest(new { code = "INVALID_PAPSS_CALLBACK", message = error.Message });
         }
+        catch (PapssBankDecisionUnresolvedException error)
+        {
+            // Distinct from PAPSS_CALLBACK_NOT_STORED (503): nothing about re-POSTing this exact callback can
+            // resolve it, since the ambiguity is in the stored CoreBank decision, not the delivery. 409 tells the
+            // gateway to quarantine for an operator immediately instead of retrying for up to an hour.
+            logger.LogWarning(error, "PAPSS payment decision cannot be published; CoreBank's outcome requires reconciliation");
+            return StatusCode(StatusCodes.Status409Conflict, new { code = "PAPSS_BANK_DECISION_UNRESOLVED", message = error.Message });
+        }
         catch (Exception error) when (error is not OperationCanceledException)
         {
             // The PAPSS callback was not (completely) stored: a non-2xx makes the gateway redeliver.
