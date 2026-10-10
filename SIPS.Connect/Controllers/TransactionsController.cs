@@ -3,7 +3,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
-using System.Text;              // added for Encoding
+using System.Text;
+using SIPS.Connect.Config;
+using SIPS.Connect.Services;
+using SIPS.XMLDsig.Xades.Options;
 using static SIPS.Connect.KnownRoles;
 
 namespace SIPS.Connect.Controllers;
@@ -11,15 +14,17 @@ namespace SIPS.Connect.Controllers;
 [ApiController]
 [Route(V)]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("UI")]
-public sealed class TransactionsController(IStorageBroker broker) : ControllerBase
+public sealed class TransactionsController(IStorageBroker broker, XadesOptions? xades = null, PapssFacingOptions? papss = null) : ControllerBase
 {
     private const string V = "api/v1/[controller]";
     private readonly IStorageBroker _broker = broker;
+    private readonly UnifiedTransactionLists _lists = new(broker, xades?.BIC, papss?.SecurityProfile);
     [HttpGet("transactions")]
     [Authorize(Roles = ManageTransactions)]
     public async Task<IActionResult> GetTransactions([FromQuery] TransactionQuery request, CancellationToken ct)
     {
-        var query = _broker.ISOMessages.AsNoTracking().AsQueryable();
+        if (UnifiedTransactionLists.Validate(request) is { } error) return BadRequest(error);
+        var query = _lists.LegacyMessages(request);
 
         if (request.RelatedToISOMessageId > 0)
         {
@@ -88,21 +93,27 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
 
         if (!string.IsNullOrEmpty(request.FromDate))
         {
-            DateTime fromDate = DateTime.Parse(request.FromDate);
+            DateTimeOffset fromDate = DateTimeOffset.Parse(request.FromDate, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal);
             query = query.Where(t => t.Date >= fromDate);
         }
 
         if (!string.IsNullOrEmpty(request.ToDate))
         {
-            DateTime toDate = DateTime.Parse(request.ToDate);
+            DateTimeOffset toDate = DateTimeOffset.Parse(request.ToDate, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal);
             query = query.Where(t => t.Date <= toDate);
         }
 
-        var transactions = await query
+        var transactions = query
             .SelectMany(t => t.Transactions)
             .Select(tr => new TransactionDto
             {
                 Id = tr.Id,
+                ListItemId = "ISO:" + tr.Id.ToString().PadLeft(10, '0'),
+                Rail = tr.ISOMessage.BusinessService == _lists.SecurityProfile ? "PAPSS" : "SIPS",
+                OperationType = tr.Type == TransactionType.ReturnDeposit || tr.Type == TransactionType.ReturnWithdrawal ? "RETURN" : "PAYMENT",
+                Direction = tr.Type == TransactionType.Deposit || tr.Type == TransactionType.ReturnDeposit ? "INBOUND" : "OUTBOUND",
+                RecordedAtUtc = tr.ISOMessage.Date,
+                Status = tr.ISOMessage.Status,
                 Type = tr.Type,
                 ISOMessageId = tr.ISOMessageId,
                 FromBIC = tr.FromBIC,
@@ -126,20 +137,26 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
                 CreditorIssuer = tr.CreditorIssuer,
                 RemittanceInformation = tr.RemittanceInformation
             })
-            .OrderByDescending(tr => tr.Id)
-            .Skip(request.Page * request.PageSize)
-            .Take(request.PageSize)
-            .ToListAsync(ct);
+            .OrderByDescending(tr => tr.RecordedAtUtc).ThenByDescending(tr => tr.Id);
 
-
-        return Ok(transactions);
+        return Ok(await _lists.TransactionsAsync(transactions, request, ct));
     }
 
     [HttpGet("iso-messages")]
     [Authorize(Roles = ManageMassages)]
     public async Task<IActionResult> GetMessages([FromQuery] MessageQuery request, CancellationToken ct)
     {
-        var query = _broker.ISOMessages.AsNoTracking().AsQueryable();
+        if (UnifiedTransactionLists.Validate(request) is { } error) return BadRequest(error);
+        var query = _lists.LegacyMessages(request);
+
+        if (request.RelatedToISOMessageId > 0)
+        {
+            var related = await _broker.ISOMessages.AsNoTracking().Where(t => t.Id == request.RelatedToISOMessageId)
+                .Select(t => new { t.TxId, t.EndToEndId }).SingleOrDefaultAsync(ct);
+            if (related is null) return NotFound($"ISO message {request.RelatedToISOMessageId} not found");
+            if (!string.IsNullOrEmpty(related.TxId)) query = query.Where(t => t.TxId == related.TxId);
+            if (!string.IsNullOrEmpty(related.EndToEndId)) query = query.Where(t => t.EndToEndId == related.EndToEndId);
+        }
 
         if (!string.IsNullOrEmpty(request.MsgId))
         {
@@ -190,20 +207,27 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
 
         if (!string.IsNullOrEmpty(request.FromDate))
         {
-            DateTime fromDate = DateTime.Parse(request.FromDate);
+            DateTimeOffset fromDate = DateTimeOffset.Parse(request.FromDate, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal);
             query = query.Where(t => t.Date >= fromDate);
         }
 
         if (!string.IsNullOrEmpty(request.ToDate))
         {
-            DateTime toDate = DateTime.Parse(request.ToDate);
+            DateTimeOffset toDate = DateTimeOffset.Parse(request.ToDate, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal);
             query = query.Where(t => t.Date <= toDate);
         }
 
-        var messages = await query
+        var messages = query
             .Select(t => new ISOMessageDto
             {
                 Id = t.Id,
+                ISOMessageId = t.Id,
+                ListItemId = "ISO:" + t.Id.ToString().PadLeft(10, '0'),
+                Rail = t.BusinessService == _lists.SecurityProfile ? "PAPSS" : "SIPS",
+                OperationType = t.MessageType == ISOMessageType.VerificationRequest || t.MessageType == ISOMessageType.VerificationResponse ? "VERIFICATION"
+                    : t.MessageType == ISOMessageType.TransactionRequest || t.MessageType == ISOMessageType.TransactionResponse ? "PAYMENT"
+                    : t.MessageType == ISOMessageType.ReturnRequest || t.MessageType == ISOMessageType.ReturnResponse ? "RETURN" : "STATUS_ENQUIRY",
+                Direction = _lists.LocalBic == null ? "UNKNOWN" : t.FromBIC == _lists.LocalBic ? "OUTBOUND" : "INBOUND",
                 MessageType = t.MessageType,
                 Status = t.Status,
                 MsgId = t.MsgId,
@@ -225,19 +249,14 @@ public sealed class TransactionsController(IStorageBroker broker) : ControllerBa
                     ? Encoding.UTF8.GetString(t.Response)
                     : string.Empty,                     // decode byte[] → string
             })
-            .OrderByDescending(t => t.Id)
-            .Skip(request.Page * request.PageSize)
-            .Take(request.PageSize)
-            .ToListAsync(ct);
+            .OrderByDescending(t => t.RecordedAtUtc).ThenByDescending(t => t.Id);
 
-        return Ok(messages);
+        return Ok(await _lists.MessagesAsync(messages, request, ct));
     }
 }
 
-public sealed class MessageQuery
+public sealed class MessageQuery : UnifiedListQuery
 {
-    public int Page { get; set; } = 0;
-    public int PageSize { get; set; } = 10;
     public int RelatedToISOMessageId { get; set; }
     public string? MsgId { get; set; }
     public string? BizMsgIdr { get; set; }
@@ -252,12 +271,10 @@ public sealed class MessageQuery
     public string? ToDate { get; set; }
 }
 
-public sealed class TransactionQuery
+public sealed class TransactionQuery : UnifiedListQuery
 {
-    public int Page { get; set; } = 0;
-    public int PageSize { get; set; } = 10;
     public int RelatedToISOMessageId { get; set; }
-    public int ISOMessageId { get; set; }
+    public int? ISOMessageId { get; set; }
     public string? TransactionId { get; set; }
     public string? EndToEndId { get; set; }
     public string? LocalInstrument { get; set; }
@@ -269,12 +286,12 @@ public sealed class TransactionQuery
     public string? ToDate { get; set; }
 }
 
-public sealed class TransactionDto
+public sealed class TransactionDto : UnifiedListItem
 {
-    public int Id { get; set; }
+    public int? Id { get; set; }
 
-    public TransactionType Type { get; set; }
-    public int ISOMessageId { get; set; }
+    public TransactionType? Type { get; set; }
+    public int? ISOMessageId { get; set; }
 
     public string? FromBIC { get; set; }
 
@@ -315,13 +332,13 @@ public sealed class TransactionDto
     public string? RemittanceInformation { get; set; }
 }
 
-public sealed class ISOMessageDto
+public sealed class ISOMessageDto : UnifiedListItem
 {
-    public int Id { get; set; }
+    public int? Id { get; set; }
+    public int? ISOMessageId { get; set; }
 
     public ISOMessageType MessageType { get; set; }
 
-    public TransactionStatus Status { get; set; }
 
     public string MsgId { get; set; } = string.Empty;
 
@@ -339,7 +356,6 @@ public sealed class ISOMessageDto
 
     public string? AdditionalInfo { get; set; }
 
-    public DateTimeOffset RecordedAtUtc { get; set; }
 
     public DateTimeOffset? MessageCreatedAtUtc { get; set; }
 
