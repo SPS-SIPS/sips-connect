@@ -190,10 +190,12 @@ public sealed class PapssRecallUnitTests
         Assert.Equal(PapssRecallRules.OpenOutcomes, Enum.GetValues<PapssOutcome>().Where(PapssRecallRules.IsOpen));
         Assert.True(PapssRecallRules.IsOpen(PapssOutcome.RecallOutcomeUnresolved));
         Assert.False(PapssRecallRules.IsOpen(PapssOutcome.RecallAbandoned));
-        // The partial unique index names exactly the open outcomes (regression guard: this also catches a filter that forgot
-        // to list a newly-added open outcome, or one that wrongly lists a final one).
+        // The partial unique index names exactly the open outcomes of EITHER recall direction (it is shared: R2's inbound
+        // recall reuses the same index -- see PapssInboundRecallOperationTests for R2's own equivalent guard). Regression
+        // guard: this also catches a filter that forgot to list a newly-added open outcome, or one that wrongly lists a
+        // final one, for either direction.
         foreach (var outcome in Enum.GetValues<PapssOutcome>())
-            Assert.Equal(PapssRecallRules.IsOpen(outcome), PapssOperationConfiguration.OpenRecallFilter.Contains($"'{UpperSnakeEnumConverter<PapssOutcome>.Of(outcome)}'"));
+            Assert.Equal(PapssRecallRules.IsOpen(outcome) || PapssInboundRecallRules.IsOpen(outcome), PapssOperationConfiguration.OpenRecallFilter.Contains($"'{UpperSnakeEnumConverter<PapssOutcome>.Of(outcome)}'"));
         Assert.Equal(PapssOutcome.RecallRejectedByBeneficiary, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallResolution, "RJCR", null));
         Assert.Equal(PapssOutcome.RecallReturned, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallReturned, null, null));
         Assert.Equal(PapssOutcome.RecallRejectedByPapss, PapssRecallRules.OutcomeOfEvent(PapssEventTypes.RecallStatus, "RJCT", null));

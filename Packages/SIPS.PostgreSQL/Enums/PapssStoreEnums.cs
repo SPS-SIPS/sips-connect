@@ -78,7 +78,32 @@ public enum PapssOutcome
     /// An operator manually closed a recall stuck open (e.g. RECALL_OUTCOME_UNRESOLVED). Final; releases the one-open-recall
     /// lock so a new recall may be submitted. Never applied automatically.
     /// </summary>
-    RecallAbandoned
+    RecallAbandoned,
+
+    // ---- R2: a counterparty recalls a payment THIS institution received (camt.056, Direction=Inbound, Operation=Recall). A
+    // deliberately separate state machine from the RECALL_* values above (which are all about OUR OWN outbound recall) -- see
+    // PapssInboundRecallRules. "Received" and "awaiting a decision" are the same moment (there is no intervening async step
+    // between durable receipt and being ready for the bank to decide), so there is one state for both; likewise once our
+    // reply is durably submitted to the gateway there is nothing further to confirm (PAPSS 2026-09-26, answer 3: "for the
+    // inbound, you just need to acknowledge it" -- no business reply is expected back), so the terminal state is reached
+    // once our reply is submitted. Names are kept within the existing papssoutcome column width (varchar(32)).
+    /// <summary>Durably received; open, awaiting the core bank's accept/reject decision. OPEN (ux_papss_op_open_recall).</summary>
+    InboundRecallAwaitingDecision,
+    /// <summary>The bank accepted: a pacs.004 return is being built/submitted via the existing return path. OPEN.</summary>
+    InboundRecallAcceptedByBank,
+    /// <summary>The bank rejected: a camt.029 RJCR is being built/submitted. OPEN.</summary>
+    InboundRecallRejectedByBank,
+    /// <summary>
+    /// The gateway could not read a definite admission outcome for our camt.029/pacs.004 reply (ambiguous/unreadable
+    /// submission, mirroring RECALL_OUTCOME_UNRESOLVED). Still OPEN: an operator can resubmit or investigate.
+    /// </summary>
+    InboundRecallUnresolved,
+    /// <summary>
+    /// Our camt.029 (reject) or pacs.004 (accept, via the existing return path) was durably admitted by the gateway. Final:
+    /// releases the one-open-recall lock. The original received payment's own outcome changes only through the authoritative
+    /// return flow (a pacs.002/pacs.004 the bank itself receives for its return), never because of this state alone.
+    /// </summary>
+    InboundRecallReplySubmitted
 }
 
 /// <summary>
@@ -123,6 +148,10 @@ public static class PapssEventTypes
     public const string RecallReturned = "RECALL_RETURNED";
     /// <summary>An operator manually closed a recall stuck open (e.g. RECALL_OUTCOME_UNRESOLVED). Audit record, never applied automatically.</summary>
     public const string RecallClosed = "RECALL_CLOSED";
+    /// <summary>R2: a counterparty's camt.056 recalling a payment this institution received, durably stored.</summary>
+    public const string InboundRecallReceived = "INBOUND_RECALL_RECEIVED";
+    /// <summary>R2: the core bank's accept/reject decision on an inbound recall (audit record; Disposition=Conflict when not applied).</summary>
+    public const string InboundRecallDecision = "INBOUND_RECALL_DECISION";
 }
 
 /// <summary>How a received pacs.002 / pacs.004 was matched to a stored operation (papss_operation_events.correlation).</summary>

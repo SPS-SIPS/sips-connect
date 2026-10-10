@@ -1,3 +1,5 @@
+using SIPS.PostgreSQL.Enums;
+
 namespace SIPS.Connect.Services;
 
 public interface IPapssPaymentCallbackService
@@ -9,6 +11,9 @@ public interface IPapssPaymentCallbackService
     /// <summary>camt.029.001.09 (the beneficiary refused our recall): stored (de-duplicated), correlated to the recall, bank push queued.</summary>
     Task<PapssIngestResult> HandleRecallResolutionAsync(PapssParticipantBinding participant, string signedCamt029, CancellationToken ct)
         => throw new NotSupportedException("This PAPSS callback service does not handle recall resolutions.");
+    /// <summary>R2: camt.056.001.09 (a counterparty recalled a payment this institution received): stored (de-duplicated on the PAPSS source message id), linked to the received payment, bank push queued.</summary>
+    Task<PapssIngestResult> HandleInboundRecallAsync(PapssParticipantBinding participant, string signedCamt056, CancellationToken ct)
+        => throw new NotSupportedException("This PAPSS callback service does not handle inbound recalls.");
     /// <summary>pacs.008.001.10 after the legacy handler answered it: records the inbound PAYMENT operation and links its isomessages decision.</summary>
     Task RecordInboundPaymentAsync(PapssParticipantBinding participant, string signedPacs008, CancellationToken ct);
     /// <summary>Re-reads the decision outbox state of an inbound payment into its operation.</summary>
@@ -46,6 +51,18 @@ public sealed class PapssPaymentCallbackService(PapssOperationStore store, IPaps
         var result = await store.IngestRecallResolutionAsync(signedCamt029, message, ct);
         if (result.Pushed) signal.Notify();
         return result;
+    }
+
+    public async Task<PapssIngestResult> HandleInboundRecallAsync(PapssParticipantBinding participant, string signedCamt056, CancellationToken ct)
+    {
+        var message = PapssRecallMessages.ParseInboundRecall(signedCamt056);
+        // The gateway resolves OriginalTxId/OriginalEndToEndId against ITS OWN admission of the received payment (never
+        // PAPSS's OrgnlMsgId, the recalling bank's own wire id); a received payment wins over an outbound one with the
+        // same TxId, same as R1's return path.
+        var original = await store.FindOriginalPaymentAsync(message.OriginalTxId, message.OriginalEndToEndId, preferInbound: true, ct);
+        var (operation, created) = await store.CreateInboundRecallAsync(signedCamt056, message, original, ct);
+        // Not pushed to the bank yet in this stage (see CreateInboundRecallAsync); visible via GET Recall/Inbound/{recallId}.
+        return new PapssIngestResult(!created, operation, original is null ? PapssCorrelation.None : PapssCorrelation.TransactionId, PapssEventDisposition.Applied, false, null);
     }
 
     public async Task RecordInboundPaymentAsync(PapssParticipantBinding participant, string signedPacs008, CancellationToken ct)

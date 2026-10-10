@@ -92,6 +92,23 @@ public class GatewayController(
     public Task<ActionResult> GetRecall([FromRoute] string recallId, [FromQuery] int? waitSeconds, CancellationToken ct)
         => LookupAsync(recallId, "recallId", ct => papssStore.FindOutboundRecallAsync(recallId, ct), "No PAPSS recall is stored for this recallId.", waitSeconds, ct);
 
+    /// <summary>R2: pull API for an inbound recall (a counterparty recalling a payment this institution received), keyed by its PAPSS source message id.</summary>
+    [HttpGet("Recall/Inbound/{recallId}")]
+    [Authorize(Roles = Gateway)]
+    public Task<ActionResult> GetInboundRecall([FromRoute] string recallId, [FromQuery] int? waitSeconds, CancellationToken ct)
+        => LookupAsync(recallId, "recallId", ct => papssStore.FindInboundRecallAsync(recallId, ct), "No inbound PAPSS recall is stored for this recallId.", waitSeconds, ct);
+
+    /// <summary>R2: inbound recalls still awaiting a decision (there is no bank-push notification for this event yet).</summary>
+    [HttpGet("Recall/Inbound")]
+    [Authorize(Roles = Gateway)]
+    public async Task<ActionResult> PendingInboundRecalls([FromQuery] int limit = 50, CancellationToken ct = default)
+    {
+        var pending = await papssStore.PendingInboundRecallsAsync(limit, ct);
+        var results = new List<object>(pending.Count);
+        foreach (var operation in pending) results.Add(_jsonAdapter.Transform(await _papssPayments.DescribeAsync(operation, ct), OperationResultMapping));
+        return Ok(results);
+    }
+
     /// <summary>Pull API: the stored PAPSS payment by EndToEndId (<c>?endToEndId=</c>).</summary>
     [HttpGet("Operations")]
     [Authorize(Roles = Gateway)]

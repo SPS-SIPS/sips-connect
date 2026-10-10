@@ -33,6 +33,22 @@ public sealed record PapssRecallInstruction(
     string Reason,
     DateTimeOffset CreatedAt);
 
+/// <summary>
+/// R2: camt.056.001.09 delivered by the gateway -- a counterparty has recalled a payment this institution RECEIVED. The
+/// gateway's own notification contract (deliberately NOT camt.056.001.08, which is R1's SIPS-to-Gateway recall REQUEST in
+/// the opposite direction). OriginalTxId/OriginalEndToEndId are THIS institution's own identifiers for the received payment
+/// (resolved by the gateway from its stored admission, not PAPSS's OrgnlMsgId, which names the recalling bank's own wire id).
+/// </summary>
+public sealed record PapssInboundRecallMessage(
+    string SourceMessageId,
+    DateTimeOffset? SourceCreatedAt,
+    string CancellationId,
+    string OriginalTxId,
+    string OriginalEndToEndId,
+    string? ReasonCode,
+    string? AdditionalInfo,
+    PapssProvenance? Provenance = null);
+
 /// <summary>camt.029.001.09 delivered by the gateway: the beneficiary's negative answer (RJCR) to our recall.</summary>
 public sealed record PapssRecallResolution(
     string SourceMessageId,
@@ -99,6 +115,8 @@ public static partial class PapssRecallMessages
 {
     public const string Camt056 = "camt.056.001.08";
     public const string Camt029 = "camt.029.001.09";
+    /// <summary>R2: the gateway's own notification contract for an inbound recall (see <see cref="PapssInboundRecallMessage"/>). Deliberately a different version from <see cref="Camt056"/>.</summary>
+    public const string InboundRecallDefinition = "camt.056.001.09";
     public const string HeaderNamespace = "urn:iso:std:iso:20022:tech:xsd:head.001.001.03";
     public const string Camt056Namespace = "urn:iso:std:iso:20022:tech:xsd:" + Camt056;
     /// <summary>Root of the SIPS envelope. The gateway reads AppHdr and Document under the root and does not check the root name.</summary>
@@ -171,6 +189,25 @@ public static partial class PapssRecallMessages
                             new XElement(d + "OrgnlIntrBkSttlmAmt", new XAttribute("Ccy", x.Currency), x.Amount.ToString("0.00###", CultureInfo.InvariantCulture)),
                             new XElement(d + "CxlRsnInf", new XElement(d + "Rsn", new XElement(d + "Cd", x.Reason))))))));
         return envelope.ToString(SaveOptions.DisableFormatting);
+    }
+
+    /// <summary>R2: camt.056.001.09 FIToFIPmtCxlReq delivered by the gateway (SipsInboundRecallMessage.Build), with exactly one Undrlyg/TxInf.</summary>
+    public static PapssInboundRecallMessage ParseInboundRecall(string xml)
+    {
+        var (header, document) = M.Load(xml, "FIToFIPmtCxlReq");
+        var tx = M.Children(document, "Undrlyg").SelectMany(x => M.Children(x, "TxInf")).ToList();
+        if (tx.Count != 1) throw new InvalidDataException($"The PAPSS inbound recall notification must carry exactly one Undrlyg/TxInf (found {tx.Count}).");
+        var t = tx[0];
+        var reason = M.Child(t, "CxlRsnInf");
+        return new PapssInboundRecallMessage(
+            M.Required(M.Text(header, "BizMsgIdr"), "AppHdr BizMsgIdr"),
+            M.Timestamp(M.Text(header, "CreDt")),
+            M.Required(M.Text(t, "CxlId"), "CxlId"),
+            M.Required(M.Text(t, "OrgnlTxId"), "OrgnlTxId"),
+            M.Required(M.Text(t, "OrgnlEndToEndId"), "OrgnlEndToEndId"),
+            M.ReasonCode(M.Child(reason, "Rsn")),
+            M.Text(reason, "AddtlInf"),
+            M.Provenance(header, t));
     }
 
     /// <summary>camt.029.001.09 RsltnOfInvstgtn with exactly one CxlDtls/TxInfAndSts.</summary>
