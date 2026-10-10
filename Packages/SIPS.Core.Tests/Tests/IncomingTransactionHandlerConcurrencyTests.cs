@@ -150,6 +150,48 @@ public class IncomingTransactionHandlerConcurrencyTests
         _isoService.Verify(x => x.GetInboundMessageByTxIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// TVR UAT 2026-10-10: PAPSS re-signs a retry of the same TxId with a fresh envelope BizMsgIdr/CreDt every
+    /// delivery attempt. StoredResponseMatchesRequest must still replay the already-recorded answer for that
+    /// retry - requiring the volatile per-attempt fields to match the first attempt's stored response made
+    /// every retry permanently unreplayable once a transaction needed more than one delivery attempt (observed
+    /// live: 20261010DJ10090644291791614669253so, retried every ~10-20s, rejected every time with "correlation
+    /// fields do not match", looping forever instead of ever resolving).
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_Follower_ReplaysStoredResponse_EvenWhenRetryWasResignedWithFreshEnvelope()
+    {
+        string rawXml = WpSipsTestEnvelope.Valid();
+        var firstAttempt = new PaymentRequestBuilder.Request
+        {
+            From = "ZKBASOS0", To = "PAPSS", BizMsgIdr = "BIZ-ATTEMPT-1", MsgDefIdr = "pacs.008.001.10",
+            MsgId = "MSG1", CreDt = new DateTime(2026, 10, 10, 6, 44, 33, DateTimeKind.Utc), TxId = "TX-RETRY"
+        };
+        var storedResponse = PaymentRequestResponseBuilder.Build(new()
+        {
+            From = firstAttempt.To, To = firstAttempt.From, Original = firstAttempt, Status = "RJCT",
+            Reason = "MS03", TxId = firstAttempt.TxId
+        });
+        var existingMsg = new ISOMessage { TxId = "TX-RETRY", Status = TransactionStatus.CheckStatus, Response = System.Text.Encoding.UTF8.GetBytes(storedResponse) };
+
+        // A retry: same logical transaction (TxId/MsgId/From/To/MsgDefIdr), but a fresh signed envelope -
+        // a different BizMsgIdr and CreDt, exactly as PAPSS resigns every physical redelivery attempt.
+        var retry = new PaymentRequestBuilder.Request
+        {
+            From = firstAttempt.From, To = firstAttempt.To, BizMsgIdr = "BIZ-ATTEMPT-2", MsgDefIdr = firstAttempt.MsgDefIdr,
+            MsgId = firstAttempt.MsgId, CreDt = new DateTime(2026, 10, 10, 6, 44, 49, DateTimeKind.Utc), TxId = firstAttempt.TxId
+        };
+        _inbound.Setup(x => x.VerifyAndParseAsync(rawXml, It.IsAny<Func<string, (bool, PaymentRequestBuilder.Request?)>>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
+            .ReturnsAsync((true, retry));
+        _isoService.Setup(x => x.TryRecordIncomingTransactionAsync(retry, rawXml, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((existingMsg, false));
+
+        var result = await _handler.HandleAsync(rawXml, CancellationToken.None);
+
+        Assert.Equal(storedResponse, result);
+        _isoService.Verify(x => x.GetInboundMessageByTxIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task HandleAsync_InternalPersistenceFailure_ReturnsPaymentRejection_NotCriticalAdmin()
     {

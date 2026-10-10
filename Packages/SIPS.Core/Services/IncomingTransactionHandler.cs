@@ -535,31 +535,24 @@ public sealed class IncomingTransactionHandler(
             static string? PartyValue(System.Xml.Linq.XElement parent, string partyName) =>
                 parent.Elements().FirstOrDefault(e => e.Name.LocalName == partyName)?
                     .Descendants().FirstOrDefault(e => e.Name.LocalName == "Id")?.Value;
-            static bool SameInstant(string? serialized, DateTime expected)
-            {
-                if (!DateTimeOffset.TryParse(serialized, out var actual)) return false;
-                var expectedUtc = expected.Kind switch
-                {
-                    DateTimeKind.Utc => expected,
-                    DateTimeKind.Local => expected.ToUniversalTime(),
-                    _ => DateTime.SpecifyKind(expected, DateTimeKind.Utc)
-                };
-                return actual.UtcDateTime == expectedUtc;
-            }
 
+            // BizMsgIdr and CreDt (both the related BAH's own and the echoed OrgnlCreDtTm, which mirrors the
+            // same request.CreDt) are the WP-SIPS envelope's own per-delivery-attempt values: PAPSS re-signs a
+            // retry of the same logical transaction with a fresh envelope timestamp and message id every time,
+            // so requiring them to match the first attempt's stored response made every retry of an
+            // already-recorded TxId permanently unreplayable (looping forever instead of ever resolving).
+            // Only the fields that identify the same logical transaction - not the same physical delivery - are
+            // checked here; TxId is additionally the table's own dedup key for this record.
             var originalInfo = document.Descendants().FirstOrDefault(e => e.Name.LocalName == "OrgnlGrpInf");
             var appHeader = document.Descendants().FirstOrDefault(e => e.Name.LocalName == "AppHdr");
             return appHeader != null
                 && string.Equals(appHeader.Elements().FirstOrDefault(e => e.Name.LocalName == "MsgDefIdr")?.Value, SupportedMessageTypes.CreditTransferResponse.Id, StringComparison.Ordinal)
                 && string.Equals(PartyValue(related, "Fr"), request.From, StringComparison.Ordinal)
                 && string.Equals(PartyValue(related, "To"), request.To, StringComparison.Ordinal)
-                && string.Equals(Value(related, "BizMsgIdr"), request.BizMsgIdr, StringComparison.Ordinal)
                 && string.Equals(Value(related, "MsgDefIdr"), request.MsgDefIdr, StringComparison.Ordinal)
-                && SameInstant(Value(related, "CreDt"), request.CreDt)
                 && originalInfo != null
                 && string.Equals(Value(originalInfo, "OrgnlMsgId"), request.MsgId, StringComparison.Ordinal)
                 && string.Equals(Value(originalInfo, "OrgnlMsgNmId"), request.MsgDefIdr, StringComparison.Ordinal)
-                && SameInstant(Value(originalInfo, "OrgnlCreDtTm"), request.CreDt)
                 && string.Equals(Value(document.Root!, "OrgnlTxId"), request.TxId, StringComparison.Ordinal);
         }
         catch
