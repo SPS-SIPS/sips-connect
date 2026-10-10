@@ -63,6 +63,53 @@ public sealed class PapssPaymentDecisionPublisherTests
         gateway.VerifyNoOtherCalls();
     }
 
+    /// <summary>
+    /// TVR UAT 2026-10-10: PAPSS re-signs every physical retry of the same TxId with a fresh envelope
+    /// BizMsgIdr/CreDt. The stored record.Message always holds whatever was captured on the first attempt, so
+    /// comparing a retry's raw bytes against it byte-for-byte never matched - rejecting every legitimate retry
+    /// as DUPLICATE_CONFLICT and never publishing a decision (observed live: 20261010DJ10090644291791614669253so,
+    /// looping forever instead of ever resolving).
+    /// </summary>
+    [Fact]
+    public async Task Retry_with_a_freshly_resigned_envelope_still_matches_the_stored_payment()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        using var scope = provider.CreateScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IStorageBroker>();
+        var inboundFirst = await RecordAsync(storage, harness, "ACCP", TransactionStatus.Pending);
+        var gateway = new Mock<IPapssFacingSipsClient>();
+        gateway.Setup(g => g.SubmitPaymentDecisionAsync(It.IsAny<PapssParticipantBinding>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PapssAdmissionResponse("DECISION", "RECEIVED_AND_DURABLY_ADMITTED", true));
+        var publisher = Publisher(storage, harness, gateway.Object);
+
+        var retry = PostgresHarness.SetHeader(PostgresHarness.SetHeader(inboundFirst, "BizMsgIdr", "PAPSS-RETRY-2"), "CreDt", DateTime.UtcNow.AddMinutes(5).ToString("o"));
+
+        await publisher.PersistAndSubmitAsync(harness.Binding(), inboundFirst, CancellationToken.None);
+        await publisher.PersistAndSubmitAsync(harness.Binding(), retry, CancellationToken.None);
+
+        Assert.NotNull((await storage.ISOMessages.AsNoTracking().SingleAsync()).PapssDecisionPublishedAt);
+        gateway.Verify(g => g.SubmitPaymentDecisionAsync(It.IsAny<PapssParticipantBinding>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Retry_with_different_payment_content_under_the_same_TxId_still_conflicts()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        using var scope = provider.CreateScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IStorageBroker>();
+        var inboundFirst = await RecordAsync(storage, harness, "ACCP", TransactionStatus.Pending);
+        var publisher = Publisher(storage, harness, Mock.Of<IPapssFacingSipsClient>(MockBehavior.Strict));
+
+        var conflicting = XDocument.Parse(inboundFirst);
+        conflicting.Descendants().Single(e => e.Name.LocalName == "InstdAmt").Value = "999.00";
+
+        var error = await Assert.ThrowsAsync<SIPS.Connect.Services.ParticipantRailException>(
+            () => publisher.PersistAndSubmitAsync(harness.Binding(), conflicting.ToString(SaveOptions.DisableFormatting), CancellationToken.None));
+        Assert.Equal("DUPLICATE_CONFLICT", error.Code);
+    }
+
     [Fact]
     public async Task Timeout_requires_reconciliation_before_any_gateway_decision()
     {

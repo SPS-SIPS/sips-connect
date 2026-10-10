@@ -1,8 +1,9 @@
 using System.Text;
 using System.Xml.Linq;
-using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using SIPS.Connect.Config;
+using SIPS.ISO20022.Helpers;
+using SIPS.ISO20022.Models;
 using SIPS.PostgreSQL.Enums;
 using SIPS.PostgreSQL.Interfaces;
 using SIPS.XMLDsig.Xades.Interfaces;
@@ -34,8 +35,11 @@ public sealed class PapssPaymentDecisionPublisher(
         var record = await storage.ISOMessages.AsNoTracking().SingleAsync(
             x => x.MessageType == ISOMessageType.TransactionRequest && x.TxId == txId, ct);
 
-        var receivedBytes = Encoding.UTF8.GetBytes(inboundPacs008);
-        if (record.Message.Length != receivedBytes.Length || !CryptographicOperations.FixedTimeEquals(record.Message, receivedBytes))
+        // PAPSS re-signs every physical retry of the same TxId with a fresh envelope BizMsgIdr/CreDt/Signature,
+        // so a retried redelivery of the exact same payment never matches the first attempt byte-for-byte - this
+        // compares the payment's own content instead (everything but the envelope's per-delivery fields), and
+        // only flags a genuine conflict: the same TxId reused for an actually different payment.
+        if (!SamePaymentContent(PaymentRequestBuilder.Parse(Encoding.UTF8.GetString(record.Message)), PaymentRequestBuilder.Parse(inboundPacs008)))
             throw new ParticipantRailException("DUPLICATE_CONFLICT", "The transaction identifier was reused with a different signed payment payload.");
 
         if (record.PapssDecisionPublishedAt is not null || record.PapssDecisionFailedAt is not null) return;
@@ -137,6 +141,35 @@ public sealed class PapssPaymentDecisionPublisher(
 
         return signer.SignEnvelope(decision.ToString(SaveOptions.DisableFormatting), XadesProfile.WpSipsPapss);
     }
+
+    private static bool SamePaymentContent(PaymentRequestBuilder.Request a, PaymentRequestBuilder.Request b) =>
+        string.Equals(a.From, b.From, StringComparison.Ordinal)
+        && string.Equals(a.To, b.To, StringComparison.Ordinal)
+        && string.Equals(a.MsgDefIdr, b.MsgDefIdr, StringComparison.Ordinal)
+        && string.Equals(a.MsgId, b.MsgId, StringComparison.Ordinal)
+        && a.SettlementMethod == b.SettlementMethod
+        && string.Equals(a.ClearingSystem, b.ClearingSystem, StringComparison.Ordinal)
+        && string.Equals(a.LocalInstrument, b.LocalInstrument, StringComparison.Ordinal)
+        && string.Equals(a.CategoryPurpose, b.CategoryPurpose, StringComparison.Ordinal)
+        && string.Equals(a.TxId, b.TxId, StringComparison.Ordinal)
+        && string.Equals(a.InstrId, b.InstrId, StringComparison.Ordinal)
+        && string.Equals(a.UETR, b.UETR, StringComparison.Ordinal)
+        && string.Equals(a.EndToEndId, b.EndToEndId, StringComparison.Ordinal)
+        && a.Amount == b.Amount
+        && string.Equals(a.Currency, b.Currency, StringComparison.Ordinal)
+        && a.ChargeBearer == b.ChargeBearer
+        && string.Equals(a.Ustrd, b.Ustrd, StringComparison.Ordinal)
+        && string.Equals(a.PurposeCode, b.PurposeCode, StringComparison.Ordinal)
+        && SamePerson(a.Debtor, b.Debtor)
+        && SamePerson(a.Creditor, b.Creditor);
+
+    private static bool SamePerson(Person a, Person b) =>
+        string.Equals(a.Name, b.Name, StringComparison.Ordinal)
+        && string.Equals(a.Address, b.Address, StringComparison.Ordinal)
+        && string.Equals(a.Account, b.Account, StringComparison.Ordinal)
+        && string.Equals(a.AccountType, b.AccountType, StringComparison.Ordinal)
+        && string.Equals(a.Issuer, b.Issuer, StringComparison.Ordinal)
+        && string.Equals(a.AgentBIC, b.AgentBIC, StringComparison.Ordinal);
 
     private static void Correlation(XContainer source, XContainer target, string sourceName, string targetName, bool optional = false)
     {
