@@ -120,7 +120,7 @@ public sealed class PapssPaymentDecisionPublisherTests
         var inbound = await RecordAsync(storage, harness, "RJCT", TransactionStatus.CheckStatus);
         var gateway = new Mock<IPapssFacingSipsClient>(MockBehavior.Strict);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Publisher(storage, harness, gateway.Object)
+        await Assert.ThrowsAsync<PapssBankDecisionUnresolvedException>(() => Publisher(storage, harness, gateway.Object)
             .PersistAndSubmitAsync(harness.Binding(), inbound, CancellationToken.None));
         Assert.Null((await storage.ISOMessages.AsNoTracking().SingleAsync()).PapssDecision);
         gateway.VerifyNoOtherCalls();
