@@ -87,6 +87,18 @@ public sealed class PapssRecallCloseRequest
     public string? Reason { get; set; }
 }
 
+/// <summary>R2: bank request for <c>POST /api/v1/Gateway/Recall/Inbound/{recallId}/Decision</c>.</summary>
+public sealed class PapssInboundRecallDecisionRequest
+{
+    /// <summary>Required: ACCEPT or REJECT (case-insensitive).</summary>
+    public string? Decision { get; set; }
+    /// <summary>Required for REJECT (camt.029 CxlStsRsnInf/Rsn/Cd); optional for ACCEPT (the pacs.004 return reason -- defaults to the recall's own stored reason).</summary>
+    public string? Reason { get; set; }
+}
+
+/// <summary>R2: result of deciding an inbound recall.</summary>
+public sealed record PapssInboundRecallDecisionResponse(string RecallId, string Decision, PapssAdmissionResponse? Admission, string? ReturnId);
+
 /// <summary>Which of the two authorized paths closed a recall: recorded in the RECALL_CLOSED audit event for every call.</summary>
 public static class PapssRecallCloseAuthPath
 {
@@ -117,6 +129,8 @@ public static partial class PapssRecallMessages
     public const string Camt029 = "camt.029.001.09";
     /// <summary>R2: the gateway's own notification contract for an inbound recall (see <see cref="PapssInboundRecallMessage"/>). Deliberately a different version from <see cref="Camt056"/>.</summary>
     public const string InboundRecallDefinition = "camt.056.001.09";
+    /// <summary>R2: this institution's own camt.029 rejecting an inbound recall (see <see cref="PapssInboundRecallRejection"/>). Deliberately a different version from <see cref="Camt029"/> (the gateway's resolution-delivery contract for R1).</summary>
+    public const string InboundRecallRejectionDefinition = "camt.029.001.08";
     public const string HeaderNamespace = "urn:iso:std:iso:20022:tech:xsd:head.001.001.03";
     public const string Camt056Namespace = "urn:iso:std:iso:20022:tech:xsd:" + Camt056;
     /// <summary>Root of the SIPS envelope. The gateway reads AppHdr and Document under the root and does not check the root name.</summary>
@@ -188,6 +202,53 @@ public static partial class PapssRecallMessages
                             new XElement(d + "OrgnlTxId", x.OriginalTxId),
                             new XElement(d + "OrgnlIntrBkSttlmAmt", new XAttribute("Ccy", x.Currency), x.Amount.ToString("0.00###", CultureInfo.InvariantCulture)),
                             new XElement(d + "CxlRsnInf", new XElement(d + "Rsn", new XElement(d + "Cd", x.Reason))))))));
+        return envelope.ToString(SaveOptions.DisableFormatting);
+    }
+
+    /// <summary>R2: what SIPS Connect puts into the camt.029.001.08 it sends to reject an inbound recall (a counterparty's camt.056
+    /// naming a payment this institution received). OriginalSenderBic is the authoritative counterparty BIC this institution
+    /// already has stored against the received payment (never asked of PAPSS again); the gateway re-resolves the payment from it
+    /// plus OriginalTxId/OriginalEndToEndId, the same way it would for a spontaneous return of a received payment.</summary>
+    public sealed record PapssInboundRecallRejection(string RejectionId, string BankBic, string RemoteWpSipsIdentity, string OriginalTxId, string OriginalEndToEndId, string OriginalSenderBic, string ReasonCode, DateTimeOffset CreatedAt);
+
+    /// <summary>
+    /// R2: the unsigned SIPS envelope rejecting an inbound recall: AppHdr (Fr = bank BIC, To = remote WP-SIPS identity, BizMsgIdr =
+    /// rejection id, MsgDefIdr camt.029.001.08 -- deliberately NOT .001.09, which is the gateway's own notification contract for the
+    /// opposite, recall-resolution-delivery direction) and RsltnOfInvstgtn with Assgnmt/Id = CxlStsId = the rejection id, Sts/Conf
+    /// RJCR, CxlDtls/TxInfAndSts{OrgnlEndToEndId, OrgnlTxId, CxlStsRsnInf/Rsn, OrgnlTxRef/DbtrAgt/FinInstnId/BICFI = the authoritative
+    /// original sender}. There are no camt builders in SIPS.ISO20022, so this is hand-built like BuildRecallRequest.
+    /// </summary>
+    public static string BuildInboundRecallRejection(PapssInboundRecallRejection x)
+    {
+        XNamespace h = HeaderNamespace, d = "urn:iso:std:iso:20022:tech:xsd:" + InboundRecallRejectionDefinition, e = EnvelopeNamespace;
+        var created = x.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+        XElement Party(string name, string id) => new(h + name, new XElement(h + "FIId", new XElement(h + "FinInstnId", new XElement(h + "Othr", new XElement(h + "Id", id)))));
+        var envelope = new XElement(e + "FPEnvelope",
+            new XAttribute(XNamespace.Xmlns + "header", HeaderNamespace),
+            new XAttribute(XNamespace.Xmlns + "document", d.NamespaceName),
+            new XAttribute("Id", "BL-" + x.RejectionId),
+            new XElement(h + "AppHdr",
+                Party("Fr", x.BankBic),
+                Party("To", x.RemoteWpSipsIdentity),
+                new XElement(h + "BizMsgIdr", x.RejectionId),
+                new XElement(h + "MsgDefIdr", InboundRecallRejectionDefinition),
+                new XElement(h + "CreDt", created)),
+            new XElement(d + "Document",
+                new XElement(d + "RsltnOfInvstgtn",
+                    new XElement(d + "Assgnmt",
+                        new XElement(d + "Id", x.RejectionId),
+                        new XElement(d + "Assgnr", new XElement(d + "Agt", new XElement(d + "FinInstnId", new XElement(d + "BICFI", x.BankBic)))),
+                        new XElement(d + "Assgne", new XElement(d + "Agt", new XElement(d + "FinInstnId", new XElement(d + "Othr", new XElement(d + "Id", x.RemoteWpSipsIdentity))))),
+                        new XElement(d + "CreDtTm", created)),
+                    new XElement(d + "Sts", new XElement(d + "Conf", RejectedConfirmation)),
+                    new XElement(d + "CxlDtls",
+                        new XElement(d + "TxInfAndSts",
+                            new XElement(d + "CxlStsId", x.RejectionId),
+                            new XElement(d + "OrgnlEndToEndId", x.OriginalEndToEndId),
+                            new XElement(d + "OrgnlTxId", x.OriginalTxId),
+                            new XElement(d + "CxlStsRsnInf", new XElement(d + "Rsn", new XElement(d + "Cd", x.ReasonCode))),
+                            new XElement(d + "OrgnlTxRef", new XElement(d + "DbtrAgt", new XElement(d + "FinInstnId", new XElement(d + "BICFI", x.OriginalSenderBic))))
+                        )))));
         return envelope.ToString(SaveOptions.DisableFormatting);
     }
 

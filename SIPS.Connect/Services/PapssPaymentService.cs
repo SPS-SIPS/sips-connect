@@ -27,6 +27,13 @@ public interface IPapssPaymentService
     /// </summary>
     Task<PapssAdmissionResponse> RecallAsync(PapssParticipantBinding participant, PapssRecallRequest request, CancellationToken ct)
         => throw new NotSupportedException("This PAPSS payment service cannot recall payments.");
+    /// <summary>
+    /// R2: the core bank's accept/reject decision on an inbound recall (a counterparty recalling a payment this institution
+    /// received). ACCEPT delegates to the existing <see cref="ReturnAsync"/> pipeline (a pacs.004 is a pacs.004 regardless of
+    /// why it is sent); REJECT builds and submits a new camt.029.001.08 rejection request.
+    /// </summary>
+    Task<PapssInboundRecallDecisionResponse> DecideInboundRecallAsync(PapssParticipantBinding participant, string recallId, PapssInboundRecallDecisionRequest request, CancellationToken ct)
+        => throw new NotSupportedException("This PAPSS payment service cannot decide inbound recalls.");
     /// <summary>Bank-facing view of a stored operation, with payment fields and status history where relevant.</summary>
     Task<PapssOperationResult> DescribeAsync(PapssOperation operation, CancellationToken ct);
 }
@@ -114,6 +121,73 @@ public sealed class PapssPaymentService(
         logger.LogInformation("PAPSS recall {RecallId} of payment {TxId} (reason {Reason}) stored; submitting camt.056", id, payment.TxId, reason);
         return await SubmitAsync(participant, operation, signed.SignedXml, ct);
     }
+
+    /// <summary>
+    /// R2: ACCEPT delegates to <see cref="ReturnAsync"/> with a deterministic ReturnId (derived from the recall id), so a
+    /// retried decision replays through ReturnAsync's own idempotency rather than needing separate handling here. REJECT
+    /// builds a deterministic camt.029.001.08 rejection (also derived from the recall id, so a retry resubmits byte-identical
+    /// content and the gateway's own exact-replay detection applies) and submits it directly. A decision already recorded
+    /// (ACCEPTED_BY_BANK/REJECTED_BY_BANK/REPLY_SUBMITTED) refuses a DIFFERENT decision outright (DECISION_ALREADY_MADE,
+    /// recorded for audit but never applied -- see RecordInboundRecallDecisionAsync); the bank must GET the recall first to
+    /// see what was already decided before retrying the SAME one past REPLY_SUBMITTED.
+    /// </summary>
+    public async Task<PapssInboundRecallDecisionResponse> DecideInboundRecallAsync(PapssParticipantBinding participant, string recallId, PapssInboundRecallDecisionRequest request, CancellationToken ct)
+    {
+        var decision = (request.Decision ?? string.Empty).Trim().ToUpperInvariant();
+        if (decision is not ("ACCEPT" or "REJECT")) throw new ArgumentException("decision must be exactly ACCEPT or REJECT.");
+        var recall = await store.FindInboundRecallAsync(recallId, ct)
+            ?? throw new ParticipantRailException("OPERATION_NOT_FOUND", $"No inbound PAPSS recall is stored for recallId {recallId}.");
+        if (recall.OriginalOperationId is not { } paymentId)
+            throw new ParticipantRailException("ORIGINAL_PAYMENT_NOT_FOUND", "This inbound recall is not linked to a stored received payment and cannot be decided.");
+        var payment = await store.FindByIdAsync(paymentId, ct)
+            ?? throw new ParticipantRailException("ORIGINAL_PAYMENT_NOT_FOUND", "The received payment this recall names is no longer in the store.");
+
+        var accept = decision == "ACCEPT";
+        var outcome = await store.RecordInboundRecallDecisionAsync(recall.Id, accept, request.Reason, null, ct);
+        if (outcome == PapssInboundRecallDecisionOutcome.Conflict)
+            throw new ParticipantRailException("DECISION_ALREADY_MADE", $"Inbound recall {recallId} already has a different decision recorded ({UpperSnakeEnumConverter<PapssOutcome>.Of(recall.PapssOutcome)}); this one was logged but not applied.");
+
+        if (accept)
+        {
+            var returnRequest = new ReturnPaymentRequestDto
+            {
+                ReturnId = DeterministicId("RETURN", recallId),
+                OriginalTxId = Required(payment.TxId, "received payment TxId"),
+                OriginalEndToEndId = Required(payment.EndToEndId, "received payment EndToEndId"),
+                OriginalAmount = payment.Amount ?? throw new InvalidDataException("The received payment has no stored amount."),
+                OriginalCurrency = Required(payment.Currency, "received payment currency"),
+                LocalInstrument = Required(payment.LocalInstrument, "received payment local instrument"),
+                // PAPSS's own pacs.004 carries no CtgyPurp (see PapssOutboundEffectMapper.Return, gateway side) and the
+                // inbound pacs.008 parser does not capture one (PapssPaymentMessage has no CategoryPurpose field): this is
+                // validated by the WP-SIPS pacs.004 builder but never reaches PAPSS, so a neutral placeholder is safe here.
+                CategoryPurpose = "CASH",
+                Reason = PapssRecallMessages.NormalizeReason(request.Reason ?? recall.Reason ?? "DUPL"),
+                AdditionalInfo = string.Empty,
+                ToBIC = Required(payment.CounterpartyBic, "received payment counterparty BIC")
+            };
+            var admission = await ReturnAsync(participant, returnRequest, ct);
+            await store.RecordInboundRecallReplySubmittedAsync(recall.Id, ct);
+            logger.LogInformation("Inbound PAPSS recall {RecallId} ACCEPTED; pacs.004 {ReturnId} submitted for payment {TxId}", recallId, returnRequest.ReturnId, payment.TxId);
+            return new(recallId, "ACCEPT", admission, returnRequest.ReturnId);
+        }
+        else
+        {
+            var reasonCode = PapssRecallMessages.NormalizeReason(request.Reason);
+            var rejectionId = DeterministicId("REJECT", recallId);
+            var unsigned = PapssRecallMessages.BuildInboundRecallRejection(new PapssRecallMessages.PapssInboundRecallRejection(
+                rejectionId, participant.Bic, options.RemoteWpSipsIdentity, Required(payment.TxId, "received payment TxId"), Required(payment.EndToEndId, "received payment EndToEndId"),
+                Required(payment.CounterpartyBic, "received payment counterparty BIC"), reasonCode, clock.GetUtcNow()));
+            var signed = papss.SignForSubmission(unsigned, rejectionId);
+            var admission = await papss.SubmitSignedAsync(participant, signed, ct);
+            await store.RecordInboundRecallReplySubmittedAsync(recall.Id, ct);
+            logger.LogInformation("Inbound PAPSS recall {RecallId} REJECTED (reason {Reason}); camt.029 {RejectionId} submitted for payment {TxId}", recallId, reasonCode, rejectionId, payment.TxId);
+            return new(recallId, "REJECT", admission, null);
+        }
+    }
+
+    /// <summary>Deterministic, stable across retries (same recall id + same purpose = same wire id), in the contract id shape.</summary>
+    private static string DeterministicId(string purpose, string recallId)
+        => "SIPS-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"INBOUND-RECALL-{purpose}:{recallId}")))[..24].ToLowerInvariant();
 
     /// <summary>The OUTBOUND payment a recall names (only the debtor agent may recall: a received payment is refused).</summary>
     private async Task<PapssOperation> FindRecallablePaymentAsync(string? txId, string? endToEndId, CancellationToken ct)
