@@ -373,7 +373,7 @@ public sealed class IncomingTransactionHandler(
                             {
                                 _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}. Reason: {Reason}", cid, request.TxId, cbResponse.Reason);
                                 response.Status = RJCT;
-                                response.Reason = requiresCoreBankAcceptance ? IsoText.StatusReasonCode(cbResponse.Reason) : "MS03";
+                                response.Reason = requiresCoreBankAcceptance ? PapssReasonCodes.FromCoreBankReason(cbResponse.Reason) : PapssReasonCodes.GenericError;
                                 response.AdditionalInfo = IsoText.StatusAdditionalInfo(
                                     cbResponse.AdditionalInfo,
                                     cbResponse.Reason);
@@ -384,7 +384,7 @@ public sealed class IncomingTransactionHandler(
                                 var returnedStatus = string.IsNullOrWhiteSpace(cbResponse.Status) ? "<empty>" : cbResponse.Status;
                                 _logger.LogWarning("[{CorrelationId}] CoreBank returned non-success status {Status} for transaction {TxId}. Rejecting for safety.", cid, returnedStatus, request.TxId);
                                 response.Status = RJCT;
-                                response.Reason = "MS03";
+                                response.Reason = PapssReasonCodes.GenericError;
                                 response.AdditionalInfo = IsoText.StatusAdditionalInfo(
                                     cbResponse.AdditionalInfo,
                                     cbResponse.Reason,
@@ -396,7 +396,7 @@ public sealed class IncomingTransactionHandler(
                             if (requiresCoreBankAcceptance) path = "CoreBankUnresolved";
                             _logger.LogWarning("[{CorrelationId}] CoreBank callback returned an unusable response (HTTP={StatusCode}) for TxId {TxId}. Returning RJCT.", cid, result?.StatusCode, request.TxId);
                             response.Status = RJCT;
-                            response.Reason = "MS03";
+                            response.Reason = PapssReasonCodes.GenericError;
                             response.AdditionalInfo = "CoreBank returned empty response.";
                         }
                     }
@@ -406,7 +406,7 @@ public sealed class IncomingTransactionHandler(
                         _logger.LogWarning(ex, "[{CorrelationId}] [MANUAL_RECONCILIATION_REQUIRED:POTENTIAL_PHANTOM_CREDIT] CoreBank callback timed out for TxId {TxId} (>{Timeout}s). Raising CheckStatus for audit trail.", cid, request.TxId, _core.CoreBankTimeoutSeconds);
                         
                         response.Status = RJCT;
-                        response.Reason = "MS03";
+                        response.Reason = PapssReasonCodes.GenericError;
                         response.AdditionalInfo = "CoreBank response exceeded internal SLA.";
 
                         // [AUDIT-GRADE INTEGRITY]: Record "in-doubt" state in immutable ledger
@@ -431,7 +431,7 @@ public sealed class IncomingTransactionHandler(
                         path = requiresCoreBankAcceptance ? "CoreBankUnresolved" : "CoreBankError";
                         _logger.LogWarning(ex, "[{CorrelationId}] Failed to call CoreBank for TxId {TxId} (Connectivity issue). Rejecting for safety.", cid, request.TxId);
                         response.Status = RJCT;
-                        response.Reason = "MS03";
+                        response.Reason = PapssReasonCodes.GenericError;
                         response.AdditionalInfo = "Failed to reach CoreBank for authorization.";
                     }
                 }
@@ -579,7 +579,7 @@ public sealed class IncomingTransactionHandler(
             CreDt = current.CreDt == default ? original.CreDt : current.CreDt,
             Original = original,
             Status = RJCT,
-            Reason = "MS03",
+            Reason = PapssReasonCodes.GenericError,
             AdditionalInfo = IsoText.StatusAdditionalInfo(
                 current.AdditionalInfo,
                 IsoText.IsSafeMax35Text(previousReason) ? null : previousReason,
