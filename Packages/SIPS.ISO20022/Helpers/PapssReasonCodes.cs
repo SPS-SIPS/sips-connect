@@ -19,7 +19,14 @@ public static class PapssReasonCodes
     private static readonly HashSet<string> Confirmed = new(StringComparer.OrdinalIgnoreCase)
     {
         "ACCP", "MS02", "MS03", "MS05", "AB05", "AB08", "TM01", "FF01", "DNOR", "CNOR", "RC01",
-        "AM05", "AG09", "AG01", "AM02", "AG10", "RR04", "AM23"
+        "AM05", "AG09", "AG01", "AM02", "AG10", "RR04", "AM23",
+        // Account-rejection codes outside PAPSS's own internal-middleware table, but proven accepted on the wire:
+        // AC04 is the PAPSS IPS doc 11 RJCT template's own worked example (gateway's own test). AC01/AC06 are the
+        // same standard ISO 20022 account-rejection family the core bank mock sends directly for "account not
+        // found"/"account inactive" - demoting them to the generic MS03 fallback (TVR UAT 2026-10-11: PAPSS rejected
+        // MS03 outright, x-papssrtp-reqsts RJCT/1026, both as Rsn/Cd and Rsn/Prtry) discards a specific, correct
+        // answer for the one value PAPSS has now refused twice.
+        "AC01", "AC04", "AC06"
     };
 
     public static string FromCoreBankReason(string? coreBankReason, string fallback = GenericError)
