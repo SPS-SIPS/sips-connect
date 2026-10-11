@@ -170,6 +170,64 @@ All state lives in the database. After a restart, the workers carry on with what
   - A transport error, a timeout or a response that cannot be verified is treated as ambiguous: the reply is retried and the operation's gateway state becomes `SUBMISSION_UNKNOWN`.
 - `PapssStoreRetentionWorker`: runs only when `RetentionDays` is set. A payment with an open recall is never purged.
 
+## PAPSS error code reference
+
+Source: PAPSS's own developer portal, `Reference -> Error Codes` (`art/docs/more-docs-from-papss/PAPSS Portal/Error Codes.dc.html`), captured 2026-09-16. PAPSS Middleware returns an internal numeric code for every processing outcome; each maps to the ISO 20022 `pacs.002` status/reason that actually belongs on the wire. **The numeric codes are PAPSS's own internal bookkeeping, never something SIPS Connect sends or receives on the wire** - this resolves the "numeric 1000-1010 vs ISO codes" contradiction in item 4 below: ISO codes are always correct for anything SIPS Connect builds or reads.
+
+| Internal | ISO / pacs.002 | Meaning | Family |
+| --- | --- | --- | --- |
+| 000 | `ACCP` | Success / Accepted | success |
+| 100 | `MS03` | Internal processing error | settlement |
+| 101 | `MS03` | Name enquiry cannot be verified | validation |
+| 500 | `AB05` / `TM01` | Timeout (**sender** sees `AB05`, **receiver** sees `TM01`) | timeout |
+| 501 | `MS02` | Payment rejected by receiver | validation |
+| 502 | `AB08` | Receiver disconnected | timeout |
+| 1000 | `MS03` | Generic error | validation |
+| 1001 | `MS03` | Generic validation error | validation |
+| 1002 | `FF01` | Invalid currency | validation |
+| 1003 | `FF01` | Invalid amount (<= 0) | validation |
+| 1004 | `DNOR` | Invalid DbtrAgt (sender BIC) | validation |
+| 1005 | `CNOR` | Invalid CdtrAgt (receiver BIC) | validation |
+| 1006 | `RC01` | Invalid InstgAgt | validation |
+| 1010 | `AM05` | Duplicate reference (in processing) | validation |
+| 1011 | `AM05` | Duplicate reference (already processed) | validation |
+| 1012 | `FF01` | Invalid IntrBkSttlmDt | validation |
+| 1013 | `FF01` | Invalid XML format | validation |
+| 1015 | `AB05` | Invalid acceptance time (timeout) | timeout |
+| 1016 | `AG09` | Invalid original reference | validation |
+| 1017 | `AG09` | Invalid original transaction status | validation |
+| 1018 | `RC01` | Sender not ACTIVE | validation |
+| 1019 | `AG01` | Currency not supported by schema | validation |
+| 1020 | `AM02` | Amount exceeds schema limit | validation |
+| 1021 | `AG10` | Sender BLOCKED | validation |
+| 1022 | `RR04` | Participant not mapped in schema | validation |
+| 1026 | `FF01` | Invalid XML field (non-XSD rule) | validation |
+| 1027 | `RC01` | Invalid receiver message field | validation |
+| 1028 | `FF01` | Invalid Original Settlement Date | validation |
+| 1029 | `RC01` | On-Us transaction detected | validation |
+| 1030 | `RC01` | Invalid originator | validation |
+| 1031 | `MS03` | Invalid national payment message | validation |
+| 1032 | `MS03` | Missing sender Settlement Region | validation |
+| 1033 | `MS03` | Missing instructed amount | validation |
+| 1034 | `MS05` | Missing receiver Settlement Region | validation |
+| 1035 | `MS03` | Missing FX Rate | validation |
+| 1036 | `MS05` | Account disabled | validation |
+| 1037 | `MS03` | Invalid sender agent | validation |
+| 1038 | `MS03` | Compliance check failure | validation |
+| 1039 | `MS03` | Invalid Local Instrument | validation |
+| 1040 | `MS03` | Invalid FX Rate | validation |
+| 2000 | `AM23` | Insufficient funds (clearing) | funds |
+| 3000 | `FF01` | No ACTIVE DS certificate | dsig |
+| 3001 | `FF01` | Missing digital signature | dsig |
+| 3002 | `FF01` | DSig does not protect entire XML | dsig |
+| 3003 | `FF01` | Invalid digital signature | dsig |
+| 3004 | `FF01` | Certificate expired or revoked | dsig |
+| 9001 | `MS03` | Settlement posting failure | settlement |
+
+`MS03` is used today as SIPS Connect's generic fallback for an ambiguous/unusable core-bank outcome (see item 4 below and `IncomingTransactionHandler.cs`/`PapssReasonCodes.GenericError`). It is a real code in PAPSS's own mapping table above, but **PAPSS's switch actively rejects a participant rejection reply whose `Rsn` is `MS03`** (confirmed live, TVR UAT 2026-10-10/11: `x-papssrtp-reqsts: RJCT/1026`, "Invalid XML field" - reproduced identically whether sent as `Rsn/Cd` or `Rsn/Prtry`, so the wrapper shape was never the issue). PAPSS support confirmed separately (2026-10-11, their own pacs.002.001.07 RJCT template) that this message's `Rsn` is always `Rsn/Cd` - no `Prtry` alternative exists here.
+
+The real requirement: `PapssReasonCodes.FromCoreBankReason` must never let a specific, already-known core-bank reason (`AC01`, `AC04`, `AC06`, `AM23`, etc.) fall through to the `MS03` fallback, since PAPSS has no usable answer for `MS03` itself. `AC01`/`AC04`/`AC06` were added to its `Confirmed` set for exactly this reason - they are standard account-rejection codes a core bank sends directly, outside PAPSS's own internal-middleware table above. The underlying question of what SIPS Connect should send when the core bank gives a truly unclassifiable answer (where even `MS03` is refused) remains open and should be raised with PAPSS support directly rather than guessed in code.
+
 ## Unresolved PAPSS behaviour
 
 The following PAPSS rules are not settled. SIPS Connect does not invent them, so every related setting defaults to "off".
