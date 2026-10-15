@@ -352,7 +352,7 @@ public class GatewayController(
     {
         "ORIGINAL_PAYMENT_NOT_FOUND" or "OPERATION_NOT_FOUND" => StatusCodes.Status404NotFound,
         "RECALL_ALREADY_OPEN" or "ORIGINAL_NOT_SETTLED" or "RECALL_WINDOW_EXPIRED" or "DECISION_ALREADY_MADE" => StatusCodes.Status409Conflict,
-        "RECALL_NOT_ALLOWED" => StatusCodes.Status422UnprocessableEntity,
+        "RECALL_NOT_ALLOWED" or "INVALID_REJECTION_REASON" => StatusCodes.Status422UnprocessableEntity,
         _ => null
     };
 

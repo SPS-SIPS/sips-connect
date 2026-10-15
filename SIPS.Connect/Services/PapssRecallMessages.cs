@@ -157,6 +157,17 @@ public static partial class PapssRecallMessages
 
     public static bool IsRecallId(string? value) => value is not null && RecallIdShape().IsMatch(value);
 
+    /// <summary>
+    /// The reasons PAPSS accepts when REJECTING a recall (camt.029 CxlStsRsnInf/Rsn/Cd), per PAPSS support (TVR UAT, 2026-10-15):
+    /// LEGL legal decision, AGNT agent decision, CUST customer decision, ARDT already returned, NOAS no answer from customer,
+    /// NOOR no original transaction received, AC04 closed account, AM04 insufficient funds. FOCR is a RETURN reason and is not valid here.
+    /// </summary>
+    public static readonly IReadOnlySet<string> RecallRejectionReasons = new HashSet<string>(StringComparer.Ordinal) { "LEGL", "AGNT", "CUST", "ARDT", "NOAS", "NOOR", "AC04", "AM04" };
+
+    /// <summary>The upper-cased, trimmed rejection reason when it is one PAPSS accepts; otherwise null.</summary>
+    public static string? AcceptedRejectionReason(string? reason)
+        => reason?.Trim().ToUpperInvariant() is { } code && RecallRejectionReasons.Contains(code) ? code : null;
+
     /// <summary>ISO ExternalCancellationReason1Code shape (1-4 letters/digits), upper-cased. No value list is enforced (sources contradict).</summary>
     public static string NormalizeReason(string? reason)
     {

@@ -23,6 +23,26 @@ namespace SIPS.Connect.PostgresTests;
 [Trait("Category", "Postgres")]
 public sealed class PapssInboundRecallDecisionTests
 {
+    // PAPSS support (2026-10-15) lists the only valid rejection reasons; FOCR (a return reason) drew RJCT/FF01 on TVR. The refusal happens
+    // before anything is recorded or submitted, so the bank can retry the SAME recall with a valid reason.
+    [Fact]
+    public async Task Reject_with_a_reason_PAPSS_does_not_accept_is_refused_before_anything_is_recorded_or_sent()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var payment = await SeedReceivedPayment(harness, "RX-D0", "E2E-RX-D0", "EGAFEGCX");
+        var recall = await SeedInboundRecall(provider, "CT02-RX-D0-RECALL", payment, "DUPL");
+
+        var refused = Assert.IsAssignableFrom<ObjectResult>(await Decide(harness, provider, recall.RequestMessageId, "REJECT", "FOCR"));
+        Assert.Equal(422, refused.StatusCode);
+        Assert.Empty(harness.Gateway_.Submitted);
+        var untouched = await harness.WithStorageAsync(db => db.PapssOperations.AsNoTracking().SingleAsync(x => x.Id == recall.Id));
+        Assert.Equal(PapssOutcome.InboundRecallAwaitingDecision, untouched.PapssOutcome);
+
+        Assert.IsType<OkObjectResult>(await Decide(harness, provider, recall.RequestMessageId, "REJECT", "CUST"));
+        Assert.Single(harness.Gateway_.Submitted);
+    }
+
     [Fact]
     public async Task Reject_submits_a_camt029_rejection_and_reaches_the_terminal_state()
     {
