@@ -294,3 +294,21 @@ With a local SDK and a local PostgreSQL server:
 SIPS_TEST_POSTGRES_CONNECTION="Host=localhost;Database=sips;Username=postgres;Password=test" \
   dotnet test SIPS.Connect.PostgresTests/SIPS.Connect.PostgresTests.csproj
 ```
+
+## Recall rejection reasons (camt.029)
+
+PAPSS support (TVR UAT, 2026-10-15) lists the only reasons accepted when a bank **rejects** a recall (`POST /api/v1/Gateway/Recall/Inbound/{recallId}/Decision` with `"decision": "REJECT"`). Any other reason is refused by SIPS Connect with **422 `INVALID_REJECTION_REASON`** before the decision is recorded, so the same recall can be retried with a valid one.
+
+| Code | Meaning | Use when |
+|---|---|---|
+| `LEGL` | Legal decision | The recall cannot be accepted for legal or regulatory reasons |
+| `AGNT` | Agent decision | An agent/bank involved refuses the request |
+| `CUST` | Customer decision | The beneficiary/customer refuses the request |
+| `ARDT` | Already returned | The original transaction has already been returned |
+| `NOAS` | No answer from customer | No response from the beneficiary |
+| `NOOR` | No original transaction received | The referenced original was never received |
+| `AC04` | Closed account number | The beneficiary account has been closed |
+| `AM04` | Insufficient funds | Not enough funds in the beneficiary account to process the return |
+
+`FOCR` ("following cancellation request") is a **return** reason for an ACCEPT's pacs.004, not a rejection reason: the first live camt.029 sent with `FOCR` was answered `RJCT/1013` with `FF01`. An ACCEPT's return reason is passed through (`DUPL` and `FOCR` both settled on TVR).
+

@@ -142,6 +142,11 @@ public sealed class PapssPaymentService(
         var payment = await store.FindByIdAsync(paymentId, ct)
             ?? throw new ParticipantRailException("ORIGINAL_PAYMENT_NOT_FOUND", "The received payment this recall names is no longer in the store.");
 
+        // Checked before the decision is recorded: PAPSS answered FF01 to a camt.029 whose reason was not one of its rejection codes,
+        // and a recorded decision can no longer be changed.
+        if (decision == "REJECT" && PapssRecallMessages.AcceptedRejectionReason(request.Reason) is null)
+            throw new ParticipantRailException("INVALID_REJECTION_REASON", $"A recall rejection reason must be one of {string.Join(", ", PapssRecallMessages.RecallRejectionReasons.Order(StringComparer.Ordinal))}.");
+
         var accept = decision == "ACCEPT";
         var outcome = await store.RecordInboundRecallDecisionAsync(recall.Id, accept, request.Reason, null, ct);
         if (outcome == PapssInboundRecallDecisionOutcome.Conflict)

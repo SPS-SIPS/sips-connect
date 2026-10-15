@@ -244,6 +244,28 @@ public sealed class PapssRecallUnitTests
     public void Recall_reason_is_passed_through_with_the_iso_shape_only(string reason, string expected)
         => Assert.Equal(expected, PapssRecallMessages.NormalizeReason(reason));
 
+    // PAPSS support (2026-10-15): the only reasons accepted when rejecting a recall. FOCR (a return reason) drew RJCT/FF01.
+    [Theory]
+    [InlineData("LEGL")]
+    [InlineData("agnt")]
+    [InlineData(" CUST ")]
+    [InlineData("ARDT")]
+    [InlineData("NOAS")]
+    [InlineData("NOOR")]
+    [InlineData("AC04")]
+    [InlineData("AM04")]
+    public void A_recall_rejection_accepts_each_reason_PAPSS_lists(string reason)
+        => Assert.Equal(reason.Trim().ToUpperInvariant(), PapssRecallMessages.AcceptedRejectionReason(reason));
+
+    [Theory]
+    [InlineData("FOCR")]
+    [InlineData("DUPL")]
+    [InlineData("AC01")]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public void A_recall_rejection_refuses_any_other_reason(string? reason)
+        => Assert.Null(PapssRecallMessages.AcceptedRejectionReason(reason));
+
     [Theory]
     [InlineData(null)]
     [InlineData(" ")]
