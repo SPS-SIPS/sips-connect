@@ -581,7 +581,7 @@ The current `FxResponse` fields are `Rates`, `SenderAmount`, `ExchangeAmount`, `
 
 SIPS Connect derives the sender BIC and country from its participant deployment, validates sender currency against that deployment, resolves the destination by an exact unique BIC, and validates receiver country, currency, and local instrument against fresh signed PAPSS discovery/readiness observations. A bank must not send a PAPSS ParticipantId, technical channel, PAPSS endpoint, or certificate identity as routing data.
 
-USD-to-local-currency PAPSS payment submission currently fails closed with `PAPSS_FX_FEE_NOT_READY` until the authoritative transaction FX/fee handoff is enabled. The FX endpoint remains indicative reference data only.
+USD-to-local-currency PAPSS payment submission fails closed with `PAPSS_FX_FEE_NOT_READY` unless cross-currency is enabled (`PapssFacing:CrossCurrencyEnabled`, and `PAPSS__CROSS_CURRENCY_ENABLED=true` on the Transactions Gateway). When enabled: send `papss.senderCurrency` `USD`, the receiver's local currency in `papss.receiverCurrency`, the amount **in USD**, and local instrument **`SSA3`** (`USDP` is USD to USD only and is refused with 422/400 before anything is sent). The Gateway fetches PAPSS's live FX quote for the payment and builds the PAPSS message from it (receiver amount and rate come from PAPSS, not from the bank). The FX endpoint is still indicative reference data only; an enquiry for a corridor the Gateway has not cached answers `FX_NOT_OBSERVED`. Returns and recalls of cross-currency payments are not yet supported.
 
 ## Callback decision loop
 

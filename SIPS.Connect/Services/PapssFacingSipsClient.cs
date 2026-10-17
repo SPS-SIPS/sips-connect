@@ -368,12 +368,16 @@ public sealed class PapssFacingSipsClient(
         if (!Code(x.SenderCurrency, 3) || !Code(x.ReceiverCurrency, 3) || !Code(x.Currency, 3)) throw new ArgumentException("PAPSS currency codes must be three uppercase ASCII letters.");
         if (!participant.SendingCurrencies.Contains(x.SenderCurrency, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The authenticated participant is not permitted to send the instructed currency.");
         if (!currencies.Contains(x.ReceiverCurrency, StringComparer.Ordinal)) throw new ArgumentException("The PAPSS destination does not support the selected receiver currency.");
-        if (x.SenderCurrency == "USD" && x.ReceiverCurrency != "USD")
+        var crossCurrency = x.SenderCurrency != x.ReceiverCurrency;
+        if (x.SenderCurrency == "USD" && x.ReceiverCurrency != "USD" && !options.CrossCurrencyEnabled)
             throw new ParticipantRailException("PAPSS_FX_FEE_NOT_READY", "USD-to-local-currency PAPSS payments remain disabled until the FX and fee contract is closed. FX enquiry is indicative only.");
+        // PAPSS (TVR UAT 2026-10-17): "Receiver currency for USD payments should be USD" - USDP is the USD-to-USD instrument; local-currency corridors use SSA3.
+        if (crossCurrency && string.Equals(x.LocalInstrument, "USDP", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("USDP is the USD-to-USD instrument; a cross-currency PAPSS payment must use the cross-currency local instrument (SSA3).");
         if (!x.LocalInstrument.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') || x.LocalInstrument.Length > 35) throw new ArgumentException("PAPSS local instrument is invalid.");
         // ISO ExternalPurpose1Code shape only (1-4 characters); PAPSS publishes no permitted list, so no value list is enforced.
         if (!string.IsNullOrWhiteSpace(x.PurposeCode)) { x.PurposeCode = x.PurposeCode.Trim().ToUpperInvariant(); if (x.PurposeCode.Length > 4 || !x.PurposeCode.All(char.IsAsciiLetterOrDigit)) throw new ArgumentException("PAPSS purpose code must be a 1-4 character ISO ExternalPurpose1Code."); }
-        if (!SupportsLocalInstrument(destination.PaymentSchemas, x.LocalInstrument)) throw new ArgumentException("The PAPSS destination does not support the selected local instrument.");
+        if (!SupportsLocalInstrument(destination.PaymentSchemas, x.LocalInstrument, crossCurrency ? x.ReceiverCurrency : null)) throw new ArgumentException("The PAPSS destination does not support the selected local instrument.");
         var policyInstruments = options.SpsPolicy.AllowedLocalInstruments.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
         if (policyInstruments.Length != 0 && !policyInstruments.Contains(x.LocalInstrument, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("The selected local instrument is restricted by SPS policy.");
         // No PaymentRequest mapping carries a debtor agent: like the domestic path, the sending participant is the
@@ -383,7 +387,7 @@ public sealed class PapssFacingSipsClient(
         if (!string.Equals(x.CreditorAgentBIC?.Trim(), x.ToBIC, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("The payment creditor agent does not match the transaction destination BIC.");
     }
 
-    private static bool SupportsLocalInstrument(IEnumerable<string> paymentSchemas, string localInstrument)
+    private static bool SupportsLocalInstrument(IEnumerable<string> paymentSchemas, string localInstrument, string? crossCurrencyReceiver = null)
     {
         static string Normalize(string value) => new(value.Where(char.IsAsciiLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
         var requested = Normalize(localInstrument);
@@ -391,7 +395,11 @@ public sealed class PapssFacingSipsClient(
         {
             if (string.Equals(schema.Trim(), localInstrument, StringComparison.OrdinalIgnoreCase)) return true;
             var segments = schema.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            return segments.Length != 0 && Normalize(segments[^1]) == requested;
+            if (segments.Length != 0 && Normalize(segments[^1]) == requested) return true;
+            // A cross-currency scheme names its corridor set in a middle segment (PS-SL-SLE-USD-SSA_3-USDP: SSA_3 is the SSA3 instrument) and the receiver currency.
+            return crossCurrencyReceiver is not null && segments.Length > 2
+                && segments[1..].Any(segment => Normalize(segment) == requested)
+                && segments.Any(segment => string.Equals(segment, crossCurrencyReceiver, StringComparison.OrdinalIgnoreCase));
         });
     }
 
