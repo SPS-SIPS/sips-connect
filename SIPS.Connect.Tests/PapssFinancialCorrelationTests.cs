@@ -218,6 +218,44 @@ public sealed class PapssFinancialCorrelationTests
         Assert.Null(directory.FinancialRequest);
     }
 
+    // TVR UAT 2026-10-17: PAPSS answers the USD-sender FX enquiry for a local-currency receiver only on the cross-currency instrument (SSA3);
+    // USDP is USD to USD ("Receiver currency for USD payments should be USD"). Off by default; on, SSA3 is matched on the scheme's middle segment.
+    private static PaymentRequestDto UsdToSle(string instrument) { var p = Payment(); p.Currency = "USD"; p.SenderCurrency = "USD"; p.ReceiverCurrency = "SLE"; p.ReceiverCountry = "SL"; p.LocalInstrument = instrument; return p; }
+    private static DirectoryScenario SierraLeone() => new() { Country = "SL", Currencies = ["SLE", "USD"], PaymentSchemas = ["PS-SL-SLE-USD-SSA_3-USDP", "PS-SL-SLE-SL1016-SL-SLE-SSA_3-DEF-All"] };
+
+    [Fact]
+    public async Task Cross_currency_is_admitted_on_SSA3_when_the_switch_is_on()
+    {
+        var directory = SierraLeone(); var options = Options(); options.CrossCurrencyEnabled = true;
+        var response = await Client(directory, options).PayAsync(Binding() with { SendingCurrencies = ["USD"] }, UsdToSle("SSA3"), CancellationToken.None);
+        Assert.NotNull(response); Assert.NotNull(directory.FinancialRequest);
+        Assert.Equal("SLE", Corridor(directory, "ReceiverCurrency")); Assert.Equal("USD", Corridor(directory, "SenderCurrency"));
+    }
+
+    [Fact]
+    public async Task Cross_currency_on_USDP_is_refused_before_anything_is_sent_even_when_enabled()
+    {
+        var directory = SierraLeone(); var options = Options(); options.CrossCurrencyEnabled = true;
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => Client(directory, options).PayAsync(Binding() with { SendingCurrencies = ["USD"] }, UsdToSle("USDP"), CancellationToken.None));
+        Assert.Contains("SSA3", error.Message); Assert.Null(directory.FinancialRequest);
+    }
+
+    [Fact]
+    public async Task Cross_currency_is_refused_when_the_destination_has_no_scheme_for_the_receiver_currency()
+    {
+        var directory = SierraLeone(); directory.PaymentSchemas = ["PS-SL-USD-USD-SSA_3-USDP"]; var options = Options(); options.CrossCurrencyEnabled = true;
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => Client(directory, options).PayAsync(Binding() with { SendingCurrencies = ["USD"] }, UsdToSle("SSA3"), CancellationToken.None));
+        Assert.Contains("does not support the selected local instrument", error.Message); Assert.Null(directory.FinancialRequest);
+    }
+
+    [Fact]
+    public async Task Cross_currency_stays_disabled_by_default_even_on_SSA3()
+    {
+        var directory = SierraLeone();
+        var error = await Assert.ThrowsAsync<ParticipantRailException>(() => Client(directory).PayAsync(Binding() with { SendingCurrencies = ["USD"] }, UsdToSle("SSA3"), CancellationToken.None));
+        Assert.Equal("PAPSS_FX_FEE_NOT_READY", error.Code); Assert.Null(directory.FinancialRequest);
+    }
+
     [Fact]
     public async Task Payment_decision_uses_common_ingress_and_accepts_only_technical_admission()
     {

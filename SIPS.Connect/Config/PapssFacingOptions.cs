@@ -15,6 +15,12 @@ public sealed class PapssFacingOptions
     public int ReadinessStaleSeconds { get; set; } = 300;
     public string LocalCountry { get; set; } = string.Empty;
     public string[] SendingCurrencies { get; set; } = [];
+    /// <summary>
+    /// USD-to-local-currency (cross-currency) PAPSS payments. Off by default (<c>PAPSS_FX_FEE_NOT_READY</c>). When on, the payment must use the
+    /// cross-currency local instrument (SSA3; USDP is USD to USD only) and the gateway must have PAPSS__CROSS_CURRENCY_ENABLED=true: it fetches the
+    /// PAPSS FX quote for the payment and builds InstdAmt (receiver currency) and XchgRate from it.
+    /// </summary>
+    public bool CrossCurrencyEnabled { get; set; }
     public string? CallbackMappingProfile { get; set; }
     public string? CallbackUrl { get; set; }
     public PapssResponderTrust ResponderTrust { get; set; } = new();
