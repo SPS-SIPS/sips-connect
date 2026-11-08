@@ -692,6 +692,30 @@ public sealed partial class PapssOperationStore
         => db.PapssOperations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
 
     /// <summary>The payment with this TxId; the OUTBOUND one (the bank's own TxId) wins over a received one.</summary>
+    /// <summary>
+    /// Received payments we accepted (and published to PAPSS) with no PAPSS final status after <paramref name="acceptedBefore"/>,
+    /// whose last pacs.028 is older than <paramref name="enquiredBefore"/> and that have fewer than <paramref name="maxAttempts"/> enquiries.
+    /// </summary>
+    public async Task<IReadOnlyList<PapssOperation>> InboundAwaitingCompletionAsync(DateTimeOffset acceptedBefore, DateTimeOffset enquiredBefore, int maxAttempts, int limit, CancellationToken ct)
+    {
+        var candidates = await db.PapssOperations.AsNoTracking()
+            .Where(x => x.Direction == PapssDirection.Inbound && x.Operation == PapssOperationType.Payment
+                && x.PapssOutcome == PapssOutcome.Accepted && x.GatewayState == PapssGatewayState.Admitted
+                && (x.StatusAt ?? x.ReceivedAt ?? x.CreatedAt) <= acceptedBefore)
+            .OrderBy(x => x.CreatedAt).Take(limit * 4).ToListAsync(ct);
+        var due = new List<PapssOperation>();
+        foreach (var payment in candidates)
+        {
+            var enquiries = await db.PapssOperations.AsNoTracking()
+                .Where(x => x.OriginalOperationId == payment.Id && x.Operation == PapssOperationType.StatusEnquiry)
+                .Select(x => x.CreatedAt).ToListAsync(ct);
+            if (enquiries.Count >= maxAttempts || enquiries.Count > 0 && enquiries.Max() > enquiredBefore) continue;
+            due.Add(payment);
+            if (due.Count == limit) break;
+        }
+        return due;
+    }
+
     public async Task<PapssOperation?> FindPaymentAsync(string txId, CancellationToken ct)
         => (await db.PapssOperations.AsNoTracking().Where(x => x.Operation == PapssOperationType.Payment && x.TxId == txId).ToListAsync(ct))
             .OrderBy(x => x.Direction == PapssDirection.Outbound ? 0 : 1).FirstOrDefault();

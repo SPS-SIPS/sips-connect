@@ -394,6 +394,7 @@ public static class DI
         services.AddScoped<IPapssCallbackGuard, PapssCallbackGuard>();
         services.AddScoped<IPapssPaymentDecisionPublisher, PapssPaymentDecisionPublisher>();
         services.AddHostedService<PapssPaymentDecisionOutboxWorker>();
+        services.AddHostedService<PapssInboundReconciliationWorker>();
         // PAPSS operation store: durable operations, bank push outbox and gateway reply outbox.
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<PapssOperationStore>();
