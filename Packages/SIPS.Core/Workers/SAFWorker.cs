@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SIPS.Core.Options;
@@ -27,6 +28,7 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
         await using var scope = _services.CreateAsyncScope();
         var storage = scope.ServiceProvider.GetRequiredService<IStorageBroker>() ?? throw new ArgumentNullException(nameof(IStorageBroker));
         var options = scope.ServiceProvider.GetRequiredService<CoreOptions>() ?? throw new ArgumentNullException(nameof(CoreOptions));
+        var papssProfile = scope.ServiceProvider.GetRequiredService<IConfiguration>()["PapssFacing:SecurityProfile"];
         var outgoing = scope.ServiceProvider.GetRequiredService<IOutgoingTransactionStatusHandler>() ?? throw new ArgumentNullException(nameof(IOutgoingTransactionStatusHandler));
         var isoService = scope.ServiceProvider.GetRequiredService<IISOMessageService>() ?? throw new ArgumentNullException(nameof(IISOMessageService));
 
@@ -36,6 +38,8 @@ public class SAFWorker(IScheduleConfig<SAFWorker> config, ILogger<SAFWorker> log
         // represent an actual return awaiting confirmation. ReadyForReturn payments
         // without a ReturnId are terminal for SAF and require operator action.
         var query = storage.ISOMessages
+            // Also exclude PAPSS rows already moved to CheckStatus before this fix.
+            .Where(x => string.IsNullOrEmpty(papssProfile) || x.BusinessService != papssProfile)
             .Where(x
                 => (x.Status == TransactionStatus.CheckStatus && (x.FromBIC == bic || x.ToBIC == bic)) ||
                    (x.Status == TransactionStatus.ReadyForReturn && x.ReturnId != null && x.ReturnId != "")
