@@ -252,12 +252,15 @@ public sealed class PapssPaymentService(
 
     /// <summary>
     /// A pacs.028 is only useful while the payment is non-final (evidence §E11: no pacs.002 received, stuck pending,
-    /// confirming finality) and only this participant's own (OUTBOUND) payments are enquired. Any minimum age is
+    /// confirming finality). Outbound payments are enquired while non-final; a received (INBOUND) one only once accepted and published. Any minimum age is
     /// NOT ESTABLISHED by PAPSS: PapssFacing:Status:EnquiryMinimumAgeSeconds (default unset = always enquire).
     /// </summary>
     public bool ShouldEnquire(PapssOperation payment)
     {
-        if (payment.Direction != PapssDirection.Outbound || Rules.IsFinal(payment.PapssOutcome) || payment.GatewayState == PapssGatewayState.Rejected) return false;
+        if (Rules.IsFinal(payment.PapssOutcome) || payment.GatewayState == PapssGatewayState.Rejected) return false;
+        // A received payment is enquired only once we accepted it and PAPSS has our acceptance (otherwise there is nothing to confirm).
+        if (payment.Direction == PapssDirection.Inbound
+            && !(payment.Operation == PapssOperationType.Payment && payment.PapssOutcome == PapssOutcome.Accepted && payment.GatewayState == PapssGatewayState.Admitted)) return false;
         return options.Status.EnquiryMinimumAgeSeconds is not { } minimum || clock.GetUtcNow() - payment.CreatedAt >= TimeSpan.FromSeconds(minimum);
     }
 

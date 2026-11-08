@@ -296,6 +296,56 @@ public sealed class PapssPaymentOperationTests
     }
 
     [Fact]
+    public async Task Received_payments_without_a_final_status_are_due_for_a_pacs028_and_either_answer_is_recorded()
+    {
+        await using var harness = await PostgresHarness.CreateAsync();
+        await using var provider = harness.BuildProvider();
+        var accepted = await RecordInbound(provider, harness, "CT02-IN-21", "TX-IN21", "E2E-IN21", "ACCP");
+        var second = await RecordInbound(provider, harness, "CT02-IN-22", "TX-IN22", "E2E-IN22", "ACCP");
+        await RecordInbound(provider, harness, "CT02-IN-23", "TX-IN23", "E2E-IN23", "RJCT", reason: "AC04");
+        await harness.WithStorageAsync(db => db.ISOMessages.Where(x => x.TxId == "TX-IN21" || x.TxId == "TX-IN22").ExecuteUpdateAsync(s => s
+            .SetProperty(x => x.PapssDecisionPublishedAt, DateTimeOffset.UtcNow).SetProperty(x => x.PapssDecisionAdmissionCode, "RECEIVED_AND_DURABLY_ADMITTED")));
+        foreach (var tx in new[] { "TX-IN21", "TX-IN22" }) await Lookup(harness, provider, c => c.GetPayment(tx, null, CancellationToken.None));
+
+        async Task<string[]> Due(TimeSpan acceptedAge, TimeSpan enquiredAge, int attempts)
+        {
+            using var scope = provider.CreateScope();
+            var now = harness.Clock.GetUtcNow();
+            var due = await scope.ServiceProvider.GetRequiredService<PapssOperationStore>().InboundAwaitingCompletionAsync(now - acceptedAge, now - enquiredAge, attempts, 10, CancellationToken.None);
+            return due.Select(x => x.TxId!).Order().ToArray();
+        }
+
+        // Only accepted-and-published payments; a rejected one has nothing to confirm; a young one is left alone.
+        Assert.Equal(new[] { "TX-IN21", "TX-IN22" }, await Due(TimeSpan.Zero, TimeSpan.Zero, 5));
+        Assert.Empty(await Due(TimeSpan.FromHours(1), TimeSpan.Zero, 5));
+
+        // One enquiry already sent for TX-IN21: not again before the retry interval, nor once the attempts are used up.
+        await harness.WithStorageAsync(db =>
+        {
+            db.PapssOperations.Add(new PapssOperation
+            {
+                Direction = PapssDirection.Outbound, Operation = PapssOperationType.StatusEnquiry, RequestMessageId = "SIPS-ENQ-21", MsgId = "SIPS-ENQ-21",
+                OriginalOperationId = accepted.Id, OriginalTxId = "TX-IN21", OriginalEndToEndId = "E2E-IN21", GatewayState = PapssGatewayState.Admitted,
+                PapssOutcome = PapssOutcome.Pending, BankDeliveryState = PapssDeliveryState.NotRequired, SignedRequest = Encoding.UTF8.GetBytes("<x/>"),
+                SourceCreatedAt = harness.Clock.GetUtcNow(), CreatedAt = harness.Clock.GetUtcNow(), UpdatedAt = harness.Clock.GetUtcNow()
+            });
+            return db.SaveChangesAsync(CancellationToken.None);
+        });
+        Assert.Equal(new[] { "TX-IN22" }, await Due(TimeSpan.Zero, TimeSpan.FromMinutes(30), 5));
+        Assert.Equal(new[] { "TX-IN22" }, await Due(TimeSpan.Zero, TimeSpan.Zero, 1));
+
+        // PAPSS's answers to the pacs.028 are recorded on the received payment: acceptance settles it, rejection rejects it.
+        var settled = await Status(provider, harness, PostgresHarness.StatusReport("PAPSS-S-211", "CT02-IN-21", "pacs.008.001.10", "TX-IN21", "E2E-IN21", "ACSC"));
+        Assert.Equal(PapssEventDisposition.Applied, settled.Disposition);
+        Assert.Equal(PapssOutcome.Settled, (await Stored(harness, "TX-IN21", PapssDirection.Inbound)).PapssOutcome);
+        var refused = await Status(provider, harness, PostgresHarness.StatusReport("PAPSS-S-221", "CT02-IN-22", "pacs.008.001.10", "TX-IN22", "E2E-IN22", "RJCT", "AC04"));
+        Assert.Equal(PapssEventDisposition.Applied, refused.Disposition);
+        var rejected = await Stored(harness, "TX-IN22", PapssDirection.Inbound);
+        Assert.Equal((PapssOutcome.Rejected, "RJCT"), (rejected.PapssOutcome, rejected.PaymentStatus));
+        Assert.Empty(await Due(TimeSpan.Zero, TimeSpan.Zero, 5));
+    }
+
+    [Fact]
     public async Task Uncorrelated_or_mismatching_pacs002_is_stored_for_operators_not_rejected_as_an_orphan()
     {
         await using var harness = await PostgresHarness.CreateAsync();

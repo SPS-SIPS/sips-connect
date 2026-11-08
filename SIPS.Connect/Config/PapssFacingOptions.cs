@@ -127,6 +127,22 @@ public sealed class PapssStatusOptions
     /// When set, a payment younger than this is answered from the store without a pacs.028.
     /// </summary>
     public int? EnquiryMinimumAgeSeconds { get; set; }
+
+    /// <summary>
+    /// A payment this participant RECEIVED and accepted whose PAPSS completion (pacs.002 final status) never arrived is
+    /// enquired with a pacs.028, and the answer (accepted or rejected) is recorded on the payment. Off by default: whether
+    /// PAPSS answers a pacs.028 from the receiving participant is confirmed per environment before this is enabled.
+    /// </summary>
+    public bool InboundReconciliationEnabled { get; set; }
+
+    /// <summary>Minutes after our acceptance before the first pacs.028 for a received payment.</summary>
+    public int InboundReconciliationAfterMinutes { get; set; } = 10;
+
+    /// <summary>Minutes between two pacs.028 for the same received payment.</summary>
+    public int InboundReconciliationRetryMinutes { get; set; } = 30;
+
+    /// <summary>Enquiries per received payment before it is left for an operator (listed by the unresolved-status view).</summary>
+    public int InboundReconciliationMaxAttempts { get; set; } = 5;
 }
 
 /// <summary>Outbound returns (pacs.004). See docs/PAPSS_OPERATION_STORE_CONFIG.md.</summary>
