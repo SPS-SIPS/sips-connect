@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SIPS.Core.Options;
@@ -26,11 +27,14 @@ public class TimeoutWorker(IScheduleConfig<TimeoutWorker> config, ILogger<Timeou
         await using var scope = _services.CreateAsyncScope();
         var storage = scope.ServiceProvider.GetRequiredService<IStorageBroker>() ?? throw new ArgumentNullException(nameof(IStorageBroker));
         var options = scope.ServiceProvider.GetRequiredService<CoreOptions>() ?? throw new ArgumentNullException(nameof(CoreOptions));
+        var papssProfile = scope.ServiceProvider.GetRequiredService<IConfiguration>()["PapssFacing:SecurityProfile"];
 
         var timeoutThreshold = DateTime.UtcNow.AddMinutes(-options.TransactionTimeoutMinutes);
 
         // Find transactions stuck in Pending state longer than the timeout
         var stuckTransactions = await storage.ISOMessages
+            // PAPSS settlement is tracked by its operation store, not domestic IPS recovery.
+            .Where(x => string.IsNullOrEmpty(papssProfile) || x.BusinessService != papssProfile)
             .Where(x => x.Status == TransactionStatus.Pending && x.Date <= timeoutThreshold)
             .ToListAsync(cancellationToken);
 
