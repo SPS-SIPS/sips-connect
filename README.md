@@ -1,8 +1,23 @@
-# Somali Instant Payment System (SIPS)
+# SPS Connect
 
-The **Somali Instant Payment System (SIPS)** repository contains **SIPS Connect**, the participant-side integration gateway for the Somali national instant-payment ecosystem.
+**SPS Connect** is the official product name of the participant-side integration gateway owned by **SOMALI PAYMENT SWITCH (SPS) LTD**. It connects participant core banking systems to both **domestic transactions through SIPS/SVIP (SmartVista/IPS)** and **cross-border transactions through the Pan-African Payment and Settlement System (PAPSS)**.
 
-SIPS Connect bridges the SIPS/SVIP switch with participant CoreBank systems. It handles ISO 20022 message orchestration, CoreBank JSON adaptation, transaction persistence, digital signing, signature verification, public-key lookup, idempotency, return safety, timeout recovery, SomQR services, dashboards, health checks, metrics, and operational configuration.
+Banks integrate through authenticated JSON APIs. SPS Connect handles rail selection, ISO 20022 message orchestration, JSON adaptation, digital signing and verification, transaction persistence, correlation, idempotency, callbacks and technical recovery. It also provides SomQR services, dashboards, health checks, metrics and operational configuration.
+
+SPS serves only as the technical connector participant. Settlement, pre-funding, liquidity management and financial settlement reconciliation remain the responsibility of participant banks and their PAPSS or sponsor arrangements. SPS Connect records and communicates network-reported payment outcomes for technical processing and traceability; it does not perform settlement.
+
+The repository, solution, project names, namespaces, configuration keys and deployment identifiers retain their existing `SIPS` / `SIPS.Connect` names. These technical identifiers do not change the official product name, **SPS Connect**.
+
+## Domestic and Cross-Border Transactions
+
+| Transaction rail | Service | Selection |
+|---|---|---|
+| Domestic SIPS | Domestic transactions through the existing SIPS/SVIP SmartVista/IPS integration | Omit `rail` or send `"rail": "SIPS"` |
+| PAPSS | Cross-border transactions through the configured PAPSS WP-SIPS service | Send `"rail": "PAPSS"`; requires PAPSS activation |
+
+The existing verification, payment, status and return endpoints support rail selection. PAPSS adds readiness, participant discovery, FX enquiries, durable operation lookups and recall workflows. Available currencies, instruments and operations depend on the deployed configuration and current PAPSS capabilities.
+
+The rail is an explicit routing choice, not something inferred from currency or destination country. Preserve it with the original transaction references for callbacks, status enquiries, returns and reporting. PAPSS is disabled by default; an explicitly selected PAPSS request must not silently fall back to domestic routing.
 
 ---
 
@@ -10,7 +25,7 @@ SIPS Connect bridges the SIPS/SVIP switch with participant CoreBank systems. It 
 
 This repository is owned by **SOMALI PAYMENT SWITCH (SPS) LTD**.
 
-**Technical leadership and implementation:** SIPS Connect was designed, built, deployed, and productionized by Abdulshakur Ahmed Aided ([@hanadderia](https://github.com/hanadderia)) within the Somali Payment Switch institutional context.
+**Technical leadership and implementation:** SPS Connect was designed, built, deployed, and productionized by Abdulshakur Ahmed Aided ([@hanadderia](https://github.com/hanadderia)) within the Somali Payment Switch institutional context.
 
 This repository is released under the **Apache License 2.0**. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
@@ -26,7 +41,7 @@ Release governance is documented through:
 
 ## Architecture Overview
 
-SIPS Connect is a modular .NET platform composed of:
+SPS Connect is a modular .NET platform composed of:
 
 - **SIPS.Connect** - API host, controllers, configuration endpoints, health checks, metrics, and runtime wiring.
 - **SIPS.Core** - payment orchestration, inbound/outbound handlers, callback orchestration, status mapping, recovery workers, and shared services.
@@ -42,6 +57,8 @@ The repository enforces explicit project references through [Directory.Build.pro
 
 ## Core Capabilities
 
+- Domestic SIPS/SVIP and cross-border PAPSS transaction routing through a common bank-facing JSON API.
+- PAPSS readiness, participant discovery, FX enquiries, operation tracking, callbacks and recall workflows.
 - Outbound payee verification, payment initiation, payment status inquiry, and return initiation.
 - Inbound switch message processing for verification, credit transfer, status, return, and completion flows.
 - ISO 20022 XML generation and parsing for payment, verification, status, return, and administrative messages.
@@ -61,7 +78,7 @@ The repository enforces explicit project references through [Directory.Build.pro
 
 ## Financial Safety Controls
 
-SIPS Connect includes payment-system controls designed to protect transaction correctness and operational traceability:
+SPS Connect includes payment-system controls designed to protect transaction correctness and operational traceability:
 
 - **Insert-first de-duplication:** inbound messages are persisted before processing so concurrent duplicates resolve deterministically.
 - **Message and transaction idempotency:** duplicate `MsgId` and `TxId` values are detected per message type.
@@ -98,7 +115,7 @@ Important configuration areas:
 
 ## PAPSS Integration
 
-SIPS Connect can route the existing participant operations to either the domestic IPS or PAPSS. Each deployment represents one participant bank. The bank identity is read from `Xades:BIC`; it is not selected from an HTTP identity claim or request payload.
+SPS Connect can route the existing participant operations to either the domestic IPS or PAPSS. Each deployment represents one participant bank. The bank identity is read from `Xades:BIC`; it is not selected from an HTTP identity claim or request payload.
 
 | Request rail | Destination | XAdES profile |
 |---|---|---|
@@ -148,30 +165,30 @@ Configuration reference:
 
 | Configuration | Meaning and use | Supplied by / example |
 |---|---|---|
-| `Xades:BIC` | The identity of the single participant represented by this SIPS Connect deployment. It is protected by the signature and used as the outbound Business Application Header (BAH) `From` value and the expected inbound BAH `To` value. | The participant bank and its certificate-registration process; for example `BANKSOSIXXX`. |
+| `Xades:BIC` | The identity of the single participant represented by this SPS Connect deployment. It is protected by the signature and used as the outbound Business Application Header (BAH) `From` value and the expected inbound BAH `To` value. | The participant bank and its certificate-registration process; for example `BANKSOSIXXX`. |
 | `Xades:CertificatePath`, `PrivateKeyPath`, `ChainPath` | The participant signing certificate, its private key, and the trust chain used to sign outbound WP-SIPS messages and verify trusted signed traffic. | Deployment/PKI administrators. Keep the private key and its passphrase in the deployment secret store. |
-| `PapssFacing:Enabled` | Deployment-wide switch for the PAPSS rail. When `false`, PAPSS requests are rejected and existing IPS routing remains unaffected. | SIPS Connect operator; enable only after trust, routing, and mappings have been validated. |
+| `PapssFacing:Enabled` | Deployment-wide switch for the PAPSS rail. When `false`, PAPSS requests are rejected and existing IPS routing remains unaffected. | SPS Connect operator; enable only after trust, routing, and mappings have been validated. |
 | `PapssFacing:IsoIngressUrl` | The PAPSS service endpoint to which every signed WP-SIPS request is posted. | PAPSS service operator; for example `https://papss.example/sips/messages`. |
-| `PapssFacing:AllowedHosts` | Explicit outbound-host allowlist for the PAPSS URL. The host in `IsoIngressUrl` must be listed here. | SIPS Connect security/operator team; for example `papss.example`. |
+| `PapssFacing:AllowedHosts` | Explicit outbound-host allowlist for the PAPSS URL. The host in `IsoIngressUrl` must be listed here. | SPS Connect security/operator team; for example `papss.example`. |
 | `PapssFacing:Environment` | Labels the configured PAPSS operating environment, such as UAT or production. It is required when PAPSS is enabled, but is not a participant identity or payment-routing field. | PAPSS service/operator deployment agreement; use the exact bilateral environment value. |
-| `PapssFacing:RemoteWpSipsIdentity` | The expected signed identity of the remote PAPSS WP-SIPS service. SIPS Connect writes it as outbound BAH `To` and requires it as inbound/response BAH `From`; it is not a receiver-bank BIC or a selectable participant. | PAPSS service operator; for example `PAPSS`. It must match PAPSS's certificate/identity contract exactly. |
+| `PapssFacing:RemoteWpSipsIdentity` | The expected signed identity of the remote PAPSS WP-SIPS service. SPS Connect writes it as outbound BAH `To` and requires it as inbound/response BAH `From`; it is not a receiver-bank BIC or a selectable participant. | PAPSS service operator; for example `PAPSS`. It must match PAPSS's certificate/identity contract exactly. |
 | `PapssFacing:ResponderTrust:CertificateSha256` | SHA-256 fingerprint pin for the PAPSS WP-SIPS response-signing certificate. It safely supplements legacy Guevara responses that do not yet carry WP-SIPS provenance metadata. | Derive from the approved PAPSS public certificate; 64 hexadecimal characters. Rotate deliberately with the certificate. |
 | `PapssFacing:ResponderTrust:Authority` | Authority that registered the pinned PAPSS response signer. | SPS trust-domain configuration; for example `SPS`. |
 | `PapssFacing:ResponderTrust:TrustProfileVersion` | Ownership/security profile under which the pinned signer is accepted. | Use the deployed XAdES trust profile, for example `SPS.XADES.BES.001@1.0.0`. |
 | `PapssFacing:ResponderTrust:RequiredExtendedKeyUsageOid` | EKU that the pinned PAPSS signing certificate must contain. | For the UAT certificate used for client authentication and signing, `1.3.6.1.5.5.7.3.2`. |
 | `PapssFacing:SecurityProfile` | The agreed WP-SIPS business-service identifier carried in BAH `BizSvc`. It tells both systems which message/security processing contract applies; it does not identify either party. | PAPSS/WP-SIPS integration contract; for example `SPS.PAPSS.FINANCIAL.001`. Use the exact value PAPSS supports. |
-| `PapssFacing:RequestTimeoutSeconds` | Maximum time allowed for a PAPSS request. | SIPS Connect operator, within operational limits. |
-| `PapssFacing:MaximumResponseBytes` | Maximum PAPSS response size accepted before processing is stopped. | SIPS Connect security/operator team. |
+| `PapssFacing:RequestTimeoutSeconds` | Maximum time allowed for a PAPSS request. | SPS Connect operator, within operational limits. |
+| `PapssFacing:MaximumResponseBytes` | Maximum PAPSS response size accepted before processing is stopped. | SPS Connect security/operator team. |
 | `PapssFacing:ReadinessStaleSeconds` | Freshness threshold for signed PAPSS Discovery and Readiness observations used to validate payments; it also governs PAPSS readiness health freshness. | Agreed operational policy. |
-| `PapssFacing:SpsPolicy:AllowedLocalInstruments` | Optional local restriction on PAPSS instruments. An empty array adds no local restriction; PAPSS remains authoritative through signed Discovery/Readiness data. | SIPS Connect operator, only when SPS deliberately imposes a narrower policy. |
+| `PapssFacing:SpsPolicy:AllowedLocalInstruments` | Optional local restriction on PAPSS instruments. An empty array adds no local restriction; PAPSS remains authoritative through signed Discovery/Readiness data. | SPS Connect operator, only when SPS deliberately imposes a narrower policy. |
 | `PapssFacing:LocalCountry` | Country of this deployment's participant, used as the sender country. It is not the receiver country. | Participant deployment data; ISO 3166-1 alpha-2, for example `SO`. |
 | `PapssFacing:SendingCurrencies` | Currencies this participant deployment may send on the PAPSS rail. | Participant deployment data; ISO 4217, for example `SOS`. |
-| `PapssFacing:CallbackMappingProfile` | Prefix selecting the JsonAdapter mappings used when translating verified PAPSS callbacks for the participant. | SIPS Connect integration team; for example `papss-callback-v1`. |
+| `PapssFacing:CallbackMappingProfile` | Prefix selecting the JsonAdapter mappings used when translating verified PAPSS callbacks for the participant. | SPS Connect integration team; for example `papss-callback-v1`. |
 | `PapssFacing:CallbackUrl` | Internal participant endpoint that receives verified and mapped PAPSS callbacks. | Participant/integration team; use an HTTPS endpoint controlled by the participant. |
 
 `RemoteWpSipsIdentity` and `SecurityProfile` are deliberately separate: the first answers **“who is the remote signed party?”**, while the second answers **“which WP-SIPS business service governs this message?”**. Neither value describes the destination bank of an individual payment.
 
-One SIPS Connect deployment represents one local participant. `Xades:BIC` supplies its protected sender identity; `PapssFacing` only adds the local country, sending currencies, PAPSS route, and callback transport. Authentication remains mandatory at the API boundary, but there is no participant registry or per-operation policy inside SIPS Connect. `SpsPolicy:AllowedLocalInstruments` is an optional SPS restriction; PAPSS-supported instruments are always learned from signed discovery/readiness data.
+One SPS Connect deployment represents one local participant. `Xades:BIC` supplies its protected sender identity; `PapssFacing` only adds the local country, sending currencies, PAPSS route, and callback transport. Authentication remains mandatory at the API boundary, but there is no participant registry or per-operation policy inside SPS Connect. `SpsPolicy:AllowedLocalInstruments` is an optional SPS restriction; PAPSS-supported instruments are always learned from signed discovery/readiness data.
 
 For the supplied Docker Compose manifests, configure those values with:
 
@@ -183,7 +200,7 @@ PAPSS_SPS_POLICY_LOCAL_INSTRUMENT=
 
 `PAPSS_SPS_POLICY_LOCAL_INSTRUMENT` should remain empty unless SPS deliberately restricts the PAPSS instruments reported by Discovery/Readiness. Do not configure `PAPSS_RECEIVER_COUNTRY`, `PAPSS_RECEIVER_CURRENCY`, `PAPSS_DESTINATION_BIC`, or an `AllowedCorridors` section; those values are transaction-selected or PAPSS-owned.
 
-Payment destination BIC and, where needed, receiver currency are transaction selections. SIPS Connect performs signed, correlated Discovery and Readiness lookups for every PAPSS payment, derives receiver country, and validates current status, online eligibility, currencies and payment schemas. No per-destination deployment entry is used.
+Payment destination BIC and, where needed, receiver currency are transaction selections. SPS Connect performs signed, correlated Discovery and Readiness lookups for every PAPSS payment, derives receiver country, and validates current status, online eligibility, currencies and payment schemas. No per-destination deployment entry is used.
 
 All PAPSS operations use one service ingress:
 
@@ -197,23 +214,25 @@ The existing `/Verify`, `/Payment`, `/Status`, and `/Return` JSON mappings accep
 
 ### Safe enablement
 
-1. Deploy SIPS Connect with `PapssFacing:Enabled=false`.
+1. Deploy SPS Connect with `PapssFacing:Enabled=false`.
 2. Verify normal SmartVista/IPS traffic and health.
 3. Install the local WP-SIPS signing certificate/private key and the PAPSS verification trust chain.
+4. Configure `/sips/messages`, its allowed host, the expected PAPSS identity, security profile, local country, and sending currency. Add an SPS instrument restriction only if deliberately required.
+5. Load the PAPSS request and callback JSON adapter mappings.
+6. Set `PapssFacing:Enabled=true` and restart SPS Connect so startup validation runs.
+7. Verify readiness and discovery, then test verification before enabling financial UAT flows.
+
+Complete the [PAPSS Activation Runbook](docs/PAPSS_ACTIVATION_RUNBOOK.md) for technical activation, domestic regression, bank acceptance, callback recovery and operational handover. Bank settlement and funding prerequisites are managed separately by the bank and PAPSS or its sponsor.
 
 ### PAPSS payment decisions and admission
 
-An inbound PAPSS `pacs.008.001.10` is verified with `WpSipsPapss`, delivered to the bank callback, and converted into one durable `ACCP` or `RJCT` decision. SIPS Connect persists the exact signed `pacs.002.001.12` before posting it separately to `POST /sips/messages`. Callback HTTP success acknowledges delivery only; its response body is not the business decision. Ambiguous handoffs are retried from the stored signed bytes, so neither a callback retry nor a timeout creates a second decision.
+An inbound PAPSS `pacs.008.001.10` is verified with `WpSipsPapss`, delivered to the configured bank transfer endpoint using the PAPSS mapping profile, and converted into one durable `ACCP` or `RJCT` decision when the bank supplies a recognized acceptance or explicit rejection. SPS Connect persists the exact signed `pacs.002.001.12` before posting it separately to `POST /sips/messages`. HTTP success alone acknowledges delivery only; the mapped bank response supplies the acceptance or rejection that SPS Connect publishes as a separate signed business decision. An empty, unrecognized or timed-out bank response requires reconciliation and does not automatically produce acceptance. Ambiguous handoffs are retried from the stored signed bytes, so neither a callback retry nor a timeout creates a second decision.
 
 `RECEIVED_AND_DURABLY_ADMITTED` and `EXACT_REPLAY` are technical admission outcomes. They do not mean beneficiary verification, payment acceptance, settlement, return completion, or authoritative status. Stable admission failures are exposed as `DUPLICATE_CONFLICT`, `AUTHORIZATION_REJECTED`, `REJECTED_BEFORE_EXTERNAL_EFFECT`, or `UNSUPPORTED_PROFILE`.
 
 ### Guevara certificate registration
 
-For every SIPS Connect deployment, Guevara must contain exactly one unambiguous active certificate record matching the signing certificate's issuer DN and serial number. The record must contain the certificate owner, exact represented participant BIC, environment, WP-SIPS security profile, required EKU, SHA-256 fingerprint, SPS authority, and a non-revoked/non-suspended status. The participant keeps its certificate and private key locally; no private key is sent to PAPSS Adapter or Guevara. PAPSS Adapter mTLS and PAPSS XML-signing certificates are not SIPS Connect settings.
-4. Configure `/sips/messages`, its allowed host, the expected PAPSS identity, security profile, local country, and sending currency. Add an SPS instrument restriction only if deliberately required.
-5. Load the PAPSS request and callback JSON adapter mappings.
-6. Set `PapssFacing:Enabled=true` and restart SIPS Connect so startup validation runs.
-7. Verify readiness, then test `Verification` before enabling financial UAT flows.
+For every SPS Connect deployment, Guevara must contain exactly one unambiguous active certificate record matching the signing certificate's issuer DN and serial number. The record must contain the certificate owner, exact represented participant BIC, environment, WP-SIPS security profile, required EKU, SHA-256 fingerprint, SPS authority, and a non-revoked/non-suspended status. The participant keeps its certificate and private key locally; no private key is sent to PAPSS Adapter or Guevara. PAPSS Adapter mTLS and PAPSS XML-signing certificates are not SPS Connect settings.
 
 Use `Sps.Sips.XmlSecurity.Xades` version `1.0.3` or later. Version `1.0.3` keeps the PAPSS identified-envelope signature while removing the PAPSS-only `FPEnvelope/@Id` from legacy IPS messages.
 
@@ -263,13 +282,13 @@ Single-node mode is intended for external switch connectivity only. Local self-r
 
 ## JSON Adapter Updates
 
-The JSON adapter files define the mapping between CoreBank/local JSON payloads and the internal SIPS Connect DTOs:
+The JSON adapter files define the mapping between CoreBank/local JSON payloads and the internal SPS Connect DTOs:
 
 - `jsonAdapter.json`
 - `jsonAdapter.node-a.json`
 - `jsonAdapter.node-b.json`
 
-For Docker-based local simulation, adapter files are mounted into the containers. After changing adapter mappings, restart the relevant SIPS Connect container:
+For Docker-based local simulation, adapter files are mounted into the containers. After changing adapter mappings, restart the relevant SPS Connect container:
 
 ```bash
 docker compose -f docker-compose.node-a.yml restart sips-connect-a
@@ -280,7 +299,7 @@ docker compose -f docker-compose.node-b.yml restart sips-connect-b
 
 ## API Surface
 
-Primary gateway endpoints:
+Primary gateway endpoints (Verify, Payment, Status and Return accept rail selection):
 
 - `POST /api/v1/gateway/Verify`
 - `POST /api/v1/gateway/Payment`
@@ -288,6 +307,17 @@ Primary gateway endpoints:
 - `POST /api/v1/gateway/Return`
 - `POST /api/v1/gateway/Retry/{id}`
 - `POST /api/v1/incoming`
+
+PAPSS-specific endpoints (subject to authentication, configuration and operation eligibility):
+
+- `POST /api/v1/Gateway/Readiness`
+- `POST /api/v1/Gateway/Discovery`
+- `POST /api/v1/Gateway/FX`
+- `POST /api/v1/Gateway/Recall`
+- `GET /api/v1/Gateway/Operations/{requestMessageId}`
+- `GET /api/v1/Gateway/Operations/Unresolved?limit=50`
+
+Technical admission is separate from the final business outcome. Preserve original identifiers across timeouts and retries, and use the operation store and authenticated callbacks to reconcile PAPSS outcomes. See the [bank integration guide](docs/PAPSS_BANK_INTEGRATION_GUIDE.md) for full request, response and callback contracts.
 
 Operational endpoints:
 
@@ -321,6 +351,10 @@ Targeted API test scripts are available in [SIPS.Connect/TestScripts](SIPS.Conne
 
 ## Documentation
 
+- [PAPSS Activation Runbook](docs/PAPSS_ACTIVATION_RUNBOOK.md)
+- [PAPSS Bank Integration Guide](docs/PAPSS_BANK_INTEGRATION_GUIDE.md)
+- [PAPSS Participant Adapter](docs/PAPSS_PARTICIPANT_ADAPTER.md)
+- [PAPSS Operation Store Configuration](docs/PAPSS_OPERATION_STORE_CONFIG.md)
 - [Auditor Navigation Guide](docs/reviewer-navigation-guide.md)
 - [Audit Readiness Q&A](docs/q-and-a-readiness.md)
 - [Repository Structure Overview](docs/REPOSITORY_STRUCTURE.md)
