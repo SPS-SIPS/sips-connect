@@ -6,6 +6,16 @@ SPS Connect (previously SIPS Connect) supports domestic SIPS and cross-border PA
 ghcr.io/sps-sips/sps-connect:2.0.0
 ```
 
+Release `2.0.0` was published on 9 November 2026 from source commit `24c5e83548e8d5262d53dc26d61ab3cb34362f31`. The [release build](https://github.com/SPS-SIPS/sips-connect/actions/runs/42590322976) completed successfully, and its registry manifest was verified for Linux AMD64 and ARM64.
+
+Exact image reference for this release:
+
+```text
+ghcr.io/sps-sips/sps-connect@sha256:ebc497bea76a3b5ab495db76e7169b27b1b718bcd0e5d76d52b0edf94dfa9892
+```
+
+Publication confirms the image build and registry upload; each bank still follows its release acceptance and deployment process.
+
 Use the numbered version approved for your bank. `edge` is a development image. `latest` changes when a release is published and should not be used as a fixed production reference. For an exact deployment artifact, use the release digest supplied by SPS.
 
 ## Access and download
