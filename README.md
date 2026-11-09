@@ -253,6 +253,8 @@ SPS Connect images are built on GitHub Actions and published to GitHub Container
 - Version tags such as `v2.0.1`, or manual release runs from `main`, publish the numbered version and `latest`.
 - The initial GHCR release uses version **2.0.0**, rebuilt from current source. Ordinary main builds do not overwrite numbered releases.
 
+Banks should use the [Bank Container Image Guide](docs/BANK_CONTAINER_INSTALLATION.md) for download and deployment instructions.
+
 See [Container Publishing](docs/CONTAINER_PUBLISHING.md) for the first `2.0.0` publication, versioning, package permissions and migration from Docker Hub. The workflow uses GitHub's built-in token and does not require Docker Hub credentials. Publishing an image does not deploy it.
 
 ---

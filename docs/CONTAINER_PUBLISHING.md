@@ -75,3 +75,53 @@ ghcr.io/sps-sips/sps-connect:2.0.0
 Retain the existing runtime environment, secrets, volumes, ports and command settings. Repository-root Compose manifests currently build the application locally; they are development/simulation configurations and are not automatically switched to registry pulls by this change. The separate consumer image is also unchanged. The existing `SIPS.Connect/build.command` now dispatches the GitHub workflow instead of building locally or pushing to Docker Hub. With GitHub CLI installed and authenticated, run `bash SIPS.Connect/build.command 2.0.1` from the repository root. The workflow must already exist on `main`, and the command only requests a run; check Actions for its result.
 
 The workflow builds and publishes images; it does not deploy or restart running services. Keep the previous deployment image/digest available for controlled rollback. No production certificates, private keys or environment files should be included in a build; the root `.dockerignore` excludes those local inputs.
+
+## Team release checklist
+
+The release owner is responsible for selecting reviewed source, choosing the version, checking publication and handing the approved artifact to banks.
+
+1. Update your local `main` and confirm the release commit and working tree. Complete the relevant tests and release review; do not publish a numbered version for an unreviewed source state.
+2. Choose an unused stable version greater than the previous release. Start at `2.0.0`; use `2.0.1` for the next compatible fix. Do not reuse a published version, even if the registry location has changed.
+3. Choose one publishing method:
+
+   ```bash
+   # Manual release of the current main commit through GitHub Actions:
+   bash SIPS.Connect/build.command 2.0.1
+
+   # Equivalent GitHub CLI command:
+   gh workflow run container.yml --repo SPS-SIPS/sips-connect --ref main -f version=2.0.1
+   ```
+
+   Alternatively, push `v2.0.1` from the exact reviewed commit as described above. Do not also dispatch a manual run for the same version.
+
+4. Follow the matching run in Actions. CLI examples:
+
+   ```bash
+   gh run list --repo SPS-SIPS/sips-connect --workflow container.yml --limit 5
+   gh run watch <RUN_ID> --repo SPS-SIPS/sips-connect --exit-status
+   ```
+
+5. Require a successful **Build both architectures and publish** step. Read **Published SPS Connect image** in the run summary and record the numbered tag, source commit and manifest digest.
+6. Inspect the numbered image with `docker buildx imagetools inspect`; confirm both `linux/amd64` and `linux/arm64`. Attestation entries may also appear in the manifest.
+7. Complete release UAT and record any known issues, required configuration changes and database migration/rollback implications. A successful container build proves compilation and image assembly, not bank acceptance or production readiness.
+8. Hand banks the approved numbered reference, exact digest, release notes and [bank container image guide](BANK_CONTAINER_INSTALLATION.md). Confirm the bank can authenticate and download before its deployment window. SPS technical support does not approve bank settlement readiness.
+
+Release handover template:
+
+```text
+Product: SPS Connect (previously SIPS Connect)
+Version: <MAJOR.MINOR.PATCH>
+Image: ghcr.io/sps-sips/sps-connect:<MAJOR.MINOR.PATCH>
+Exact image: ghcr.io/sps-sips/sps-connect@sha256:<MANIFEST_DIGEST>
+Source commit: <COMMIT_SHA>
+Build run: <GITHUB_ACTIONS_RUN_URL>
+Platforms: linux/amd64, linux/arm64
+Change summary: <USER_VISIBLE_CHANGES>
+Configuration or migrations: <REQUIRED_ACTIONS_OR_NONE>
+UAT evidence: <APPROVED_TEST_REPORT>
+Known issues: <ISSUES_OR_NONE>
+Rollback: <PREVIOUS_APPROVED_IMAGE_AND_COMPATIBILITY_NOTES>
+Release owner and support contact: <TEAM_CONTACT>
+```
+
+If the run fails before publication, fix the cause and rerun only after confirming the numbered version is absent. If publication succeeded but a later workflow step failed, inspect the registry first; do not delete or overwrite the numbered release. Issue a new version for changed content. Authentication/permission failures belong to the repository/package administrator; compilation failures belong to the application team.
