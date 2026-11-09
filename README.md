@@ -244,6 +244,19 @@ Detailed integration and mapping guidance:
 
 ---
 
+## Container Images and GitHub Actions
+
+SPS Connect images are built on GitHub Actions and published to GitHub Container Registry as `ghcr.io/sps-sips/sps-connect`, supporting `linux/amd64` and `linux/arm64`.
+
+- Pull requests to `main` validate the multi-platform Docker build without publishing.
+- Pushes to `main` publish `edge` and a source-commit tag.
+- Version tags such as `v2.0.1`, or manual release runs from `main`, publish the numbered version and `latest`.
+- The initial GHCR release uses version **2.0.0**, rebuilt from current source. Ordinary main builds do not overwrite numbered releases.
+
+See [Container Publishing](docs/CONTAINER_PUBLISHING.md) for the first `2.0.0` publication, versioning, package permissions and migration from Docker Hub. The workflow uses GitHub's built-in token and does not require Docker Hub credentials. Publishing an image does not deploy it.
+
+---
+
 ## Local Two-Node Simulation
 
 The two-node Docker topology simulates two independent participant gateways with separate PostgreSQL databases. This avoids local loopback collisions caused by strict `(MessageType, TxId)` de-duplication.
