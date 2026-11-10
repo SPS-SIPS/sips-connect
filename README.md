@@ -395,11 +395,13 @@ Targeted API test scripts are available in [SIPS.Connect/TestScripts](SIPS.Conne
 
 ## Official Container Releases and Team Publishing Guide
 
-SPS Connect (previously SIPS Connect) is built on GitHub Actions and published to GitHub Container Registry. Release **2.0.0** is available for **Linux AMD64 and ARM64**:
+SPS Connect (previously SIPS Connect) is built on GitHub Actions and published to GitHub Container Registry. Release **2.0.1** is available for **Linux AMD64 and ARM64**:
 
 ```bash
-docker pull ghcr.io/sps-sips/sps-connect:2.0.0
+docker pull ghcr.io/sps-sips/sps-connect:2.0.1
 ```
+
+See [2.0.1 release notes](docs/RELEASE_2.0.1.md) for changes, migration requirements and the remaining notification-recovery limitation.
 
 Banks should use an approved numbered release or its exact digest. `latest` follows the most recently published stable release; `edge` is for development builds.
 
@@ -410,7 +412,7 @@ Banks should use an approved numbered release or its exact digest. `latest` foll
 To request the next release from the reviewed `main` commit, use an unused version, for example:
 
 ```bash
-bash SIPS.Connect/build.command 2.0.1
+bash SIPS.Connect/build.command 2.0.2
 ```
 
 This command requires an authenticated GitHub CLI and starts the build on GitHub. Follow the run to completion and verify the published digest before handing the version to banks. Numbered releases cannot be replaced by the publishing workflow. Publishing an image does not deploy it or activate PAPSS.
