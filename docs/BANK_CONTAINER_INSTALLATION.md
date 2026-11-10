@@ -3,18 +3,20 @@
 SPS Connect (previously SIPS Connect) supports domestic SIPS and cross-border PAPSS integration. The official container image is hosted in the Somali Payment Switch GitHub organization:
 
 ```text
-ghcr.io/sps-sips/sps-connect:2.0.0
+ghcr.io/sps-sips/sps-connect:2.0.1
 ```
 
-Release `2.0.0` was published on 9 November 2026 from source commit `24c5e83548e8d5262d53dc26d61ab3cb34362f31`. The [release build](https://github.com/SPS-SIPS/sips-connect/actions/runs/42590322976) completed successfully, and its registry manifest was verified for Linux AMD64 and ARM64.
+Release `2.0.1` was published on 10 November 2026 from source commit `1f46de6a23cd5a87d0d79b2a34fe79621e231a1e`. The [release build](https://github.com/SPS-SIPS/sips-connect/actions/runs/42785085722) completed successfully, and its registry manifest was verified for Linux AMD64 and ARM64.
 
 Exact image reference for this release:
 
 ```text
-ghcr.io/sps-sips/sps-connect@sha256:ebc497bea76a3b5ab495db76e7169b27b1b718bcd0e5d76d52b0edf94dfa9892
+ghcr.io/sps-sips/sps-connect@sha256:0e81ebcf7083ad7193ac200d6b3478fe48c7ef13b1bc4ad9344b31627f1bface
 ```
 
 Publication confirms the image build and registry upload; each bank still follows its release acceptance and deployment process.
+
+Review the [2.0.1 release notes](RELEASE_2.0.1.md), especially migration/upgrade requirements and the remaining notification-recovery limitation.
 
 Use the numbered version approved for your bank. `edge` is a development image. `latest` changes when a release is published and should not be used as a fixed production reference. For an exact deployment artifact, use the release digest supplied by SPS.
 
@@ -26,8 +28,8 @@ If the package is private, SPS must grant the bank's authorized GitHub identity 
 # Private packages only; GHCR_READ_TOKEN comes from your secret-management process.
 printf '%s' "$GHCR_READ_TOKEN" | docker login ghcr.io -u <GITHUB_USERNAME> --password-stdin
 
-docker pull ghcr.io/sps-sips/sps-connect:2.0.0
-docker buildx imagetools inspect ghcr.io/sps-sips/sps-connect:2.0.0
+docker pull ghcr.io/sps-sips/sps-connect:2.0.1
+docker buildx imagetools inspect ghcr.io/sps-sips/sps-connect:2.0.1
 ```
 
 The release supports Linux AMD64 and ARM64. Docker selects the matching platform automatically. The token is a registry download credential, not a Gateway API credential.
@@ -39,7 +41,7 @@ In your bank-managed Compose service, change only the image reference:
 ```yaml
 services:
   sps-connect:
-    image: ghcr.io/sps-sips/sps-connect:2.0.0
+    image: ghcr.io/sps-sips/sps-connect:2.0.1
     # Retain the existing environment, ports, volumes, networks and restart settings.
 ```
 
