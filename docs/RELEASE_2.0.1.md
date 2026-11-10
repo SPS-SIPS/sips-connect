@@ -26,3 +26,11 @@ ghcr.io/sps-sips/sps-connect:2.0.1
 ```
 
 Use the digest from the successful release workflow summary for an exact deployment reference. Version 2.0.0 remains available for rollback, subject to database/configuration compatibility review. Publication does not deploy bank systems or activate PAPSS.
+
+## Verified publication
+
+Published 10 November 2026 from source commit `1f46de6a23cd5a87d0d79b2a34fe79621e231a1e` through the [successful release run](https://github.com/SPS-SIPS/sips-connect/actions/runs/42785085722). Registry inspection confirmed `linux/amd64` and `linux/arm64`; `latest` pointed to the same manifest at verification.
+
+```text
+ghcr.io/sps-sips/sps-connect@sha256:0e81ebcf7083ad7193ac200d6b3478fe48c7ef13b1bc4ad9344b31627f1bface
+```
