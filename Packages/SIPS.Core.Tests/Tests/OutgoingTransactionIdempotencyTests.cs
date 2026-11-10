@@ -113,7 +113,7 @@ public sealed class OutgoingTransactionIdempotencyTests
         Assert.Equal(0, h.SendCount);
     }
 
-    private static string NetworkReport(string status, string txId, string localId)
+    internal static string NetworkReport(string status, string txId, string localId)
     {
         var xml = PaymentRequestResponseBuilder.Build(new PaymentRequestResponseBuilder.Response
         {

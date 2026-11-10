@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using System.Xml.Linq;
 using System.Text;
 using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Helpers;
@@ -225,21 +224,8 @@ public sealed class OutgoingTransactionHandler(
         out PaymentRequestResponseBuilder.Response? rejection)
     {
         rejection = null;
-        if (original.Status != PostgreSQL.Enums.TransactionStatus.Failed
-            || original.Response is not { Length: > 0 }) return false;
-        var xml = Encoding.UTF8.GetString(original.Response);
-        if (!TryParse(xml, out var report) || report is null
-            || !string.Equals(report.TxId, original.TxId, StringComparison.Ordinal)
-            || string.IsNullOrWhiteSpace(original.TxId)
-            || !string.Equals(report.Original?.EndToEndId, original.EndToEndId, StringComparison.Ordinal))
-            return false;
-        // The general parser defaults a missing TxSts to RJCT. Require an actual
-        // single network-reported rejection rather than treating that filler as evidence.
-        XNamespace ns = "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12";
-        var entries = XDocument.Parse(xml).Descendants(ns + "TxInfAndSts").ToArray();
-        if (entries.Length != 1 || (string?)entries[0].Element(ns + "TxSts") != RJCT) return false;
-        rejection = report;
-        return true;
+        return original.Status == PostgreSQL.Enums.TransactionStatus.Failed
+            && DomesticStatusEvidence.TryReadStored(original, out rejection) && rejection!.Status == RJCT;
     }
 
     private static void NormalizeBillPaymentContract(PaymentRequestDto message)
