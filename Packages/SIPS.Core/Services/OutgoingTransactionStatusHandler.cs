@@ -88,12 +88,23 @@ public sealed class OutgoingTransactionStatusHandler(
             if (isoMessage == null)
                 return Response<PaymentResponseDto>.Fail("Transaction not found", System.Net.HttpStatusCode.NotFound);
 
+            if (isoMessage.Status == TransactionStatus.Failed)
+            {
+                if (!DomesticStatusEvidence.TryReadStored(isoMessage, out var rejected) || rejected!.Status != RJCT)
+                    return PendingResult(isoMessage, "Recovery ended without a confirmed network rejection. Reconciliation is required.");
+                return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+                {
+                    Status = RJCT, TxId = isoMessage.TxId ?? "", EndToEndId = isoMessage.EndToEndId ?? "",
+                    Reason = rejected.Reason, AdditionalInfo = rejected.AdditionalInfo
+                });
+            }
+            if (isoMessage.Status == TransactionStatus.ReadyForReturn && string.IsNullOrWhiteSpace(isoMessage.ReturnId))
+                return PendingResult(isoMessage, "Manual return/reconciliation intervention is required.");
+
             // Guard: Don't reprocess transactions with terminal statuses
             // Scenario 1 (Operator): ReadyForReturn with NO ReturnId is terminal for SAF (awaiting manual intervention).
             // Scenario 2 (Returns): ReadyForReturn WITH ReturnId is NOT terminal (SAF must query IPS for pacs.028).
-            if (isoMessage.Status == TransactionStatus.Success ||
-                isoMessage.Status == TransactionStatus.Failed ||
-                (isoMessage.Status == TransactionStatus.ReadyForReturn && string.IsNullOrWhiteSpace(isoMessage.ReturnId)))
+            if (isoMessage.Status == TransactionStatus.Success)
             {
                 _logger.LogInformation("[{CorrelationId}] Transaction {TxId} already has terminal status {Status}. Returning cached status without reprocessing.",
                     cid, isoMessage.TxId, isoMessage.Status);
@@ -132,30 +143,27 @@ public sealed class OutgoingTransactionStatusHandler(
             {
                 responseMessage = await _sips.SendAsync(url, signed, ct, cid);
             }
-            var responseMessageStatus = await HandleSIPSCallExceptionAsync(record, isoMessage, responseMessage, ct, cid);
-            if (!responseMessageStatus.IsSuccess)
-                return responseMessageStatus;
+            // Transport success is not business finality. Stop before interpreting
+            // any body from a failed HTTP exchange or an untrusted signature.
+            if (responseMessage is null || !responseMessage.IsSuccess
+                || (int)responseMessage.StatusCode < 200 || (int)responseMessage.StatusCode >= 300
+                || string.IsNullOrWhiteSpace(responseMessage.Data))
+                return await KeepPendingAsync(isoMessage, "Network status enquiry failed; reconciliation is required.");
+            var (verified, _) = await _signature.VerifyAsync(responseMessage.Data, ct);
+            if (!verified)
+                return await KeepPendingAsync(isoMessage, "Network status signature is invalid; reconciliation is required.");
+            if (!DomesticStatusEvidence.TryRead(isoMessage, responseMessage.Data, out var parsed))
+                return await KeepPendingAsync(isoMessage, "Network report is missing status or does not match the original references; reconciliation is required.");
+            var rs = parsed!;
+            if (rs.Status != ACSC && rs.Status != RJCT)
+                return await KeepPendingAsync(isoMessage, $"Network status {rs.Status} is not final; reconciliation will continue.");
 
-            // Step 4: Parse and persist SIPS response (single persist)
-            if (!TryParse(responseMessage?.Data!, out var rs) || rs == null)
-            {
-                _logger.LogError("[{CorrelationId}] Failed to parse IPS status response: {message}", cid, responseMessage?.Data ?? "");
-                using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-                await _isoService.MarkForCheckStatusAsync(isoMessage, "Failed to parse IPS status response", updateCts.Token, incrementRound: false);
-
-                // Return PDNG for SAF - will retry on next run
-                return Response<PaymentResponseDto>.Success(new PaymentResponseDto
-                {
-                    Status = PDNG,
-                    TxId = isoMessage.TxId ?? string.Empty,
-                    EndToEndId = isoMessage.EndToEndId ?? string.Empty,
-                    Reason = "Status check pending - IPS response parsing failed",
-                    AdditionalInfo = "IPS status response invalid. Transaction marked for retry."
-                });
-            }
-
-            // Use StatusOrchestrator to map IPS status code consistently
-            var finalStatus = _statusOrchestrator.MapSingleStatus(rs.Status ?? RJCT, "IPS");
+            // Persist only verified, correlated, explicitly final network evidence.
+            // Preserve it even when subsequent bank notification needs retry.
+            isoMessage.Response = Encoding.UTF8.GetBytes(responseMessage.Data);
+            using (var evidenceCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10)))
+                await _persistence.ISOMessageResponseAsync(isoMessage, evidenceCts.Token);
+            var finalStatus = rs.Status == ACSC ? TransactionStatus.Success : TransactionStatus.Failed;
 
             // Check if this is an INCOMING return scenario (original payment marked ReadyForReturn)
             // This happens when IncomingReturnTransactionHandler received pacs.004 but pacs.002 never arrived
@@ -365,137 +373,28 @@ public sealed class OutgoingTransactionStatusHandler(
 
 
 
-    private async Task<Response<PaymentResponseDto>> HandleSIPSCallExceptionAsync(
-    ISOMessageStatus record,
-    ISOMessage isoMessage,
-    Response<string>? responseMessage,
-    CancellationToken ct,
-    string correlationId)
-    {
-        // Handle timeout, bad gateway, or connection errors FIRST - mark for SAF retry
-        if (responseMessage == null ||
-            responseMessage.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
-            responseMessage.StatusCode == System.Net.HttpStatusCode.BadGateway ||
-            responseMessage.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+    private static Response<PaymentResponseDto> PendingResult(ISOMessage message, string detail)
+        => Response<PaymentResponseDto>.Success(new PaymentResponseDto
         {
-            var statusDescription = responseMessage?.StatusCode.ToString() ?? "Connection Error";
-            _logger.LogWarning("[{CorrelationId}] IPS status request timeout/connection error - marking for SAF retry. Status: {Status}",
-                correlationId, statusDescription);
-            using var localDbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-            await _isoService.MarkForCheckStatusAsync(
-                isoMessage,
-                $"IPS status request timeout/connection error: {statusDescription}",
-                localDbCts.Token,
-                incrementRound: false);
-            return Response<PaymentResponseDto>.Fail(
-                "Request to IPS timed out or connection error - transaction marked for retry",
-                responseMessage?.StatusCode ?? System.Net.HttpStatusCode.InternalServerError);
-        }
-
-        // Check for missing data (after timeout/connection error check)
-        if (responseMessage.Data == null)
-        {
-            return await LogPersistAndReturnAsync(
-                record,
-                logMessage: "Failed to get valid response from SIPS",
-                persistMessage: "Failed to get valid response from SIPS",
-                data: "",
-                failMessage: "Failed to get Valid Response from SIPS",
-                statusCode: System.Net.HttpStatusCode.BadRequest,
-                ct: ct);
-        }
-
-        // Handle bad request or unauthorized responses
-        if (responseMessage.StatusCode == System.Net.HttpStatusCode.BadRequest ||
-            responseMessage.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-        {
-            return await LogPersistAndReturnAsync(
-                record,
-                logMessage: responseMessage.Message,
-                persistMessage: "Failed to get valid response from SIPS",
-                data: responseMessage.Data,
-                failMessage: "Failed to get Valid Response from SIPS",
-                statusCode: responseMessage.StatusCode,
-                ct: ct);
-        }
-
-        // Verify signature
-        var (ok, verbose) = await _signature.VerifyAsync(responseMessage.Data, ct);
-        if (!ok)
-        {
-            _logger.LogWarning("[{CorrelationId}] Failed to verify IPS status signature: {Verbose}. Marking for SAF status check retry.", correlationId, verbose);
-            using var localDbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
-            await _isoService.MarkForCheckStatusAsync(
-                isoMessage,
-                "Failed to verify IPS signature on status response",
-                localDbCts.Token,
-                incrementRound: false);
-            
-            // Return PDNG instead of FAIL - request reached IPS, but status response signature is suspect.
-            // SAF will retry the status inquiry on the next run.
-            return Response<PaymentResponseDto>.Success(new PaymentResponseDto
-            {
-                Status = PDNG,
-                TxId = isoMessage.TxId ?? string.Empty,
-                EndToEndId = isoMessage.EndToEndId ?? string.Empty,
-                Reason = "Pending - IPS status signature verification failed",
-                AdditionalInfo = "IPS status inquiry received but response signature is invalid. Marked for retry."
-            });
-        }
-
-        // If all checks pass, return a successful response.
-        return Response<PaymentResponseDto>.Success(new PaymentResponseDto
-        {
-            Status = ACSC,
+            Status = PDNG, TxId = message.TxId ?? "", EndToEndId = message.EndToEndId ?? "",
+            Reason = "OUTCOME_UNRESOLVED",
+            AdditionalInfo = detail + " Do not automatically reverse or create a replacement payment."
         });
-    }
 
-    // verification delegated to shared signature service
-
-    private Task<Response<PaymentResponseDto>> LogPersistAndReturnAsync(
-        ISOMessageStatus record,
-        string logMessage,
-        string persistMessage,
-        string data,
-        string failMessage,
-        System.Net.HttpStatusCode statusCode,
-        CancellationToken ct)
+    private async Task<Response<PaymentResponseDto>> KeepPendingAsync(ISOMessage message, string detail)
     {
-        _logger.LogError("Failed to receive valid response from IPS: {Message}", logMessage);
-        // Note: SAF marking handled in HandleSIPSCallExceptionAsync
-        return Task.FromResult(Response<PaymentResponseDto>.Fail(failMessage, statusCode));
+        using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
+        if (message.Status == TransactionStatus.ReadyForReturn)
+        {
+            // Preserve the existing return workflow while its network result is uncertain.
+            message.AdditionalInfo = detail;
+            await _persistence.ISOMessageResponseAsync(message, dbCts.Token);
+        }
+        else
+            await _isoService.MarkForCheckStatusAsync(message, detail, dbCts.Token, incrementRound: false);
+        return PendingResult(message, detail);
     }
 
-    // Note: PersistISOMessageAsync removed - we now use single persist in main flow
-    // Status mapping handled by StatusOrchestrator
-    // Parent and child status updated together before single persist call
-
-    private static bool TryParse(string message, out PaymentRequestResponseBuilder.Response? response)
-    {
-        try
-        {
-            response = PaymentRequestResponseBuilder.Parse(message);
-
-            if (response == null)
-            {
-                return false;
-            }
-
-            return true;
-        }
-        catch
-        {
-            // XML parsing exceptions (e.g., "Root element is missing")
-            response = null;
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Calls CoreBank to reverse a credit for an incoming return transaction.
-    /// This is triggered by SAF when a ReadyForReturn transaction is confirmed via pacs.028.
-    /// This is the fallback path when pacs.002 never arrived.
-    /// </summary>
     private async Task<bool> CallCoreBankReturnAsync(
         ISOMessage isoMessage,
         CancellationToken ct,

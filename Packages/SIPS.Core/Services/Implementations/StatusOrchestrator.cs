@@ -90,7 +90,9 @@ public sealed class StatusOrchestrator : IStatusOrchestrator
             SUCC => TransactionStatus.Success,
             RJCT => TransactionStatus.Failed,
             MISS => TransactionStatus.Failed,
-            "" => TransactionStatus.Failed, // Empty/null treated as failure
+            "PDNG" or "ACSP" or "ACCP" => TransactionStatus.CheckStatus,
+            _ when string.Equals(source, "IPS", StringComparison.OrdinalIgnoreCase) => TransactionStatus.CheckStatus,
+            "" => TransactionStatus.Failed, // Non-network contracts retain existing failure semantics
             _ => TransactionStatus.Failed // Unknown codes treated as failure
         };
     }

@@ -380,6 +380,7 @@ Targeted API test scripts are available in [SIPS.Connect/TestScripts](SIPS.Conne
 
 ## Documentation
 
+- [Domestic Status and Recovery Safety](docs/STATUS_RECOVERY_SAFETY.md)
 - [PAPSS Activation Runbook](docs/PAPSS_ACTIVATION_RUNBOOK.md)
 - [PAPSS Bank Integration Guide](docs/PAPSS_BANK_INTEGRATION_GUIDE.md)
 - [PAPSS Participant Adapter](docs/PAPSS_PARTICIPANT_ADAPTER.md)
