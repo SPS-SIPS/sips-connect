@@ -44,6 +44,7 @@ namespace SIPS.Core.Tests.Tests
             public Task<ISOMessageStatus> RecordISOMessageStatusAsync(ISOMessageStatus status, CancellationToken ct) => Task.FromResult(status);
             public Task<ISOMessage> ISOMessageResponseAsync(ISOMessage message, CancellationToken ct) { LastToken = ct; return Task.FromResult(message); }
             public Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus status, CancellationToken ct) { LastToken = ct; return Task.FromResult(status); }
+            public Task<ISOMessage?> GetDomesticOutgoingByLocalIdAsync(string localId, string fromBic, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
             public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
             public Task<ISOMessage?> GetISOMessageByReturnIdAsync(string returnId, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
             public Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);

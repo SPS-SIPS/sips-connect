@@ -72,6 +72,7 @@ public sealed class OutgoingTransactionStatusHandler_CompletionNotification_Test
             return Task.FromResult(status);
         }
 
+        public Task<ISOMessage?> GetDomesticOutgoingByLocalIdAsync(string localId, string fromBic, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
         public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct)
             => Task.FromResult(_messageToReturn);
 

@@ -56,6 +56,10 @@ namespace SIPS.PostgreSQL.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("date");
 
+                    b.Property<string>("DomesticRequestId")
+                        .HasColumnType("text")
+                        .HasColumnName("domesticrequestid");
+
                     b.Property<string>("EndToEndId")
                         .HasColumnType("text")
                         .HasColumnName("endtoendid");
@@ -162,6 +166,15 @@ namespace SIPS.PostgreSQL.Migrations
 
                     b.HasIndex("UETR")
                         .HasDatabaseName("ix_iso_msg_uetr");
+
+                    b.HasIndex("FromBIC", "DomesticRequestId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_domestic_outgoing_local_id")
+                        .HasFilter("\"domesticrequestid\" IS NOT NULL");
+
+                    b.HasIndex("FromBIC", "EndToEndId")
+                        .HasDatabaseName("ix_domestic_local_id_lookup")
+                        .HasFilter("\"messagetype\" = 'TransactionRequest' AND (\"businessservice\" IS NULL OR \"businessservice\" = '')");
 
                     b.HasIndex("MessageType", "MsgId")
                         .IsUnique()

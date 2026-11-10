@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Text;
 using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Helpers;
@@ -43,16 +45,23 @@ public sealed class OutgoingTransactionHandler(
         using var _totalTrack = SipsMetrics.TrackStep("Outgoing", "Transaction", "Total");
         _logger.LogInformation("Processing Outgoing Transaction Request");
         _logger.LogDebug("[OutgoingTransactionHandler] HandleAsync start");
+        if (string.IsNullOrWhiteSpace(message.EndToEndId))
+            return Response<PaymentResponseDto>.BadRequest(null, "localId (EndToEndId) is required for domestic outgoing payments and must be reused on retries.");
+
         var url = _configuration.SIPS ?? throw new InvalidOperationException("SIPS not found in configuration.");
         var fromBIC = _configuration.BIC ?? throw new InvalidOperationException("BIC not found in configuration.");
         var ourAgentBic = _configuration.Agent ?? throw new InvalidOperationException("Agent BIC not found in configuration.");
         
-        // Step 0: Enforce TxId as the sovereign anchor (Delta 2)
-        var txId = !string.IsNullOrWhiteSpace(message.TxId) ? message.TxId : Transformers.GenerateId(_configuration.BIC!);
+        // localId is the bank retry key; txId remains the optional network identity.
+        var txId = !string.IsNullOrWhiteSpace(message.TxId) ? message.TxId : Transformers.GenerateId(fromBIC);
         var cid = _correlation.Create(txId);
 
         try
         {
+            var existing = await _persistence.GetDomesticOutgoingByLocalIdAsync(
+                message.EndToEndId, fromBIC, ct);
+            if (existing is not null) return ReplayOriginal(existing, fromBIC);
+
             NormalizeBillPaymentContract(message);
 
             // Step 1: Build, sign, and persist outgoing transaction request as Pending
@@ -75,7 +84,22 @@ public sealed class OutgoingTransactionHandler(
             SIPS.PostgreSQL.Models.ISOMessage record;
             using (SipsMetrics.TrackStep("Outgoing", "Transaction", "DbSave"))
             {
-                record = await _persistence.RecordISOMessageAsync(entity, dbCt);
+                try
+                {
+                    // The database unique index elects a single sender, across instances.
+                    record = await _persistence.RecordISOMessageAsync(entity, dbCt);
+                }
+                catch (DbUpdateException error) when (error.InnerException is PostgresException
+                    { SqlState: "23505", ConstraintName: "ux_domestic_outgoing_local_id" or "ux_iso_msg_type_txid" })
+                {
+                    var original = await _persistence.GetDomesticOutgoingByLocalIdAsync(
+                        message.EndToEndId, fromBIC, dbCt);
+                    if (original is null)
+                        return Response<PaymentResponseDto>.Fail(
+                            "txId is already used by another instruction; omit it or supply a unique txId for this localId.",
+                            System.Net.HttpStatusCode.Conflict);
+                    return ReplayOriginal(original, fromBIC);
+                }
             }
             _logger.LogDebug("[OutgoingTransactionHandler] after persist");
 
@@ -143,6 +167,12 @@ public sealed class OutgoingTransactionHandler(
                 AdditionalInfo = rs.AdditionalInfo ?? string.Empty
             });
         }
+        catch (InvalidDataException)
+        {
+            return Response<PaymentResponseDto>.Fail(
+                "localId matches multiple historical domestic payments; reconciliation is required.",
+                System.Net.HttpStatusCode.Conflict);
+        }
         catch (Exception ex)
         {
             _logger.LogError("[{CorrelationId}] Failed to Send Request To SIPS Error: {Error}", cid, ex);
@@ -150,6 +180,42 @@ public sealed class OutgoingTransactionHandler(
             return Response<PaymentResponseDto>.Fail("Failed to Send Request To SIPS", System.Net.HttpStatusCode.InternalServerError);
         }
     }
+    private Response<PaymentResponseDto> ReplayOriginal(PostgreSQL.Models.ISOMessage original, string localBic)
+    {
+        // The historical unique index spans directions/rails. Never expose or replay
+        // another participant's inbound payment or a PAPSS message on this path.
+        if (!string.Equals(original.FromBIC, localBic, StringComparison.Ordinal)
+            || !string.IsNullOrWhiteSpace(original.BusinessService))
+            return Response<PaymentResponseDto>.Fail(
+                "txId is already in use outside this domestic outgoing payment scope.",
+                System.Net.HttpStatusCode.Conflict);
+
+        var status = original.Status switch
+        {
+            PostgreSQL.Enums.TransactionStatus.Success => ACSC,
+            PostgreSQL.Enums.TransactionStatus.Failed => RJCT,
+            _ => PDNG
+        };
+        DateTime? acceptanceDate = null;
+        // Preserve reported status details only for a final original. A stored
+        // technical acknowledgement must not turn Pending/CheckStatus into ACSC.
+        if ((original.Status is PostgreSQL.Enums.TransactionStatus.Success or PostgreSQL.Enums.TransactionStatus.Failed)
+            && original.Response is { Length: > 0 }
+            && TryParse(Encoding.UTF8.GetString(original.Response), out var response) && response is not null)
+            acceptanceDate = response.AcceptanceDate;
+
+        _logger.LogInformation("Returning original outgoing payment {TxId}; no new submission", original.TxId);
+        return Response<PaymentResponseDto>.Success(new PaymentResponseDto
+        {
+            TxId = original.TxId ?? string.Empty,
+            EndToEndId = original.EndToEndId ?? string.Empty,
+            Status = status,
+            AcceptanceDate = acceptanceDate,
+            Reason = original.Reason,
+            AdditionalInfo = $"Original payment status returned; this request was not submitted. {original.AdditionalInfo}".Trim()
+        });
+    }
+
     private static void NormalizeBillPaymentContract(PaymentRequestDto message)
     {
         if (message.AmountPayable.HasValue)
@@ -229,6 +295,7 @@ public sealed class OutgoingTransactionHandler(
             MsgDefIdr = msgDefIdr,
             MsgId = msgId,
             EndToEndId = message.EndToEndId,
+            DomesticRequestId = message.EndToEndId,
             TxId = txId
         };
         entity.Transactions.Add(new PostgreSQL.Models.Transaction

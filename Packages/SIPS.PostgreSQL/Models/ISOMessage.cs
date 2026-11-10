@@ -18,6 +18,8 @@ public class ISOMessage
     public string? TxId { get; set; }
     public string? UETR { get; set; }
     public string? EndToEndId { get; set; }
+    // Set only for domestic outgoing payment initiation, never inbound or PAPSS.
+    public string? DomesticRequestId { get; set; }
     public string? Reason { get; set; }
     public string? AdditionalInfo { get; set; }
     public DateTimeOffset Date { get; set; }
@@ -80,6 +82,14 @@ public sealed class ISOMessageConfiguration : IEntityTypeConfiguration<ISOMessag
 
         builder.Property(e => e.xmin)
             .IsRowVersion();
+
+        builder.HasIndex(e => new { e.FromBIC, e.EndToEndId })
+            .HasDatabaseName("ix_domestic_local_id_lookup")
+            .HasFilter("\"messagetype\" = 'TransactionRequest' AND (\"businessservice\" IS NULL OR \"businessservice\" = '')");
+
+        builder.HasIndex(e => new { e.FromBIC, e.DomesticRequestId })
+            .IsUnique().HasDatabaseName("ux_domestic_outgoing_local_id")
+            .HasFilter("\"domesticrequestid\" IS NOT NULL");
 
         // [SAFETY INVARIANT A]: Transaction-level de-duplication
         // TxId = mandatory unique ID for transaction status requests (SmartVista spec)
