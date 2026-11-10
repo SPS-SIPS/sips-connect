@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System.Xml.Linq;
 using System.Text;
 using SIPS.Core.Interfaces;
 using SIPS.ISO20022.Helpers;
@@ -190,10 +191,12 @@ public sealed class OutgoingTransactionHandler(
                 "txId is already in use outside this domestic outgoing payment scope.",
                 System.Net.HttpStatusCode.Conflict);
 
+        var confirmedRejection = HasConfirmedRejection(original, out var rejection);
+        var unresolvedFailure = original.Status == PostgreSQL.Enums.TransactionStatus.Failed && !confirmedRejection;
         var status = original.Status switch
         {
             PostgreSQL.Enums.TransactionStatus.Success => ACSC,
-            PostgreSQL.Enums.TransactionStatus.Failed => RJCT,
+            PostgreSQL.Enums.TransactionStatus.Failed when confirmedRejection => RJCT,
             _ => PDNG
         };
         DateTime? acceptanceDate = null;
@@ -211,9 +214,32 @@ public sealed class OutgoingTransactionHandler(
             EndToEndId = original.EndToEndId ?? string.Empty,
             Status = status,
             AcceptanceDate = acceptanceDate,
-            Reason = original.Reason,
-            AdditionalInfo = $"Original payment status returned; this request was not submitted. {original.AdditionalInfo}".Trim()
+            Reason = unresolvedFailure ? "OUTCOME_UNRESOLVED" : confirmedRejection ? rejection!.Reason : original.Reason,
+            AdditionalInfo = unresolvedFailure
+                ? "Original payment outcome is unresolved after network/recovery failure. Reconciliation is required. Do not automatically reverse or submit under a new localId. This request was not resubmitted."
+                : $"Original payment status returned; this request was not submitted. {original.AdditionalInfo}".Trim()
         });
+    }
+
+    private static bool HasConfirmedRejection(PostgreSQL.Models.ISOMessage original,
+        out PaymentRequestResponseBuilder.Response? rejection)
+    {
+        rejection = null;
+        if (original.Status != PostgreSQL.Enums.TransactionStatus.Failed
+            || original.Response is not { Length: > 0 }) return false;
+        var xml = Encoding.UTF8.GetString(original.Response);
+        if (!TryParse(xml, out var report) || report is null
+            || !string.Equals(report.TxId, original.TxId, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(original.TxId)
+            || !string.Equals(report.Original?.EndToEndId, original.EndToEndId, StringComparison.Ordinal))
+            return false;
+        // The general parser defaults a missing TxSts to RJCT. Require an actual
+        // single network-reported rejection rather than treating that filler as evidence.
+        XNamespace ns = "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12";
+        var entries = XDocument.Parse(xml).Descendants(ns + "TxInfAndSts").ToArray();
+        if (entries.Length != 1 || (string?)entries[0].Element(ns + "TxSts") != RJCT) return false;
+        rejection = report;
+        return true;
     }
 
     private static void NormalizeBillPaymentContract(PaymentRequestDto message)

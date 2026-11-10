@@ -1,5 +1,8 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -24,6 +27,75 @@ namespace SIPS.Connect.PostgresTests;
 [Trait("Category", "Postgres")]
 public sealed class OutgoingPaymentIdempotencyTests
 {
+    [Fact]
+    public async Task Startup_migration_accepts_null_and_duplicate_historical_endToEndIds_without_backfill()
+    {
+        await using var h = await PostgresHarness.CreateAsync();
+        await using var provider = h.BuildProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<StorageBroker>();
+        // Work on an isolated test database at the exact pre-upgrade schema.
+        await db.GetService<IMigrator>().MigrateAsync("20261004110601_AddPapssInboundRecall");
+        await using var connection = new NpgsqlConnection(h.ConnectionString);
+        await connection.OpenAsync();
+        await using (var absent = new NpgsqlCommand(
+            "SELECT count(*) FROM information_schema.columns WHERE table_name='isomessages' AND column_name='domesticrequestid'", connection))
+            Assert.Equal(0L, await absent.ExecuteScalarAsync());
+
+        // Insert BEFORE applying the new migration: two null IDs, duplicate
+        // domestic outgoing IDs, and incoming/PAPSS records sharing the same ID.
+        for (var i = 0; i < 6; i++)
+        {
+            await using var insert = new NpgsqlCommand("""
+                INSERT INTO isomessages
+                (messagetype, status, msgid, bizmsgidr, msgdefidr, round, corebankretrycount,
+                 txid, endtoendid, date, frombic, tobic, message, pacs002role, businessservice)
+                VALUES ('TransactionRequest', 'Pending', @id, @id, 'pacs.008.001.10', 1, 0,
+                        @id, @e2e, @date, @sender, @recipient, @message, 'StatusUpdate', @service)
+                """, connection);
+            insert.Parameters.AddWithValue("id", $"LEGACY-{i}");
+            insert.Parameters.AddWithValue("e2e", NpgsqlTypes.NpgsqlDbType.Text,
+                i < 2 ? DBNull.Value : "SHARED-LOCAL-ID");
+            insert.Parameters.AddWithValue("date", DateTimeOffset.UtcNow);
+            insert.Parameters.AddWithValue("sender", i == 4 ? "FOREIGN" : "BANK");
+            insert.Parameters.AddWithValue("recipient", i == 4 ? "BANK" : "OTHER");
+            insert.Parameters.AddWithValue("message", new byte[] { 1, 2, 3 });
+            insert.Parameters.AddWithValue("service", NpgsqlTypes.NpgsqlDbType.Text,
+                i == 5 ? "papss-sec-v1" : DBNull.Value);
+            await insert.ExecuteNonQueryAsync();
+        }
+        async Task<string> Snapshot()
+        {
+            await using var query = new NpgsqlCommand("""
+                SELECT jsonb_agg(to_jsonb(m) - 'domesticrequestid' ORDER BY id)::text
+                FROM isomessages m
+                """, connection);
+            return (string)(await query.ExecuteScalarAsync())!;
+        }
+        var before = await Snapshot();
+
+        // Same entry point used by startup migration initialization.
+        await db.Database.MigrateAsync();
+        Assert.Equal(before, await Snapshot());
+        await using (var keys = new NpgsqlCommand(
+            "SELECT count(*) FROM isomessages WHERE domesticrequestid IS NOT NULL", connection))
+            Assert.Equal(0L, await keys.ExecuteScalarAsync());
+        await using (var applied = new NpgsqlCommand("""
+            SELECT count(*) FROM "__EFMigrationsHistory"
+            WHERE migrationid='20261110074226_AddDomesticOutgoingLocalId'
+            """, connection))
+            Assert.Equal(1L, await applied.ExecuteScalarAsync());
+
+        // Prove the new index still rejects duplicate NEW keys. The failed
+        // statement is atomic and must leave all historical data unchanged.
+        await using var conflicting = new NpgsqlCommand(
+            "UPDATE isomessages SET domesticrequestid='NEW-KEY' WHERE frombic='BANK'", connection);
+        var error = await Assert.ThrowsAsync<PostgresException>(() => conflicting.ExecuteNonQueryAsync());
+        Assert.Equal("23505", error.SqlState);
+        Assert.Equal("ux_domestic_outgoing_local_id", error.ConstraintName);
+        Assert.Equal(before, await Snapshot());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -61,3 +61,19 @@ The API suite has a known captured-recall certificate validity/trust test failur
 ## Verified revised results
 
 The revised localId implementation passed 207 core tests (7 existing skips) and 7 PostgreSQL cases, including races with omitted and supplied txId, historical records, and network/profile isolation. API regression remains 250 passed and the same 1 pre-existing certificate-fixture failure. These results were obtained locally; no numbered image release was published for this change.
+
+## Historical-data migration upgrade scenario
+
+Added `Startup_migration_accepts_null_and_duplicate_historical_endToEndIds_without_backfill` and verified it on PostgreSQL 16. The isolated database is moved to the migration immediately preceding `AddDomesticOutgoingLocalId`; the test asserts the new column does not exist before seeding.
+
+Six historical rows are inserted directly into that old schema: two null EndToEndIds, two duplicate domestic outgoing EndToEndIds, an incoming payment sharing that ID, and a PAPSS-profile payment sharing it. `Database.MigrateAsync()` then applies the new migration, matching the initializer's migration API.
+
+The test verifies the migration history entry, byte-for-byte equivalent serialized historical row data excluding the newly added column, no backfilled domestic keys, and enforcement of the new unique index for populated keys. A rejected duplicate-key statement leaves the historical snapshot unchanged.
+
+Updated PostgreSQL result: **8 passed, 0 failed**. This verifies data compatibility; index creation time and locking on a production-sized table still require deployment planning.
+
+## Review regression fixed
+
+Internal `Failed` is not sufficient evidence of network rejection: status recovery also sets it when retries are exhausted. Added 8 regression cases invoking the real `FinalizeAfterMaxRetriesAsync` transition before replay. Missing response, malformed XML, ACSP, ACSC, missing TxSts, and mismatched transaction/end-to-end references now replay `PDNG` with `OUTCOME_UNRESOLVED` and a reconciliation notice. A matching explicit RJCT still replays rejection and its network reason. The parser's default RJCT for omitted TxSts is explicitly excluded as evidence.
+
+Core regression after this fix: **215 passed, 7 existing skips, 0 failed**. This correction is in domestic outgoing payment replay; it does not redefine all pre-existing status/recovery endpoints or guarantee bank ledger behavior.
