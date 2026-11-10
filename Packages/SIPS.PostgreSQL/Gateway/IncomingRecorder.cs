@@ -9,13 +9,35 @@ public class IncomingRecorder(ILogger<IncomingRecorder> logger, IStorageBroker s
 {
     private readonly IStorageBroker _storage = storage;
     private readonly ILogger<IncomingRecorder> _logger = logger;
+    public async Task<ISOMessage?> GetDomesticOutgoingByLocalIdAsync(string localId, string fromBic, CancellationToken ct)
+    {
+        // Include historical outgoing rows created before the domestic key existed.
+        // Ambiguous historical identifiers must never select an arbitrary payment.
+        var matches = await _storage.ISOMessages.Where(x =>
+            x.MessageType == ISOMessageType.TransactionRequest && x.FromBIC == fromBic
+            && (x.BusinessService == null || x.BusinessService == "")
+            && x.EndToEndId == localId).Take(2).ToListAsync(ct);
+        if (matches.Count > 1)
+            throw new InvalidDataException("localId matches multiple historical domestic payments; reconciliation is required.");
+        return matches.SingleOrDefault();
+    }
+
     public async Task<ISOMessage> ISOMessageAsync(ISOMessage message, CancellationToken ct)
     {
-        await _storage.ISOMessages.AddAsync(message, ct);
-
-        await _storage.SaveChangesAsync(ct);
-
-        return message;
+        try
+        {
+            await _storage.ISOMessages.AddAsync(message, ct);
+            await _storage.SaveChangesAsync(ct);
+            return message;
+        }
+        catch (DbUpdateException error) when (error.InnerException is PostgresException { SqlState: "23505" })
+        {
+            // A losing outgoing insert must not leave Added entities queued for
+            // the next SaveChanges in this scoped context. Keep conflict policy
+            // in the caller; incoming handlers retain their own existing paths.
+            DetachGraph(message);
+            throw;
+        }
     }
     public async Task<Transaction> TransactionAsync(Transaction message, CancellationToken ct)
     {

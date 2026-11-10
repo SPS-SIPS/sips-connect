@@ -2,6 +2,7 @@ namespace SIPS.PostgreSQL.Interfaces;
 
 public interface IIncomingRecorder
 {
+    Task<ISOMessage?> GetDomesticOutgoingByLocalIdAsync(string localId, string fromBic, CancellationToken ct);
     Task<ISOMessage> ISOMessageAsync(ISOMessage message, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct);

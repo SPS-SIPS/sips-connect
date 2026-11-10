@@ -90,6 +90,20 @@ SPS Connect includes payment-system controls designed to protect transaction cor
 
 ---
 
+## Outgoing Payment Retry Contract
+
+For domestic outgoing `POST /api/v1/Gateway/Payment`, the bank's existing `localId` maps to ISO `EndToEndId` and is the retry key. The bank must create and persist a unique `localId` for each instruction before sending, and reuse it unchanged after a timeout. `txId` remains optional: SPS Connect generates it when absent and preserves the original generated value on retries.
+
+Repeating a domestic `localId` returns the original payment's stored status and references without resubmitting, even if the retry changes the amount, beneficiary or optional `txId`. The changed instruction is not processed. A genuinely new payment needs a new `localId`. Missing or blank `localId` is rejected. Pending/uncertain originals return `PDNG`, not settlement confirmation.
+
+A dedicated database key scoped to the originating bank and domestic outgoing flow arbitrates concurrent submissions. It does not impose uniqueness on incoming or PAPSS EndToEndIds. Status and return operations continue to use the original network transaction references. Bank ledger posting must still be idempotent. PAPSS retains its existing `txId` replay/conflict contract.
+
+**Rollout:** apply `AddDomesticOutgoingLocalId` before running this source version. Upgrade all domestic initiators together; do not mix older writers that do not populate the new key. Existing unambiguous domestic records can be replayed by `localId`; historical duplicate local IDs require reconciliation and return a conflict rather than selecting an arbitrary payment. Confirm bank `localId` values are unique per instruction and stable on retries. The already published `2.0.0` image is unchanged.
+
+See the [outgoing payment idempotency test evidence](docs/OUTGOING_PAYMENT_IDEMPOTENCY_TEST_PLAN.md).
+
+---
+
 ## Configuration
 
 Runtime configuration is loaded from:

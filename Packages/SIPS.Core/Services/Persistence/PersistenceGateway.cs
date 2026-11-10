@@ -9,6 +9,7 @@ namespace SIPS.Core.Services.Persistence;
 
 public interface IPersistenceGateway
 {
+    Task<ISOMessage?> GetDomesticOutgoingByLocalIdAsync(string localId, string fromBic, CancellationToken ct);
     Task<ISOMessage> RecordISOMessageAsync(ISOMessage message, CancellationToken ct);
     Task<ISOMessage?> GetISOMessageByIdAsync(int id, CancellationToken ct);
     Task<ISOMessageStatus> RecordISOMessageStatusAsync(ISOMessageStatus status, CancellationToken ct);
@@ -33,6 +34,9 @@ public interface IPersistenceGateway
 public sealed class PersistenceGateway(IIncomingRecorder record) : IPersistenceGateway
 {
     private readonly IIncomingRecorder _record = record;
+
+    public Task<ISOMessage?> GetDomesticOutgoingByLocalIdAsync(string localId, string fromBic, CancellationToken ct)
+        => _record.GetDomesticOutgoingByLocalIdAsync(localId, fromBic, ct);
 
     public Task<ISOMessage> RecordISOMessageAsync(ISOMessage message, CancellationToken ct)
         => _record.ISOMessageAsync(message, ct);

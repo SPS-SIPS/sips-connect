@@ -87,6 +87,7 @@ public sealed class OutgoingTransactionHandler_Timeout_Tests
         public Task<ISOMessageStatus> ISOMessageStatusResponseAsync(ISOMessageStatus status, CancellationToken ct)
             => Task.FromResult(status);
 
+        public Task<ISOMessage?> GetDomesticOutgoingByLocalIdAsync(string localId, string fromBic, CancellationToken ct) => Task.FromResult<ISOMessage?>(null);
         public Task<ISOMessage?> GetISOMessageByTxIdAsync(string txId, CancellationToken ct)
             => Task.FromResult<ISOMessage?>(null);
 
