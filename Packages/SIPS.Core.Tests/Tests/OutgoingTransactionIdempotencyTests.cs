@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 using System.Collections.Concurrent;
 using System.Net;
+using System.Xml.Linq;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,6 +15,8 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Npgsql;
 using SIPS.Core.Options;
+using SIPS.Core.Services.Implementations;
+using SIPS.ISO20022.Helpers;
 using SIPS.Core.Services;
 using SIPS.Core.Services.Abstractions;
 using SIPS.Core.Services.Correlation;
@@ -53,7 +56,7 @@ public sealed class OutgoingTransactionIdempotencyTests
 
     [Theory]
     [InlineData(TransactionStatus.Success, "ACSC")]
-    [InlineData(TransactionStatus.Failed, "RJCT")]
+    [InlineData(TransactionStatus.Failed, "PDNG")]
     [InlineData(TransactionStatus.Pending, "PDNG")]
     [InlineData(TransactionStatus.CheckStatus, "PDNG")]
     public async Task Existing_localId_returns_original_state_without_resubmission(TransactionStatus state, string expected)
@@ -69,6 +72,63 @@ public sealed class OutgoingTransactionIdempotencyTests
         Assert.Equal(0, h.SendCount);
         Assert.Equal(0, h.SignCount);
         Assert.Same(original, Assert.Single(h.Rows).Value);
+    }
+
+    [Theory]
+    [InlineData(null, "BANK-123", "LOCAL-123")]
+    [InlineData("malformed", "BANK-123", "LOCAL-123")]
+    [InlineData("ACSP", "BANK-123", "LOCAL-123")]
+    [InlineData("ACSC", "BANK-123", "LOCAL-123")]
+    [InlineData("", "BANK-123", "LOCAL-123")]
+    [InlineData("RJCT", "OTHER-TX", "LOCAL-123")]
+    [InlineData("RJCT", "BANK-123", "OTHER-LOCAL")]
+    public async Task Recovery_exhaustion_without_matching_rejection_remains_pending(string? status, string txId, string localId)
+    {
+        var h = new Harness();
+        var row = h.Seed(TransactionStatus.CheckStatus);
+        row.Response = status is null ? null : Encoding.UTF8.GetBytes(
+            status == "malformed" ? "not XML" : NetworkReport(status, txId, localId));
+        await h.ExhaustRecovery(row);
+        Assert.Equal(TransactionStatus.Failed, row.Status); // Real recovery state transition.
+        var replay = await h.Handler().HandleAsync(Request(), CancellationToken.None);
+        Assert.True(replay.IsSuccess);
+        Assert.Equal("PDNG", replay.Data?.Status);
+        Assert.Equal("OUTCOME_UNRESOLVED", replay.Data?.Reason);
+        Assert.Contains("reconcil", replay.Data?.AdditionalInfo ?? "", StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, h.SendCount);
+    }
+
+    [Fact]
+    public async Task Matching_network_rejection_is_replayed_as_rejected_even_if_recovery_overwrote_internal_reason()
+    {
+        var h = new Harness();
+        var row = h.Seed(TransactionStatus.CheckStatus);
+        var xml = NetworkReport("RJCT", "BANK-123", "LOCAL-123");
+        Assert.Equal("RJCT", PaymentRequestResponseBuilder.Parse(xml).Status);
+        row.Response = Encoding.UTF8.GetBytes(xml);
+        await h.ExhaustRecovery(row);
+        var replay = await h.Handler().HandleAsync(Request(), CancellationToken.None);
+        Assert.Equal("RJCT", replay.Data?.Status);
+        Assert.Equal("AC04", replay.Data?.Reason);
+        Assert.Equal(0, h.SendCount);
+    }
+
+    private static string NetworkReport(string status, string txId, string localId)
+    {
+        var xml = PaymentRequestResponseBuilder.Build(new PaymentRequestResponseBuilder.Response
+        {
+            From = "NETWORK", To = "BICX", Status = status.Length == 0 ? "ACSP" : status,
+            Reason = "AC04", Original = new PaymentRequestBuilder.Request
+            {
+                From = "BICX", To = "TOBIC", BizMsgIdr = "ORIGINAL-BIZ", MsgId = "ORIGINAL-MSG",
+                MsgDefIdr = "pacs.008.001.10", CreDt = DateTime.UtcNow,
+                TxId = txId, EndToEndId = localId, Amount = 100, Currency = "USD"
+            }
+        });
+        if (status.Length != 0) return xml;
+        var document = XDocument.Parse(xml);
+        document.Descendants().Where(x => x.Name.LocalName == "TxSts").Remove();
+        return document.ToString();
     }
 
     [Theory]
@@ -235,6 +295,14 @@ public sealed class OutgoingTransactionIdempotencyTests
             iso.Setup(x => x.MarkForCheckStatusAsync(It.IsAny<ISOMessage>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()))
                 .Callback((ISOMessage row, string _, CancellationToken __, bool ___) => row.Status = TransactionStatus.CheckStatus)
                 .Returns(Task.CompletedTask);
+        }
+
+        public Task ExhaustRecovery(ISOMessage row)
+        {
+            persistence.Setup(x => x.ISOMessageResponseAsync(It.IsAny<ISOMessage>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ISOMessage message, CancellationToken _) => message);
+            return new ISOMessageService(persistence.Object).FinalizeAfterMaxRetriesAsync(
+                row, "No authoritative response after retries", CancellationToken.None);
         }
 
         public ISOMessage Seed(TransactionStatus status)
