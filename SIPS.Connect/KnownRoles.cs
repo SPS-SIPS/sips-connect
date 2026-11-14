@@ -10,6 +10,7 @@ public static class KnownRoles
     public const string Recon = "recon";
     public const string Dashboard = "dashboard";
     public const string Logs = "logs";
+    public const string Monitoring = "monitoring";
     /// <summary>
     /// Narrow, machine-only capability: read a PAPSS recall and manually close one stuck open
     /// (POST Recall/{recallId}/Close). Granted per API key via ApiKey.Roles in configuration, never

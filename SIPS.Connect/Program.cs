@@ -40,6 +40,7 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
+SIPS.Connect.Config.SecurityConfiguration.Validate(builder.Configuration, builder.Environment);
 Register(builder.Services, builder.Configuration);
 
 var app = builder.Build();
@@ -51,13 +52,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseRateLimiter();
 app.UseRouting();
+app.UseRateLimiter();
 app.UseHttpMetrics();
 
 app.UseCors("default");
 
-app.MapMetrics();
+app.MapMetrics().RequireAuthorization(policy => policy.RequireRole(SIPS.Connect.KnownRoles.Monitoring));
 app.MapControllers();
 app.UseAuthentication();
 app.UseAuthorization();

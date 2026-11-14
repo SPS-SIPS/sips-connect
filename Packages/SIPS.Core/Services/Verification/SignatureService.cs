@@ -41,9 +41,6 @@ public sealed class SignatureService(INativeVerifier verifier, ILogger<Signature
                 verbose?.OwnershSIPStatus,
                 message.Length,
                 responseSha256);
-            _logger.LogError(
-                "IPS signature verification failed for exact response XML: {ResponseXml}",
-                message);
         }
         return (result, verbose?.SignatureStatus);
     }

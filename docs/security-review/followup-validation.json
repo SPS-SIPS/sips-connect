@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-14",
+  "security_tests": {
+    "passed": 25,
+    "failed": 0
+  },
+  "core_tests": {
+    "passed": 237,
+    "skipped": 7,
+    "failed": 0
+  },
+  "signature_tests": {
+    "passed": 17,
+    "failed": 0
+  },
+  "application_tests_serial": {
+    "passed": 275,
+    "failed": 1,
+    "failure": "PapssRecallCapturedFixtureTests.Captured_payload_passes_certificate_pinning_and_stops_only_at_chain_of_trust_to_the_ephemeral_test_ca"
+  },
+  "dependency_audit_gate": "passed",
+  "gitleaks_version": "8.30.1",
+  "current_snapshot_findings": 0,
+  "raw_history_findings": 66,
+  "image_runtime": "8.0.34",
+  "image_user": "1654",
+  "deployed": false,
+  "credentials_rotated": false
+}

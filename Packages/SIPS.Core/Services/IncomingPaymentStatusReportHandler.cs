@@ -154,13 +154,11 @@ public sealed class IncomingPaymentStatusReportHandler(
 
                 if (request == null)
                 {
-                    _logger.LogWarning("[{CorrelationId}] Failed to verify signature or parse TxId from message: {Message}", cid, message);
+                    _logger.LogWarning("[{CorrelationId}] Failed to verify signature or parse TxId from message", cid);
                     return _signer.SignEnvelope(SipsReject.Create(message, AdminRejectReasonCodes.SignatureInvalid, "Failed to verify signature or parse TxId."));
                 }
             }
 
-        _logger.LogInformation("INCOMING pacs.002 Handler for data {Data}",
-            JsonSerializer.Serialize(request, _jsonSerializerOptions));
 
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] parsed request TxId={TxId} Status={Status}", request.TxId, request.Status);
 
@@ -365,9 +363,9 @@ public sealed class IncomingPaymentStatusReportHandler(
                 using var updateCts = new CancellationTokenSource(TimeSpan.FromSeconds(_core.DbPersistTimeoutSeconds > 0 ? _core.DbPersistTimeoutSeconds : 10));
                 await _isoService.PersistStatusResponseAsync(record, isoMessage.Status, response.Reason, response.AdditionalInfo, rspMirror, updateCts.Token);
             }
-            _logger.LogDebug("[IncomingPaymentStatusReportHandler] NonPending response: {Response}", rspMirror);
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] NonPending response built");
             var signedMirror = _signer.SignEnvelope(rspMirror);
-            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning NonPending signed response: {Signed}", signedMirror);
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning NonPending signed response");
             return signedMirror;
         }
 
@@ -454,7 +452,7 @@ public sealed class IncomingPaymentStatusReportHandler(
                 await _isoService.PersistStatusResponseAsync(record, rjctChildStatus, isoMessage.Reason, isoMessage.AdditionalInfo, rspRej, updateCts.Token);
             }
             var signedRej = _signer.SignEnvelope(rspRej);
-            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning RJCT signed response: {Signed}", signedRej);
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning RJCT signed response");
             return signedRej;
         }
 
@@ -810,9 +808,9 @@ public sealed class IncomingPaymentStatusReportHandler(
                     rspFinal,
                     updateCts.Token);
         }
-            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Final response: {Response}", rspFinal);
+            _logger.LogDebug("[IncomingPaymentStatusReportHandler] Final response built");
             var signedFinal = _signer.SignEnvelope(rspFinal);
-    _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning Final signed response: {Signed}", signedFinal);
+    _logger.LogDebug("[IncomingPaymentStatusReportHandler] Returning Final signed response");
 
         return signedFinal;
     }

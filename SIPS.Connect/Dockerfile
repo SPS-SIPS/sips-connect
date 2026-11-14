@@ -2,7 +2,7 @@
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
-EXPOSE 80
+EXPOSE 8080
 EXPOSE 443
 
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS build
@@ -39,4 +39,8 @@ RUN arch="$TARGETARCH"; \
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["/bin/sh", "-c", "update-ca-certificates && dotnet SIPS.Connect.dll"]
+RUN update-ca-certificates \
+    && mkdir -p /app/logs /app/keys \
+    && chown -R app:app /app
+USER $APP_UID
+ENTRYPOINT ["dotnet", "SIPS.Connect.dll"]

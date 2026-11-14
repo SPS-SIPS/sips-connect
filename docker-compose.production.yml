@@ -1,0 +1,53 @@
+# Standalone production template: deploy behind a TLS ingress on this host.
+# Never combine this with the reviewer compose files.
+name: sips-production
+services:
+  postgresql:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  sips-connect:
+    image: ${SIPS_IMAGE:?Use a reviewed image digest}
+    restart: unless-stopped
+    user: "1654:1654"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__db: Host=postgresql;Database=${DB_NAME:?};Username=${DB_USER:?};Password=${DB_PASSWORD:?};Include Error Detail=False
+      Xades__WithoutPKI: "false"
+      DataProtection__CertificatePath: /app/certs/dataprotection.pfx
+      DataProtection__CertificatePassword: ${DATA_PROTECTION_CERTIFICATE_PASSWORD:?Required}
+    ports:
+      - "127.0.0.1:${SIPS_CONNECT_PORT:-8080}:8080"
+    volumes:
+      # Validated deployment config includes bank identity, HTTPS IdP authority,
+      # switch/callback URLs and PAPSS settings where applicable.
+      - ${SIPS_CONFIG_PATH:?Required}:/app/appsettings.json:ro
+      - ${SIPS_ADAPTER_PATH:?Required}:/app/jsonAdapter.json:ro
+      - ${SIPS_CERTS_PATH:?Required}:/app/certs:ro
+      - keyring:/app/keys
+      - logs:/app/logs
+    networks: [backend]
+networks:
+  backend: {}
+volumes:
+  database: {}
+  keyring: {}
+  logs: {}

@@ -1,3 +1,5 @@
+> Security update (14 November 2026): use [the current hardening guide](../docs/SECURITY_HARDENING.md). The old standalone `secrets` CLI was removed. Plaintext export is disabled outside Development, bulk encryption creates no plaintext backup, and diagnostics require the `monitoring` role. Historical instructions below may describe retired behavior.
+
 # SIPS Connect - Test Cases & Security Test Scenarios
 
 **Document Version:** 1.1  

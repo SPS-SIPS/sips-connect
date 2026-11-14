@@ -183,7 +183,7 @@ public sealed class CoreBankVerificationClient(
     /// <returns>The business reason exactly as returned by the core bank (possibly empty).</returns>
     public string ApplyResult(JsonObject data, PayeeVerificationResponseBuilder.Request response)
     {
-        logger.LogInformation("Callback Response: {Response}", data.ToJsonString(SerializerOptions));
+        logger.LogInformation("CoreBank verification callback response received");
 
         // First, transform the raw callback payload using our configured mapping
         // so fields like accountNo/accountType map to AccountNo/AccountType regardless of casing.

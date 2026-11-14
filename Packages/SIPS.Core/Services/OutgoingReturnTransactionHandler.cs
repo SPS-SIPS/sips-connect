@@ -171,18 +171,13 @@ public sealed class OutgoingReturnTransactionHandler(
                 return responseMessageStatus;
 
             // Step 6: Parse and persist IPS response
-            _logger.LogInformation("[{CorrelationId}] Received response from IPS: {Response}", cid, responseMessage.Data);
+            _logger.LogInformation("[{CorrelationId}] Received response from IPS", cid);
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
-                _logger.LogError("[{CorrelationId}] Failed to parse IPS return response: {message}", cid, responseMessage.Data);
+                _logger.LogError("[{CorrelationId}] Failed to parse IPS return response", cid);
                 await _isoService.MarkForCheckStatusAsync(originalMessage, "Failed to parse IPS return response", updateCt);
                 return Response<ReturnPaymentResponseDto>.Fail("Failed to parse the message.", System.Net.HttpStatusCode.BadRequest);
             }
-            _logger.LogDebug("[{CorrelationId}] Parsed response from IPS: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
 
             // Use StatusOrchestrator to map IPS status code consistently
             var finalStatus = _statusOrchestrator.MapSingleStatus(rs.Status ?? RJCT, "IPS");
@@ -309,7 +304,7 @@ public sealed class OutgoingReturnTransactionHandler(
         var content = new StringContent(signed, Encoding.UTF8, "application/xml");
         // Log the callback URL and payload
         _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", cid, url);
-        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", cid, signed);
+        _logger.LogInformation("[{CorrelationId}] Callback payload length: {Length}", cid, signed.Length);
         return await _httpClient.Send4XML(url, content, ct);
     }
     private async Task<Response<ReturnPaymentResponseDto>> HandleSIPSCallExceptionAsync(

@@ -26,7 +26,7 @@ public class ApiKeyProvider : IApiKeyProvider
         var apiKeys = _configuration.GetSection("ApiKeys").Get<List<ApiKey>>() ?? new List<ApiKey>();
 
         // Decrypt secrets
-        foreach (var key in apiKeys)
+        foreach (var key in apiKeys.ToArray())
         {
             if (!string.IsNullOrEmpty(key.Secret) && _secretService.IsEncrypted(key.Secret))
             {
@@ -36,7 +36,8 @@ public class ApiKeyProvider : IApiKeyProvider
                 }
                 catch (Exception)
                 {
-                    // If decryption fails, keep original value
+                    // A ciphertext must never become a usable credential when its key ring is unavailable.
+                    apiKeys.Remove(key);
                 }
             }
         }

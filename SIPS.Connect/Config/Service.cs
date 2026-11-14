@@ -209,7 +209,7 @@ public static class DI
 
         // Register Data Protection for secret encryption (MUST be before ApiKeys)
         var dataProtectionBuilder = services.AddDataProtection()
-            .PersistKeysToFileSystem(new DirectoryInfo("./keys"))
+            .PersistKeysToFileSystem(new DirectoryInfo(configuration["DataProtection:KeyDirectory"] ?? "./keys"))
             .SetApplicationName("SIPS.Connect");
 
         // Encrypt Data Protection keys at rest
@@ -217,7 +217,7 @@ public static class DI
         var certPath = configuration["DataProtection:CertificatePath"];
         var certPassword = configuration["DataProtection:CertificatePassword"];
 
-        if (!string.IsNullOrEmpty(certPath) && File.Exists(certPath))
+        if (!string.IsNullOrEmpty(certPath))
         {
             try
             {
@@ -225,14 +225,15 @@ public static class DI
                     certPath,
                     certPassword
                 );
+                if (!cert.HasPrivateKey)
+                    throw new InvalidOperationException("The Data Protection certificate requires its private key for key-ring recovery.");
                 dataProtectionBuilder.ProtectKeysWithCertificate(cert);
                 var logger = services.BuildServiceProvider().GetService<ILogger<Program>>();
                 logger?.LogInformation("Data Protection keys encrypted with certificate: {CertPath}", certPath);
             }
             catch (Exception ex)
             {
-                var logger = services.BuildServiceProvider().GetService<ILogger<Program>>();
-                logger?.LogError(ex, "Failed to load Data Protection certificate from {CertPath}", certPath);
+                throw new InvalidOperationException("The configured Data Protection certificate could not be loaded; refusing to store unprotected keys.", ex);
             }
         }
         // Option 2: Use DPAPI on Windows
@@ -326,7 +327,6 @@ public static class DI
 
            options.Authority = authority;
            options.Audience = audience;
-           options.RequireHttpsMetadata = false;
            options.MapInboundClaims = false;
            options.RefreshOnIssuerKeyNotFound = true;
 
@@ -374,6 +374,14 @@ public static class DI
        })
        .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
             ApiKeyDefaults.AuthenticationScheme, _ => { });
+
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<IHostEnvironment>((options, environment) =>
+            {
+                options.RequireHttpsMetadata = !environment.IsDevelopment();
+                if (!environment.IsDevelopment() && !options.TokenValidationParameters.ValidateIssuer)
+                    throw new InvalidOperationException("JWT issuer validation is required outside Development.");
+            });
 
         // Register Core Authentication Service
         services.AddSingleton<ICoreAuthService, CoreAuthService>();

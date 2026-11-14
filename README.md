@@ -1,5 +1,8 @@
 # SPS Connect (previously SIPS Connect)
 
+Security configuration and deployment changes are documented in the [hardening guide](docs/SECURITY_HARDENING.md). See the [credential rotation inventory](docs/CREDENTIAL_ROTATION_2026-11-14.md) for historically exposed credentials and local defaults that must be replaced wherever used.
+
+
 **SPS Connect** (previously **SIPS Connect**) is the official product name of the participant-side integration gateway owned by **SOMALI PAYMENT SWITCH (SPS) LTD**. It connects participant core banking systems to both **domestic transactions through SIPS/SVIP (SmartVista/IPS)** and **cross-border transactions through the Pan-African Payment and Settlement System (PAPSS)**.
 
 Banks integrate through authenticated JSON APIs. SPS Connect handles rail selection, ISO 20022 message orchestration, JSON adaptation, digital signing and verification, transaction persistence, correlation, idempotency, callbacks and technical recovery. It also provides SomQR services, dashboards, health checks, metrics and operational configuration.

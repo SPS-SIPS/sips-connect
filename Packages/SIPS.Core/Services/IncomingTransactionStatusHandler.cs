@@ -198,7 +198,7 @@ public sealed class IncomingTransactionStatusHandler(
 
     private void ParseCallbackResult(JsonObject data, PaymentStatusRequestResponseBuilder.Response response)
     {
-        _logger.LogDebug("Callback result: {Data}", data.ToString());
+        _logger.LogDebug("CoreBank status callback result received");
         var js = JsonSerializer.Deserialize<JsonObject>(data, _jsonSerializerOptions);
 
         var md = _jsonAdapter.Transform(js!, CB_PaymentStatusResponse);

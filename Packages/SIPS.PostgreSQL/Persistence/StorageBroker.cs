@@ -31,10 +31,6 @@ public sealed class StorageBroker(DbContextOptions<StorageBroker> options) : DbC
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(StorageBroker).Assembly);
     }
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.EnableSensitiveDataLogging();
-    }
     public bool IsRelational() => Database.IsRelational();
 
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken)

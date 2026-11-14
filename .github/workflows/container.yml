@@ -23,7 +23,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  security:
+    uses: ./.github/workflows/security.yml
+    with:
+      base_sha: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
   container:
+    needs: security
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:

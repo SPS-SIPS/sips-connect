@@ -17,7 +17,7 @@ public sealed class SipsRequestSender(ILogger<SipsRequestSender> logger, IInterf
     public async Task<SIPS.ISO20022.Models.DTOs.Response<string>> SendAsync(string url, string signedXml, CancellationToken ct, string correlationId)
     {
         _logger.LogInformation("[{CorrelationId}] Callback URL: {Url}", correlationId, url);
-        _logger.LogInformation("[{CorrelationId}] Callback Payload: {Payload}", correlationId, signedXml);
+        _logger.LogInformation("[{CorrelationId}] Callback payload length: {Length}", correlationId, signedXml.Length);
         var content = new StringContent(signedXml, Encoding.UTF8, "application/xml");
         return await _http.Send4XML(url, content, ct);
     }

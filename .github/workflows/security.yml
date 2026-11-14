@@ -1,0 +1,55 @@
+name: Security checks
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        type: string
+        required: false
+        default: ''
+  workflow_dispatch:
+  schedule:
+    - cron: '19 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Audit direct and transitive dependencies (fail on unavailable audit data)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for project in SIPS.sln SIPS.Connect.Tests/SIPS.Connect.Tests.csproj Packages/SIPS.XMLDsig.Xades.Tests/SIPS.XMLDsig.Xades.Tests.csproj; do
+            dotnet restore "$project" -p:NuGetAudit=true -p:NuGetAuditMode=all -warnaserror:NU1900,NU1901,NU1902,NU1903,NU1904,NU1905
+          done
+      - name: Run security regressions
+        run: |
+          dotnet test SIPS.Connect.Tests/SIPS.Connect.Tests.csproj --no-restore --filter 'FullyQualifiedName~ApiKeySecurityTests|FullyQualifiedName~SecretManagementSecurityTests|FullyQualifiedName~SecurityConfigurationTests|FullyQualifiedName~DiagnosticsSecurityTests'
+          dotnet test Packages/SIPS.XMLDsig.Xades.Tests/SIPS.XMLDsig.Xades.Tests.csproj --no-restore
+      - name: Scan committed files and newly introduced history
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scanner='ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f'
+          snapshot="$(mktemp -d)"
+          trap 'rm -rf "$snapshot"' EXIT
+          git archive HEAD | tar -x -C "$snapshot"
+          docker run --rm --network none --user "$(id -u):$(id -g)" -v "$snapshot:/repo:ro" -w /repo "$scanner" dir . --redact --no-banner --max-archive-depth 2
+          if [[ -n "$BASE_SHA" && "$BASE_SHA" != '0000000000000000000000000000000000000000' ]]; then
+            [[ "$BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+            git cat-file -e "$BASE_SHA^{commit}"
+            range="$BASE_SHA..HEAD"
+          else
+            range='-1'
+          fi
+          docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" -w /repo "$scanner" git . --log-opts="$range" --redact --no-banner

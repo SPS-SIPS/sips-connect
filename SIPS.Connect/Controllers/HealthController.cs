@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using SIPS.Connect.Services;
 using SIPS.Connect.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace SIPS.Connect.Controllers;
 
 [ApiController]
 [Route("[controller]")]
+[Authorize(Roles = KnownRoles.Monitoring)]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public class HealthController : ControllerBase
 {
     private readonly IHealthCheckService _healthCheckService;

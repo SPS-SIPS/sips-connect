@@ -78,7 +78,7 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
             if (!response.IsSuccessStatusCode)
             {
                 sw.Stop();
-                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} idem={Idempotency} txId={TxId} corr={CorrelationId} data={data}", completeUrl, (int)response.StatusCode, sw.ElapsedMilliseconds, string.IsNullOrWhiteSpace(idemKey) ? "none" : idemKey, txId ?? "none", corrId ?? "none", data);
+                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} idem={Idempotency} txId={TxId} corr={CorrelationId}", completeUrl, (int)response.StatusCode, sw.ElapsedMilliseconds, string.IsNullOrWhiteSpace(idemKey) ? "none" : idemKey, txId ?? "none", corrId ?? "none");
                 return Response<JsonObject?>.Fail("Request Failed with Error", response.StatusCode, data);
             }
 
@@ -125,14 +125,14 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
             if (!response.IsSuccessStatusCode)
             {
                 sw.Stop();
-                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} txId={TxId} corr={CorrelationId} data={data}", url, (int)response.StatusCode, sw.ElapsedMilliseconds, txId ?? "none", corrId ?? "none", content);
+                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} txId={TxId} corr={CorrelationId}", url, (int)response.StatusCode, sw.ElapsedMilliseconds, txId ?? "none", corrId ?? "none");
                 return Response<string>.Fail("Failed To Get Valid Response From SIPS", response.StatusCode, content);
             }
 
             if (response.StatusCode == HttpStatusCode.BadRequest)
             {
                 sw.Stop();
-                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration} data={data}", url, (int)response.StatusCode, sw.ElapsedMilliseconds, content);
+                _logger.LogWarning("HTTP POST end: {Url} status={StatusCode} durationMs={Duration}", url, (int)response.StatusCode, sw.ElapsedMilliseconds);
                 return Response<string>.Fail("SIPS Responded with Bad Request - Check your ", response.StatusCode);
             }
 
@@ -168,10 +168,10 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
         {
             return JsonSerializer.Deserialize<JsonObject>(content, serializerOptions);
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
             var preview = content.Length > 512 ? content[..512] : content;
-            _logger.LogWarning(ex, "HTTP POST response body was not valid JSON: {Url} status={StatusCode} body={Body}", url, (int)statusCode, preview);
+            _logger.LogWarning("HTTP POST response body was not valid JSON: {Url} status={StatusCode} length={Length}", url, (int)statusCode, content.Length);
             return new JsonObject
             {
                 ["message"] = "Non-JSON response body",
@@ -250,7 +250,7 @@ public class InterfaceHttpClient(ILogger<InterfaceHttpClient> logger, HttpClient
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogError("Callback service-account token request failed with status {StatusCode}: {Content}", response.StatusCode, content);
+                _logger.LogError("Callback service-account token request failed with status {StatusCode}", response.StatusCode);
                 return null;
             }
 

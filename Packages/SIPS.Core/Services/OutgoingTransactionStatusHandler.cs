@@ -79,12 +79,6 @@ public sealed class OutgoingTransactionStatusHandler(
             var initialDbCt = initialDbCts.Token;
             // Step 1: Retrieve ISO message by TxId (with transactions for richer context)
             var isoMessage = await _persistence.GetISOMessageWithTransactionsByTxIdAsync(message.TxId, initialDbCt);
-            _logger.LogInformation("[{CorrelationId}] Retrieved ISO message: {ISOMessage}", cid, JsonSerializer.Serialize(isoMessage, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true,
-                ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles
-            }));
             if (isoMessage == null)
                 return Response<PaymentResponseDto>.Fail("Transaction not found", System.Net.HttpStatusCode.NotFound);
 

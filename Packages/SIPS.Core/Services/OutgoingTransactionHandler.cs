@@ -124,7 +124,7 @@ public sealed class OutgoingTransactionHandler(
             // This is different from incoming flow where we wait for separate pacs.002
             if (!TryParse(responseMessage.Data!, out var rs) || rs == null)
             {
-                _logger.LogError("[{CorrelationId}] Failed to parse IPS response: {message}", cid, responseMessage.Data);
+                _logger.LogError("[{CorrelationId}] Failed to parse IPS response", cid);
                 await _isoService.MarkForCheckStatusAsync(record, "Failed to parse IPS response", updateCt);
 
                 // Return PDNG instead of FAIL - IPS received the request but response is invalid
@@ -139,11 +139,6 @@ public sealed class OutgoingTransactionHandler(
                 });
             }
             _logger.LogInformation("[{CorrelationId}] Received response from IPS for TxId {TxId}: Status={Status}", cid, txId, rs.Status);
-            _logger.LogDebug("[{CorrelationId}] IPS Response: {Response}", cid, JsonSerializer.Serialize(rs, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true,
-            }));
 
             // Use StatusOrchestrator to map IPS status to final status
             var finalStatus = _statusOrchestrator.MapSingleStatus(rs.Status ?? RJCT, "IPS");

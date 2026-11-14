@@ -141,7 +141,7 @@ public sealed class IncomingReturnTransactionHandler(
             _logger.LogInformation("[{CorrelationId}] Replay detected for Return Request {MsgId}. Returning previous response.", cid, request.MsgId);
             return _signer.SignEnvelope(record.Response != null ? Encoding.UTF8.GetString(record.Response) : SipsReject.Create(message, AdminRejectReasonCodes.DuplicateMessageConflict, "Duplicate return request, but no previous response found."));
         }
-        _logger.LogInformation("[{CorrelationId}] Retrieved original message response (IRTH): {response}", cid, JsonSerializer.Serialize(response, _jsonSerializerOptions));
+        _logger.LogInformation("[{CorrelationId}] Retrieved original message response (IRTH)", cid);
 
         // Step 4: Validate original message exists and is a transaction request
         if (originalMessage == null)
@@ -407,7 +407,7 @@ public sealed class IncomingReturnTransactionHandler(
             response.AdditionalInfo = "Transaction marked as ReadyForReturn. Awaiting pacs.002 confirmation to complete return.";
 
             var rsp = ReturnPaymentResponseBuilder.Build(response);
-            _logger.LogInformation("[{CorrelationId}] Built ACSC response (IRTH): {Response}", cid, rsp);
+            _logger.LogInformation("[{CorrelationId}] Built ACSC response (IRTH)", cid);
 
             // Persist return message as ReadyForReturn (not final status yet)
             if (record != null)

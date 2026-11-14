@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "sources": [
+    "https://api.nuget.org/v3/index.json"
+  ],
+  "projects": [
+    {
+      "path": "SIPS.Connect/SIPS.Connect.csproj"
+    },
+    {
+      "path": "Packages/SIPS.Core/SIPS.Core.csproj"
+    },
+    {
+      "path": "Packages/SIPS.ISO20022/SIPS.ISO20022.csproj"
+    },
+    {
+      "path": "Packages/SIPS.Adapter/SIPS.Adapter.csproj"
+    },
+    {
+      "path": "Packages/SIPS.Emv/SIPS.Emv.csproj"
+    },
+    {
+      "path": "Packages/SIPS.PostgreSQL/SIPS.PostgreSQL.csproj"
+    },
+    {
+      "path": "Packages/SIPS.XMLDsig.Xades/SIPS.XMLDsig.Xades.csproj"
+    },
+    {
+      "path": "Packages/SIPS.Core.Tests/SIPS.Core.Tests.csproj"
+    }
+  ]
+}

@@ -69,8 +69,8 @@ public class SecretManagementService : ISecretManagementService
     public void SetSecret(string key, string value)
     {
         var encryptedValue = Encrypt(value);
-        // Note: This doesn't persist to file, just updates in-memory configuration
-        // Use SecretManagementTool for file updates
+        _configuration[key] = encryptedValue;
+        // File persistence is handled by SecretManagementTool.
         _logger.LogInformation("Secret encrypted for key: {Key}", key);
     }
 
@@ -116,215 +116,110 @@ public class SecretManagementService : ISecretManagementService
     }
 }
 
-/// <summary>
-/// Tool for managing secrets in appsettings files
-/// </summary>
-public class SecretManagementTool
+/// <summary>Updates recognized secret fields without plaintext backups or string substitution.</summary>
+public class SecretManagementTool(
+    ISecretManagementService secretService,
+    IWebHostEnvironment environment,
+    ILogger<SecretManagementTool> logger)
 {
-    private readonly ISecretManagementService _secretService;
-    private readonly ILogger<SecretManagementTool> _logger;
-    private readonly string _appSettingsPath;
+    private readonly SemaphoreSlim _updates = new(1, 1);
+    private readonly string _appSettingsPath = Path.Combine(environment.ContentRootPath, "appsettings.json");
 
-    public SecretManagementTool(
-        ISecretManagementService secretService,
-        IWebHostEnvironment environment,
-        ILogger<SecretManagementTool> logger)
+    public Task<EncryptionResult> EncryptSecretsAsync() => TransformAsync(decrypt: false);
+
+    public Task<EncryptionResult> DecryptSecretsAsync()
     {
-        _secretService = secretService;
-        _logger = logger;
-        _appSettingsPath = Path.Combine(environment.ContentRootPath, "appsettings.json");
+        if (!environment.IsDevelopment())
+            return Task.FromResult(new EncryptionResult { Message = "Plaintext export is available only in Development." });
+        return TransformAsync(decrypt: true);
     }
 
-    /// <summary>
-    /// Encrypt all plain text secrets in appsettings.json
-    /// </summary>
-    public async Task<EncryptionResult> EncryptSecretsAsync()
+    private async Task<EncryptionResult> TransformAsync(bool decrypt)
     {
-        var result = new EncryptionResult();
-
+        await _updates.WaitAsync();
+        string? temporary = null;
         try
         {
-            if (!File.Exists(_appSettingsPath))
-            {
-                result.Success = false;
-                result.Message = "appsettings.json not found";
-                return result;
-            }
-
             var json = await File.ReadAllTextAsync(_appSettingsPath);
-            var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var secretsToEncrypt = new Dictionary<string, string>();
-
-            // Find secrets that need encryption
-            FindSecretsToEncrypt(root, "", secretsToEncrypt);
-
-            if (secretsToEncrypt.Count == 0)
+            var root = System.Text.Json.Nodes.JsonNode.Parse(json, documentOptions: new JsonDocumentOptions
             {
-                result.Success = true;
-                result.Message = "No plain text secrets found";
-                return result;
-            }
-
-            // Create backup
-            var backupPath = $"{_appSettingsPath}.backup.{DateTime.Now:yyyyMMddHHmmss}";
-            File.Copy(_appSettingsPath, backupPath);
-            _logger.LogInformation("Created backup: {Path}", backupPath);
-
-            // Encrypt secrets
-            var updatedJson = json;
-            foreach (var kvp in secretsToEncrypt)
+                AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip
+            }) ?? throw new JsonException("Configuration must contain a JSON object.");
+            if (root is not System.Text.Json.Nodes.JsonObject) throw new JsonException("Configuration must contain a JSON object.");
+            var result = new EncryptionResult();
+            Visit(root, "", decrypt, result);
+            if (result.EncryptedKeys.Count > 0)
             {
-                var encrypted = _secretService.Encrypt(kvp.Value);
-                updatedJson = updatedJson.Replace($"\"{kvp.Value}\"", $"\"{encrypted}\"");
-                result.EncryptedKeys.Add(kvp.Key);
-            }
-
-            await File.WriteAllTextAsync(_appSettingsPath, updatedJson);
-
-            result.Success = true;
-            result.Message = $"Encrypted {result.EncryptedKeys.Count} secrets";
-            result.BackupPath = backupPath;
-
-            _logger.LogInformation("Encrypted {Count} secrets", result.EncryptedKeys.Count);
-        }
-        catch (Exception ex)
-        {
-            result.Success = false;
-            result.Message = ex.Message;
-            _logger.LogError(ex, "Failed to encrypt secrets");
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Decrypt all encrypted secrets in appsettings.json (for debugging)
-    /// </summary>
-    public async Task<EncryptionResult> DecryptSecretsAsync()
-    {
-        var result = new EncryptionResult();
-
-        try
-        {
-            if (!File.Exists(_appSettingsPath))
-            {
-                result.Success = false;
-                result.Message = "appsettings.json not found";
-                return result;
-            }
-
-            var json = await File.ReadAllTextAsync(_appSettingsPath);
-            var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var secretsToDecrypt = new Dictionary<string, string>();
-
-            // Find encrypted secrets
-            FindEncryptedSecrets(root, "", secretsToDecrypt);
-
-            if (secretsToDecrypt.Count == 0)
-            {
-                result.Success = true;
-                result.Message = "No encrypted secrets found";
-                return result;
-            }
-
-            // Create backup
-            var backupPath = $"{_appSettingsPath}.backup.{DateTime.Now:yyyyMMddHHmmss}";
-            File.Copy(_appSettingsPath, backupPath);
-
-            // Decrypt secrets
-            var updatedJson = json;
-            foreach (var kvp in secretsToDecrypt)
-            {
-                var decrypted = _secretService.Decrypt(kvp.Value);
-                updatedJson = updatedJson.Replace($"\"{kvp.Value}\"", $"\"{decrypted}\"");
-                result.EncryptedKeys.Add(kvp.Key);
-            }
-
-            await File.WriteAllTextAsync(_appSettingsPath, updatedJson);
-
-            result.Success = true;
-            result.Message = $"Decrypted {result.EncryptedKeys.Count} secrets";
-            result.BackupPath = backupPath;
-
-            _logger.LogInformation("Decrypted {Count} secrets", result.EncryptedKeys.Count);
-        }
-        catch (Exception ex)
-        {
-            result.Success = false;
-            result.Message = ex.Message;
-            _logger.LogError(ex, "Failed to decrypt secrets");
-        }
-
-        return result;
-    }
-
-    private void FindSecretsToEncrypt(JsonElement element, string path, Dictionary<string, string> secrets)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var property in element.EnumerateObject())
-            {
-                var newPath = string.IsNullOrEmpty(path) ? property.Name : $"{path}:{property.Name}";
-                
-                // Check if this is a secret field
-                if (IsSecretField(property.Name) && property.Value.ValueKind == JsonValueKind.String)
+                temporary = _appSettingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+                if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                await using (var stream = new FileStream(temporary, options))
                 {
-                    var value = property.Value.GetString();
-                    if (!string.IsNullOrEmpty(value) && !_secretService.IsEncrypted(value))
+                    await JsonSerializer.SerializeAsync(stream, root, new JsonSerializerOptions { WriteIndented = true });
+                    await stream.FlushAsync();
+                }
+                File.Move(temporary, _appSettingsPath, overwrite: true);
+            }
+            result.Success = true;
+            result.Message = $"{(decrypt ? "Decrypted" : "Encrypted")} {result.EncryptedKeys.Count} fields. " +
+                (result.SkippedKeys.Count > 0 ? "Bootstrap secrets and connection strings must use deployment-managed secrets; see skippedKeys." : "No plaintext backup was created.");
+            return result;
+        }
+        catch (Exception error)
+        {
+            // Avoid copying parser exception text or input values into responses or logs.
+            logger.LogError("Configuration secret update failed ({ErrorType})", error.GetType().Name);
+            return new EncryptionResult { Message = "Configuration secret update failed; the original configuration was retained." };
+        }
+        finally
+        {
+            if (temporary is not null && File.Exists(temporary)) File.Delete(temporary);
+            _updates.Release();
+        }
+    }
+
+    private void Visit(System.Text.Json.Nodes.JsonNode node, string path, bool decrypt, EncryptionResult result)
+    {
+        if (node is System.Text.Json.Nodes.JsonArray array)
+        {
+            for (var index = 0; index < array.Count; index++)
+                if (array[index] is { } child) Visit(child, $"{path}:{index}", decrypt, result);
+        }
+        else if (node is System.Text.Json.Nodes.JsonObject obj)
+        {
+            foreach (var property in obj.ToArray())
+            {
+                var currentPath = string.IsNullOrEmpty(path) ? property.Key : $"{path}:{property.Key}";
+                if (property.Value is System.Text.Json.Nodes.JsonValue value && value.TryGetValue<string>(out var text) && !string.IsNullOrEmpty(text))
+                {
+                    var encrypted = secretService.IsEncrypted(text);
+                    var bootstrap = currentPath.StartsWith("DataProtection:", StringComparison.OrdinalIgnoreCase) ||
+                        currentPath.StartsWith("Kestrel:", StringComparison.OrdinalIgnoreCase) ||
+                        currentPath.StartsWith("ConnectionStrings:", StringComparison.OrdinalIgnoreCase);
+                    if (bootstrap)
                     {
-                        secrets[newPath] = value;
+                        if (!encrypted && (IsSecretField(property.Key) || currentPath.StartsWith("ConnectionStrings:", StringComparison.OrdinalIgnoreCase)))
+                            result.SkippedKeys.Add(currentPath);
+                        continue;
+                    }
+                    // API-key identifiers are not protected values: the authenticator must look them up as sent.
+                    var apiKeyIdentifier = path.StartsWith("ApiKeys:", StringComparison.OrdinalIgnoreCase) && property.Key.Equals("Key", StringComparison.OrdinalIgnoreCase);
+                    if (!apiKeyIdentifier && (decrypt ? encrypted : IsSecretField(property.Key) && !encrypted))
+                    {
+                        obj[property.Key] = decrypt ? secretService.Decrypt(text) : secretService.Encrypt(text);
+                        result.EncryptedKeys.Add(currentPath);
                     }
                 }
-                
-                FindSecretsToEncrypt(property.Value, newPath, secrets);
+                else if (property.Value is { } child) Visit(child, currentPath, decrypt, result);
             }
         }
     }
 
-    private void FindEncryptedSecrets(JsonElement element, string path, Dictionary<string, string> secrets)
+    private static bool IsSecretField(string name)
     {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var property in element.EnumerateObject())
-            {
-                var newPath = string.IsNullOrEmpty(path) ? property.Name : $"{path}:{property.Name}";
-                
-                if (property.Value.ValueKind == JsonValueKind.String)
-                {
-                    var value = property.Value.GetString();
-                    if (!string.IsNullOrEmpty(value) && _secretService.IsEncrypted(value))
-                    {
-                        secrets[newPath] = value;
-                    }
-                }
-                
-                FindEncryptedSecrets(property.Value, newPath, secrets);
-            }
-        }
-    }
-
-    private static bool IsSecretField(string fieldName)
-    {
-        var lowerFieldName = fieldName.ToLowerInvariant();
-        
-        // Exclude non-secret fields - these are paths/URLs, not sensitive data
-        var excludedPatterns = new[] { "path", "url", "endpoint", "baseurl", "host" };
-        if (excludedPatterns.Any(pattern => lowerFieldName.Contains(pattern)))
-        {
-            return false;
-        }
-        
-        var secretFields = new[]
-        {
-            "password", "passphrase", "secret", "key", "token",
-            "clientsecret", "apikey", "connectionstring"
-        };
-
-        return secretFields.Any(s => lowerFieldName.Contains(s));
+        var field = name.ToLowerInvariant();
+        if (new[] { "path", "url", "endpoint", "host" }.Any(field.Contains)) return false;
+        return new[] { "password", "passphrase", "secret", "key", "token" }.Any(field.Contains);
     }
 }
 
@@ -333,5 +228,6 @@ public class EncryptionResult
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
     public List<string> EncryptedKeys { get; set; } = new();
+    public List<string> SkippedKeys { get; set; } = new();
     public string? BackupPath { get; set; }
 }

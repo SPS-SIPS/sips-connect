@@ -10,7 +10,7 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:?Set a unique deployment credential}
       - POSTGRES_DB=${DB_NAME:-SIPS.Connect.DB}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - sips_pg_data:/var/lib/postgresql/data
     networks:
@@ -31,7 +31,7 @@ services:
       postgresql:
         condition: service_healthy
     environment:
-      - ConnectionStrings__db=Host=postgresql;Database=${DB_NAME:-SIPS.Connect.DB};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:?Set a unique deployment credential};Include Error Detail=True;
+      - ConnectionStrings__db=Host=postgresql;Database=${DB_NAME:-SIPS.Connect.DB};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:?Set a unique deployment credential};Include Error Detail=False;
       - Xades__BIC=${BANK_CODE:-ZKBASOS0}
       - Xades__WithoutPKI=${WITHOUT_PKI:-true}
       # PAPSS-facing integration (disabled by default)
@@ -100,8 +100,8 @@ services:
       - ISO20022__CompletionNotification=${ISO20022_COMPLETION_NOTIFICATION_URL:-http://sips-corebank:8080/api/CB/CompletionNotification}
       - ASPNETCORE_ENVIRONMENT=Development
     ports:
-      - "${SIPS_CONNECT_PORT:-8080}:8080"
-      - "${SIPS_CONNECT_HTTPS_PORT:-9443}:443"
+      - "127.0.0.1:${SIPS_CONNECT_PORT:-8080}:8080"
+      - "127.0.0.1:${SIPS_CONNECT_HTTPS_PORT:-9443}:443"
     volumes:
       - ./logs:/app/logs:rw
       - ./certs:/app/certs:ro
@@ -118,9 +118,11 @@ services:
       postgresql:
         condition: service_healthy
     ports:
-      - "${SIPS_COREBANK_PORT:-8081}:8080"
-    env_file:
-      - ./.env
+      - "127.0.0.1:${SIPS_COREBANK_PORT:-8081}:8080"
+    environment:
+      - COREBANK_PORT=8080
+      - SIPS__ApiKey=${Test_CoreBank_API_Key:?Set a unique deployment credential}
+      - SIPS__ApiSecret=${Test_CoreBank_API_Secret:?Set a unique deployment credential}
     volumes:
       - ./mock-corebank.json:/app/db.json:rw
       - ./certs:/certs:ro

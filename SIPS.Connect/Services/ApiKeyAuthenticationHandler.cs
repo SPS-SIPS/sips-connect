@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -29,27 +31,31 @@ public class ApiKeyAuthenticationHandler(
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var providedKey = keyHdr.First();
-        var providedSecret = secHdr.First();
+        if (keyHdr.Count != 1 || secHdr.Count != 1 ||
+            string.IsNullOrWhiteSpace(keyHdr[0]) || string.IsNullOrWhiteSpace(secHdr[0]))
+            return Task.FromResult(AuthenticateResult.Fail("Invalid API key or secret"));
+
+        var providedKey = keyHdr[0];
+        var providedSecret = secHdr[0]!;
         var key = _keys.Keys.FirstOrDefault(k => k.Key == providedKey);
 
-        if (key != null && key.Secret == providedSecret)
+        if (key != null && !string.IsNullOrWhiteSpace(key.Secret) &&
+            !key.Secret.StartsWith("ENCRYPTED:", StringComparison.Ordinal) &&
+            CryptographicOperations.FixedTimeEquals(
+                SHA256.HashData(Encoding.UTF8.GetBytes(key.Secret)),
+                SHA256.HashData(Encoding.UTF8.GetBytes(providedSecret))))
         {
             var cfgName = key.Name;
-            var cfgSecret = key.Secret;
-            var cfgKey = key.Key;
 
             var claims = new List<Claim>
             {
                 new(ClaimTypes.Name, cfgName),
-                new("Type", "ApiKey"),
-                new(ClaimTypes.Role, Gateway),
-                new(ClaimTypes.Role, QR),
-                new(ClaimTypes.Role, ManageTransactions),
-                new(ClaimTypes.Role, ManageMassages)
+                new("Type", "ApiKey")
             };
-            // Narrow, per-key additional roles (e.g. RecallClose) on top of the fixed baseline above; empty by
-            // default, so a key gets nothing beyond the baseline unless explicitly configured with ApiKey.Roles.
+            if (key.IncludeDefaultRoles != false)
+                claims.AddRange(new[] { Gateway, QR, ManageTransactions, ManageMassages }
+                    .Select(role => new Claim(ClaimTypes.Role, role)));
+            // Existing keys keep their baseline; restricted identities can opt out explicitly.
             claims.AddRange(key.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
             var identity = new ClaimsIdentity(claims, ApiKeyDefaults.AuthenticationScheme);
             var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), ApiKeyDefaults.AuthenticationScheme);

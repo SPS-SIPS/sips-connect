@@ -10,7 +10,7 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:?Set a unique deployment credential}
       - POSTGRES_DB=${DB_NAME:-SIPS.Connect.DB.B}
     ports:
-      - "${SIPS_POSTGRES_PORT:-6432}:5432"
+      - "127.0.0.1:${SIPS_POSTGRES_PORT:-6432}:5432"
     volumes:
       - sips_pg_data_b:/var/lib/postgresql/data
     networks:
@@ -33,7 +33,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - ConnectionStrings__db=Host=sips-postgresql-b;Database=${DB_NAME:-SIPS.Connect.DB.B};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:?Set a unique deployment credential};Include Error Detail=True;
+      - ConnectionStrings__db=Host=sips-postgresql-b;Database=${DB_NAME:-SIPS.Connect.DB.B};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:?Set a unique deployment credential};Include Error Detail=False;
       - Xades__BIC=${BANK_CODE:-BKBASOS0}
       - Xades__WithoutPKI=${WITHOUT_PKI:-true}
       # PAPSS-facing integration (disabled by default)
@@ -115,7 +115,7 @@ services:
       sips-postgresql-b:
         condition: service_healthy
     ports:
-      - "${SIPS_COREBANK_PORT:-9081}:8080"
+      - "127.0.0.1:${SIPS_COREBANK_PORT:-9081}:8080"
     environment:
       - COREBANK_PORT=8080
       - SIPS__ApiKey=${Test_CoreBank_API_Key:?Set a unique deployment credential}

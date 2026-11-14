@@ -10,11 +10,13 @@ namespace SIPS.Connect.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/admin/secrets")]
-[Authorize(Roles = "Admin")] // Ensure only admins can access
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+[Authorize(Roles = KnownRoles.Admin)]
 public class SecretManagementController(
     ISecretManagementService secretService,
     SecretManagementTool tool,
-    ILogger<SecretManagementController> logger) : ControllerBase
+    ILogger<SecretManagementController> logger,
+    IWebHostEnvironment environment) : ControllerBase
 {
     private readonly ISecretManagementService _secretService = secretService;
     private readonly SecretManagementTool _tool = tool;
@@ -41,7 +43,7 @@ public class SecretManagementController(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to encrypt value");
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { error = "Secret operation failed" });
         }
     }
 
@@ -51,6 +53,7 @@ public class SecretManagementController(
     [HttpPost("decrypt")]
     public IActionResult DecryptValue([FromBody] SecretRequest request)
     {
+        if (!environment.IsDevelopment()) return NotFound();
         try
         {
             var decrypted = _secretService.Decrypt(request.Value);
@@ -66,7 +69,7 @@ public class SecretManagementController(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to decrypt value");
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { error = "Secret operation failed" });
         }
     }
 
@@ -88,6 +91,7 @@ public class SecretManagementController(
                     success = true,
                     message = result.Message,
                     encryptedKeys = result.EncryptedKeys,
+                    skippedKeys = result.SkippedKeys,
                     backupPath = result.BackupPath,
                     warning = "Application restart required for changes to take effect"
                 });
@@ -98,7 +102,7 @@ public class SecretManagementController(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to encrypt all secrets");
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "Secret operation failed" });
         }
     }
 
@@ -109,6 +113,7 @@ public class SecretManagementController(
     [HttpPost("decrypt-all")]
     public async Task<IActionResult> DecryptAllSecrets()
     {
+        if (!environment.IsDevelopment()) return NotFound();
         try
         {
             var result = await _tool.DecryptSecretsAsync();
@@ -131,7 +136,7 @@ public class SecretManagementController(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to decrypt all secrets");
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "Secret operation failed" });
         }
     }
 
@@ -141,6 +146,7 @@ public class SecretManagementController(
     [HttpGet("{key}")]
     public IActionResult GetSecret(string key)
     {
+        if (!environment.IsDevelopment()) return NotFound();
         try
         {
             // Replace : with / for URL compatibility
@@ -160,7 +166,7 @@ public class SecretManagementController(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get secret");
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { error = "Secret operation failed" });
         }
     }
 }

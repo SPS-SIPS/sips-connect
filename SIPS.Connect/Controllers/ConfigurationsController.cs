@@ -350,6 +350,8 @@ public class ConfigurationsController(
             existing.Name = request.Name;
             existing.Secret = request.Secret;
             existing.Roles = request.Roles;
+            if (request.IncludeDefaultRoles.HasValue)
+                existing.IncludeDefaultRoles = request.IncludeDefaultRoles;
         }
         else
         {

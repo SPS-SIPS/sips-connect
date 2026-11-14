@@ -10,6 +10,9 @@ keys/
 certs/
 artifacts/
 node_modules/
+**/keys/
+**/certs/
+**/logs/
 
 *.user
 *.suo
@@ -20,8 +23,13 @@ node_modules/
 **/.env
 **/.env.*
 **/appsettings.Secrets.json
+**/appsettings*.json.backup.*
+**/*.bak
 **/*.pfx
 **/*.p12
 **/*.key
+**/*.pem
+**/*.jks
+**/*.keystore
 **/*.docx
 .github/

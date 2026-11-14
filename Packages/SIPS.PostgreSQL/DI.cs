@@ -12,6 +12,8 @@ public static class DI
     {
         var connectionString = configuration.GetConnectionString("db");
         connectionString = connectionString?.Replace("{{PASSWORD}}", Environment.GetEnvironmentVariable("POSTGRESQL_PASSWORD"));
+        if (!string.IsNullOrWhiteSpace(connectionString))
+            connectionString = new Npgsql.NpgsqlConnectionStringBuilder(connectionString) { IncludeErrorDetail = false }.ConnectionString;
 
         services.AddDbContext<StorageBroker>((sp, options) =>
         {
