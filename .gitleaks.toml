@@ -8,7 +8,7 @@ useDefault = true
 description = "Public XML signature reference IDs"
 targetRules = ["generic-api-key"]
 condition = "AND"
-paths = ['''^(Packages/SIPS.Core.Tests/TestData/(acmt\.023|pacs\.004|pacs\.008)\.xml|SIPS.Connect.Tests/Fixtures/recall-outcome-unresolved-callback-20260926\.xml)$''']
+paths = ['''^((?:Packages/)?SIPS.Core.Tests/TestData/(acmt\.023|pacs\.004|pacs\.008)\.xml|(?:SIPS.Connect/)?TestScripts/Payloads/(acmt\.023|pacs\.008)\.xml|SIPS.Connect.Tests/Fixtures/recall-outcome-unresolved-callback-20260926\.xml)$''']
 regexTarget = "match"
 regexes = ['''^KeyInfo Id="[A-Za-z0-9_:-]+"$''']
 
@@ -16,6 +16,6 @@ regexes = ['''^KeyInfo Id="[A-Za-z0-9_:-]+"$''']
 description = "Illustrative Data Protection key identifier (not key material)"
 targetRules = ["generic-api-key"]
 condition = "AND"
-paths = ['''^SIPS.Connect/DATA_PROTECTION_KEY_SECURITY\.md$''']
+paths = ['''^(?:SIPS.Connect/)?DATA_PROTECTION_KEY_SECURITY\.md$''']
 regexTarget = "match"
 regexes = ['''^key id="[0-9a-fA-F-]{36}"$''']

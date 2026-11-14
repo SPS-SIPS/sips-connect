@@ -44,8 +44,8 @@ Container publishing now depends on a reusable security workflow that:
 
 1. Audits direct/transitive NuGet packages and fails on known advisories **or unavailable vulnerability data**.
 2. Runs focused authentication/secret-handling/startup tests and XAdES conformance tests.
-3. Uses a digest-pinned Gitleaks image to scan all committed files (including archive contents) and newly introduced commits. The workflow also runs weekly to refresh dependency checks.
+3. Uses a digest-pinned Gitleaks image to scan all committed files (including archive contents) and all reachable commits. The workflow also runs weekly to refresh dependency checks.
 
-Only public XML signature reference IDs and one illustrative key identifier have narrowly scoped scanner exceptions. Documentation credentials were converted to angle-bracket placeholders. Historical exposures are not silently allowlisted: the CI gate covers the current snapshot and the new commit range, while the separate full-history audit remains recorded in the rotation inventory. Revoke historical credentials even when the current-tree scan is clean.
+Only public XML signature reference IDs and one illustrative key identifier have narrowly scoped scanner exceptions. Documentation credentials were converted to angle-bracket placeholders. Historical exposures are not silently allowlisted: the CI gate covers the current snapshot and all reachable history, while the pre-cleanup audit remains recorded in the rotation inventory. Revoke historical credentials even when the current-tree scan is clean.
 
 Hosted secret scanning/push protection, production credential revocation, TLS/identity-provider/payment-switch interoperability, existing registry images and production log/backup inspection still require access to those systems. No deployment was performed by this change.
