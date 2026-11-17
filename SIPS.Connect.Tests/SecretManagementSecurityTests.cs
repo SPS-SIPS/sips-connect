@@ -93,6 +93,7 @@ public sealed class SecretManagementSecurityTests : IDisposable
         Assert.IsType<NotFoundResult>(controller.GetSecret("Core:Password"));
         Assert.IsType<NotFoundResult>(controller.DecryptValue(new SecretRequest { Value = "ENCRYPTED:test" }));
         Assert.IsType<NotFoundResult>(await controller.DecryptAllSecrets());
+        Assert.IsType<NotFoundResult>(await controller.EncryptAllSecrets());
         Assert.False((await productionTool.DecryptSecretsAsync()).Success);
         service.VerifyNoOtherCalls();
         Assert.Empty(Directory.GetFiles(directory));

@@ -13,7 +13,7 @@ public static class DI
             var options = sp.GetRequiredService<XadesOptions>();
             return options.WithoutPKI
                 ? new NoOpCertificateService(sp.GetRequiredService<ILogger<NoOpCertificateService>>())
-                : new CertificateService(options);
+                : new CertificateService(options, sp.GetService<TimeProvider>());
         });
 
         services.AddSingleton<INativeSigner, NativeSigner>();

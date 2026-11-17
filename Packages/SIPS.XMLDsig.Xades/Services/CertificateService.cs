@@ -11,14 +11,16 @@ namespace SIPS.XMLDsig.Xades.Services;
 
 public sealed class CertificateService : ICertificateService
 {
-    public CertificateService(XadesOptions options)
+    public CertificateService(XadesOptions options, TimeProvider? timeProvider = null)
     {
         _configuration = options;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         AsymmetricKey = LoadPrivateKey();
         Certificate = LoadCertificate();
         Chain = LoadCertificateChain();
     }
     private readonly XadesOptions _configuration;
+    private readonly TimeProvider _timeProvider;
     public AsymmetricKeyParameter AsymmetricKey { get; private set; }
     private readonly string currentDirectory = Directory.GetCurrentDirectory();
 
@@ -77,7 +79,7 @@ public sealed class CertificateService : ICertificateService
                 // Check expiry date for all certificates in the chain
                 try
                 {
-                    cert.CheckValidity();
+                    cert.CheckValidity(_timeProvider.GetUtcNow().UtcDateTime);
                 }
                 catch (CertificateExpiredException)
                 {
@@ -140,7 +142,7 @@ public sealed class CertificateService : ICertificateService
         // Validate certificate expiry on load to fail fast
         try
         {
-            certificate.CheckValidity();
+            certificate.CheckValidity(_timeProvider.GetUtcNow().UtcDateTime);
         }
         catch (CertificateExpiredException)
         {
@@ -206,7 +208,7 @@ public sealed class CertificateService : ICertificateService
     {
         try
         {
-            certificate.CheckValidity();
+            certificate.CheckValidity(_timeProvider.GetUtcNow().UtcDateTime);
             if (certificate.GetPublicKey() is not Org.BouncyCastle.Crypto.Parameters.RsaKeyParameters rsa || rsa.Modulus.BitLength < 2048) return (false, "Signing key must be RSA with at least 2048 bits.");
             var usage = certificate.GetKeyUsage();
             if (usage is null || usage.Length == 0 || !usage[0]) return (false, "Leaf certificate must assert digitalSignature key usage.");
@@ -217,7 +219,7 @@ public sealed class CertificateService : ICertificateService
                 if (!visited.Add(current.SerialNumber + "|" + current.IssuerDN)) return (false, "Certificate chain cycle detected.");
                 var issuer = Chain.SingleOrDefault(c => c.SubjectDN.Equivalent(current.IssuerDN));
                 if (issuer is null) return (false, $"Issuer not found in configured SPS chain: {current.IssuerDN}");
-                issuer.CheckValidity();
+                issuer.CheckValidity(_timeProvider.GetUtcNow().UtcDateTime);
                 if (issuer.GetBasicConstraints() < 0) return (false, "Issuer is not a CA certificate.");
                 var issuerUsage = issuer.GetKeyUsage();
                 if (issuerUsage is null || issuerUsage.Length <= 5 || !issuerUsage[5]) return (false, "Issuer must assert keyCertSign usage.");
@@ -247,7 +249,7 @@ public sealed class CertificateService : ICertificateService
             if (certificate.IssuerDN.Equivalent(certificate.SubjectDN))
             {
                 certificate.Verify(certificate.GetPublicKey());
-                certificate.CheckValidity();
+                certificate.CheckValidity(_timeProvider.GetUtcNow().UtcDateTime);
                 return (true, "");
             }
 
@@ -260,7 +262,7 @@ public sealed class CertificateService : ICertificateService
                 try
                 {
                     certificate.Verify(issuer.GetPublicKey());
-                    certificate.CheckValidity();
+                    certificate.CheckValidity(_timeProvider.GetUtcNow().UtcDateTime);
                     return (true, "");
                 }
                 catch

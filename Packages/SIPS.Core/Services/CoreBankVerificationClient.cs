@@ -200,7 +200,7 @@ public sealed class CoreBankVerificationClient(
 
         // Deserialize into our DTO with case-insensitive property matching
         var deserializedContent = jsonAdapter.ToObject<VerificationResponseDto>(mapped);
-        logger.LogInformation("[ParseCallbackResult] Verification result for {Alias}: Verified={Verified}", response.Original?.Alias, deserializedContent?.IsVerified);
+        logger.LogInformation("[ParseCallbackResult] Verification result: Verified={Verified}", deserializedContent?.IsVerified);
 
         response.Verified = deserializedContent?.IsVerified ?? false;
         var businessReason = FirstNonEmpty(

@@ -49,3 +49,43 @@ Container publishing now depends on a reusable security workflow that:
 Only public XML signature reference IDs and one illustrative key identifier have narrowly scoped scanner exceptions. Documentation credentials were converted to angle-bracket placeholders. Historical exposures are not silently allowlisted: the CI gate covers the current snapshot and all reachable history, while the pre-cleanup audit remains recorded in the rotation inventory. Revoke historical credentials even when the current-tree scan is clean.
 
 Hosted secret scanning/push protection, production credential revocation, TLS/identity-provider/payment-switch interoperability, existing registry images and production log/backup inspection still require access to those systems. No deployment was performed by this change.
+
+## Domestic switch certificate identity
+
+Domestic IPS verification now requires `Xades:DomesticSwitchCertificateSha256`, an array of SHA-256 hashes of the **DER-encoded switch signing certificate**. A CA chain alone does not identify the national switch. Missing, malformed or nonmatching pins fail closed; non-Development startup rejects an absent or malformed list. Do not pin a participant certificate, a private-key hash, a PEM file's text hash, or a certificate learned solely from an incoming message.
+
+Obtain the public signing certificate and confirm its SHA-256 fingerprint with the switch operator through an authenticated, independent channel. Compute the DER fingerprint locally with:
+
+```sh
+openssl x509 -in switch-signing.pem -outform DER | openssl dgst -sha256
+```
+
+Use the resulting 64 hexadecimal characters, without colons or the command's label. The standalone production template requires `DOMESTIC_SWITCH_CERT_SHA256` for the current certificate. For rotation, provision both current and independently approved replacement fingerprints as array entries (`Xades__DomesticSwitchCertificateSha256__0`, `__1`), roll out the configuration, verify interoperability, then remove the retired fingerprint after the agreed overlap. Do not enable unsigned mode to bypass pinning.
+
+## Runtime configuration and logging
+
+All HTTP configuration mutations are denied outside Development, even for a configuration administrator. Apply PKI, endpoints, callback credentials, CORS, allowed-host and API-key changes through the reviewed deployment process and restart. Read endpoints mask secrets, including callback OAuth client secrets. Bulk encryption through HTTP is Development-only; production secret provisioning must occur in the controlled deployment process. Denials record actor and action without request bodies; Development mutation outcomes are recorded separately. Restrict access to audit logs and deploy with immutable configuration mounts.
+
+Application logs omit raw balance/authentication/participant responses, customer names and account aliases in the reviewed paths. The sample file sink rolls daily and at 10 MiB, retaining at most 31 files (size rolls can shorten the effective time window). The logs API requires the dedicated logs role. Operators must enforce filesystem/collector access, central retention and deletion of old sensitive logs; changing application code does not cleanse existing logs or external collectors.
+
+Reviewer Compose files now default to PKI enabled. Unsigned local testing requires an explicit `WITHOUT_PKI=true` in Development. These files remain Development examples, not production profiles. Use the separate Production template and satisfy its startup checks.
+
+## Regression evidence and release gate
+
+Controlled tests cover a signed pacs.008 document hidden before a modified direct payment document, duplicate documents/headers/signatures/IDs, alternate `xml:id`, prohibited DTDs, a different participant signing under the same CA, missing/malformed pins, overlapping certificate rotation and revocation. Existing legacy vendor and PAPSS signature fixtures remain in the signature suite.
+
+`BouncyCastle.NetCore 2.2.1` was replaced by the official [BouncyCastle.Cryptography 2.7.0 package](https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0). Resolve and audit the complete dependency graph during release; dependency scanning does not prove absence of all cryptographic implementation flaws. Certificate validity now uses an injectable clock, defaulting to the system clock, so historical fixture tests can validate their intended trust failure without disabling expiry enforcement.
+
+The application suite has an existing generated-schema initialization race under parallel execution. Run its full regression suite with `-- xUnit.ParallelizeTestCollections=false`. Do not report a parallel failure as a security remediation success.
+
+Credential revocation, trusted switch pin provisioning, participant deployment verification and hosted retained-history cleanup remain operator actions. These operational actions are separate from source remediation.
+
+Validation recorded on 15 November 2026: 31 signature tests passed; the complete application suite passed 286 tests in serial mode; core tests passed 237 with 7 existing skips. Both controlled C-01/C-02 tests fail against the original verifier because it accepts the attack, and pass after remediation. The pacs.008 control confirms that the ordinary payment parser reads an instructed amount of 999 from the altered direct document while the original verifier accepts the unchanged wrapped document originally signed with amount 1. The signer-identity control uses a separately generated participant certificate chaining to the same test CA.
+
+The solution audit covered eight projects and reported zero known vulnerable direct/transitive packages or audit problems. A source snapshot containing tracked files and the new security files was scanned with the digest-pinned Gitleaks image: 12.69 MB scanned, zero findings with the existing narrow public-identifier allowlists. Repository hygiene positive/negative controls and the current sample scan passed. These are local checks; no deployment or hosted workflow run was performed as part of this validation.
+
+The final source-only C-04 pass also removes remote error bodies, amount-mismatch details, QR/parser exception messages and adapter conversion exception text from application logs. Detailed operator recall reasons stay in the authorized audit record rather than the general application log. Five focused privacy tests cover success/error balance responses, conversion failures, remote login error text and propagated certificate-lookup error text.
+
+Repository checks found zero matches for the six known exposed credential values and zero complete JWTs across all local Git objects. A separate full-history Gitleaks scan reported zero findings.
+
+The final source image was rebuilt successfully and its executed UID verified as 1654. The build context now excludes macOS resource forks as well as deployment secrets. These checks validate the source and build artifacts.

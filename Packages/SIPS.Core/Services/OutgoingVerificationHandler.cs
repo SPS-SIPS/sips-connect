@@ -59,7 +59,7 @@ public sealed class OutgoingVerificationHandler(
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("Failed to parse QR Code for verification request: {Error}", ex.Message);
+                _logger.LogWarning("QR verification request could not be parsed; error type {ErrorType}", ex.GetType().Name);
                 return Response<VerificationResponseDto>.Fail("failed to verify the qr code", System.Net.HttpStatusCode.BadRequest);
             }
         }

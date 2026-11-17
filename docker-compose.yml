@@ -33,7 +33,8 @@ services:
     environment:
       - ConnectionStrings__db=Host=postgresql;Database=${DB_NAME:-SIPS.Connect.DB};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:?Set a unique deployment credential};Include Error Detail=False;
       - Xades__BIC=${BANK_CODE:-ZKBASOS0}
-      - Xades__WithoutPKI=${WITHOUT_PKI:-true}
+      - Xades__WithoutPKI=${WITHOUT_PKI:-false}
+      - Xades__DomesticSwitchCertificateSha256__0=${DOMESTIC_SWITCH_CERT_SHA256:-}
       # PAPSS-facing integration (disabled by default)
       - PapssFacing__Enabled=${PAPSS_ENABLED:-false}
       - PapssFacing__IsoIngressUrl=${PAPSS_ISO_INGRESS_URL:-}

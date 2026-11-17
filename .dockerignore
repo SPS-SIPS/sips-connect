@@ -33,3 +33,6 @@ node_modules/
 **/*.keystore
 **/*.docx
 .github/
+
+# Exclude macOS resource forks from Linux build contexts.
+**/._*

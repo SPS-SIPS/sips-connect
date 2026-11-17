@@ -47,7 +47,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
         }
         else
         {
-            _logger.LogWarning("Authentication failed or returned empty token. Proceeding without Auth header (Likely 401). Error: {Error}", loginResult.Error);
+            _logger.LogWarning("Authentication returned an empty token. Certificate request has no authentication header.");
         }
 
         // Step 4: Build request and call API (with 401 retry logic)
@@ -74,7 +74,7 @@ public class CertificateDownloadService(CoreOptions options, ILogger<Certificate
 
         if (!response.IsSuccess)
         {
-            _logger.LogError("Failed to get certificates: {Error} (Status: {Status})", response.Message, response.StatusCode);
+            _logger.LogError("Certificate download failed with status {StatusCode}", response.StatusCode);
             return (null, response.Message);
         }
 

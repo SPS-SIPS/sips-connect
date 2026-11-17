@@ -164,7 +164,7 @@ public sealed partial class PapssOperationStore
             logger.LogInformation("PAPSS recall {RecallId} was already closed concurrently; not closed again", recallId);
             return (PapssRecallCloseOutcome.AlreadyClosed, await FindOutboundRecallAsync(recallId, ct));
         }
-        logger.LogWarning("PAPSS recall {RecallId} was manually closed by {ClosedBy} via {AuthPath} (was {PreviousOutcome}): {Reason}", recallId, by, authPath, previousOutcome, reason);
+        logger.LogWarning("PAPSS recall {RecallId} was manually closed by {ClosedBy} via {AuthPath} (was {PreviousOutcome}); full reason retained in the audit record", recallId, by, authPath, previousOutcome);
         return (PapssRecallCloseOutcome.Closed, recall);
     }
 

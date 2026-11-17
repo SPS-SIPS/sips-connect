@@ -207,8 +207,8 @@ public sealed class OutgoingReturnTransactionHandler(
                 // IPS rejected the return (RJCT) - update original transaction
                 originalMessage.Reason = "Outgoing return rejected by IPS";
                 originalMessage.AdditionalInfo = $"Return attempt with ReturnId: {message.ReturnId} was rejected. Reason: {rs.Reason ?? "Unknown"}";
-                _logger.LogWarning("[{CorrelationId}] Outgoing return rejected for TxId {TxId} with ReturnId {ReturnId}. Reason: {Reason}",
-                    cid, message.OriginalTxId, message.ReturnId, rs.Reason);
+                _logger.LogWarning("[{CorrelationId}] Outgoing return rejected for TxId {TxId} with ReturnId {ReturnId}",
+                    cid, message.OriginalTxId, message.ReturnId);
             }
 
             await _persistence.ISOMessageResponseAsync(originalMessage, updateCt);
@@ -396,7 +396,7 @@ public sealed class OutgoingReturnTransactionHandler(
         System.Net.HttpStatusCode statusCode,
         CancellationToken ct)
     {
-        _logger.LogError("Failed to receive valid response from IPS: {Message}", logMessage);
+        _logger.LogError("IPS response rejected with HTTP status {StatusCode}", (int)statusCode);
         // Note: SAF marking handled in HandleSIPSCallExceptionAsync
         return Task.FromResult(Response<ReturnPaymentResponseDto>.Fail(failMessage, statusCode));
     }

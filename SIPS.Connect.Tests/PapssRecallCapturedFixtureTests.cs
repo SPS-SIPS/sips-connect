@@ -132,11 +132,11 @@ public sealed class PapssRecallCapturedFixtureTests
         download.Setup(x => x.GetCertificatesAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()))
             .ReturnsAsync((new CertificateDownloadResponse(pem, RemoteWpSipsIdentity, false, "SPS-AUTH", "TEST", RemoteWpSipsIdentity, fingerprint, "v1", RequiredEku), (string?)null));
 
-        using var pki = new ThrowawayCertificateService();
+        var timeProvider = new FixedTimeProvider(DateTimeOffset.Parse("2026-09-26T08:39:00Z"));
+        using var pki = new ThrowawayCertificateService(timeProvider);
         var messages = new List<string>();
         var logger = new CapturingLogger<NativeVerifier>(messages);
         var options = new XadesOptions { VerificationWindowMinutes = 100 };
-        var timeProvider = new FixedTimeProvider(DateTimeOffset.Parse("2026-09-26T08:39:00Z")); // shortly after the fixture's SigningTime, inside its validity window
         var verifier = new NativeVerifier(options, logger, pki.Service, download.Object, timeProvider);
 
         var (result, verbose) = await verifier.VerifySignature(xml, checkOwnerShip: true, XadesProfile.WpSipsPapss, CancellationToken.None);
@@ -201,19 +201,20 @@ public sealed class PapssRecallCapturedFixtureTests
         private readonly string directory = Path.Combine(Path.GetTempPath(), "papss-recall-fixture-pki-" + Guid.NewGuid().ToString("N"));
         public CertificateService Service { get; }
 
-        public ThrowawayCertificateService()
+        public ThrowawayCertificateService(TimeProvider? timeProvider = null)
         {
+            var now = (timeProvider ?? TimeProvider.System).GetUtcNow();
             Directory.CreateDirectory(directory);
             using var rootKey = RSA.Create(2048);
             var rootRequest = new CertificateRequest("CN=Throwaway Root", rootKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
             rootRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
-            using var root = rootRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+            using var root = rootRequest.CreateSelfSigned(now.AddDays(-1), now.AddDays(30));
             using var leafKey = RSA.Create(2048);
             var leafRequest = new CertificateRequest("CN=Throwaway Leaf", leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
             leafRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
-            using var unsigned = leafRequest.Create(root, DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1), RandomNumberGenerator.GetBytes(16));
+            using var unsigned = leafRequest.Create(root, now.AddMinutes(-5), now.AddDays(1), RandomNumberGenerator.GetBytes(16));
             using var leaf = unsigned.CopyWithPrivateKey(leafKey);
             File.WriteAllText(Path.Combine(directory, "leaf.pem"), leaf.ExportCertificatePem());
             File.WriteAllText(Path.Combine(directory, "key.pem"), leafKey.ExportPkcs8PrivateKeyPem());
@@ -227,7 +228,7 @@ public sealed class PapssRecallCapturedFixtureTests
                 Algorithms = ["SHA256withRSA"],
                 DefaultSignatureMethod = "SHA256withRSA",
                 VerificationWindowMinutes = 100
-            });
+            }, timeProvider);
         }
 
         public void Dispose() => Directory.Delete(directory, true);

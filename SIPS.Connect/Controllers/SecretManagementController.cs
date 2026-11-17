@@ -79,6 +79,7 @@ public class SecretManagementController(
     [HttpPost("encrypt-all")]
     public async Task<IActionResult> EncryptAllSecrets()
     {
+        if (!environment.IsDevelopment()) return NotFound();
         try
         {
             var result = await _tool.EncryptSecretsAsync();

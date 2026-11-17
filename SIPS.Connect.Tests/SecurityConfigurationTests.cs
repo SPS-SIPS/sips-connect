@@ -60,6 +60,8 @@ public sealed class SecurityConfigurationTests
 
     [Theory]
     [InlineData("ISO20022:Secret", "123", "callbacks")]
+    [InlineData("ISO20022:Key", "api_key", "callbacks")]
+    [InlineData("ISO20022:Secret", "api_secret", "callbacks")]
     [InlineData("ConnectionStrings:db", "Host=localhost;Username=app;Password=postgres", "database")]
     public void Production_rejects_public_callback_and_database_defaults(string field, string value, string message)
     {
@@ -73,7 +75,17 @@ public sealed class SecurityConfigurationTests
         Assert.Contains(message, error.Message);
     }
 
-    private static IConfiguration Configuration(Dictionary<string, string?> values) => new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-fingerprint")]
+    public void Production_requires_valid_domestic_switch_pins(string pin)
+    {
+        var config = Configuration(new() { ["DataProtection:CertificatePath"] = "deployment.pfx", ["Keycloak:Realm:Protocol"] = "https",
+            ["ISO20022:Key"] = "working-key", ["ISO20022:Secret"] = "working-secret", ["Xades:DomesticSwitchCertificateSha256:0"] = pin });
+        Assert.Contains("DomesticSwitchCertificateSha256", Assert.Throws<InvalidOperationException>(() => SecurityConfiguration.Validate(config, Environment("Production"))).Message);
+    }
+
+    private static IConfiguration Configuration(Dictionary<string, string?> values) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Xades:DomesticSwitchCertificateSha256:0"] = new string('a', 64) }).AddInMemoryCollection(values).Build();
     private static IHostEnvironment Environment(string name)
     {
         var environment = new Mock<IHostEnvironment>();

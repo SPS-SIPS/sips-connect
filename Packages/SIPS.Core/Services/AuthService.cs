@@ -34,7 +34,7 @@ public class AuthService(CoreOptions options, ILogger<AuthService> logger, IRepo
         var response = await _httpService.PostAsync<LoginRequest, LoginResponse>(url!, request, cancellationToken);
         if (!response.IsSuccess)
         {
-            _logger.LogError("Login failed: {Error}", response.Message);
+            _logger.LogError("Login failed with status {StatusCode}", response.StatusCode);
             return (null, response.Message);
         }
 

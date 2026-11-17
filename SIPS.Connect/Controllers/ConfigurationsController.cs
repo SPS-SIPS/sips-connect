@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using SIPS.Connect.Config;
 using SIPS.Connect.Services;
 using SIPS.Core.Options;
@@ -17,13 +18,33 @@ public class ConfigurationsController(
     IConfiguration configuration,
     IWebHostEnvironment env,
     ISecretManagementService secretService,
-    ILogger<ConfigurationsController> logger) : ControllerBase
+    ILogger<ConfigurationsController> logger) : ControllerBase, IActionFilter
 {
     private readonly IConfiguration _configuration = configuration;
     private readonly ISecretManagementService _secretService = secretService;
     private readonly ILogger<ConfigurationsController> _logger = logger;
     private readonly string _jsonFilePath = Path.Combine(env.ContentRootPath, "appsettings.json");
     private static readonly JsonSerializerOptions options = new() { WriteIndented = true };
+
+    public void OnActionExecuting(ActionExecutingContext context)
+    {
+        if (HttpMethods.IsGet(context.HttpContext.Request.Method)) return;
+        if (!env.IsDevelopment())
+        {
+            _logger.LogWarning("Runtime configuration change denied. Actor={Actor}; Action={Action}",
+                context.HttpContext.User.FindFirst("sub")?.Value ?? "unknown", context.ActionDescriptor.DisplayName);
+            context.Result = StatusCode(StatusCodes.Status403Forbidden,
+                "Configuration changes require the deployment process outside Development.");
+        }
+    }
+
+    public void OnActionExecuted(ActionExecutedContext context)
+    {
+        if (HttpMethods.IsGet(context.HttpContext.Request.Method)) return;
+        _logger.LogInformation("Development configuration action completed. Actor={Actor}; Action={Action}; Succeeded={Succeeded}",
+            context.HttpContext.User.FindFirst("sub")?.Value ?? "unknown", context.ActionDescriptor.DisplayName,
+            context.Exception is null && context.Result is OkObjectResult);
+    }
 
     /// <summary>
     /// Reload configuration after changes
@@ -66,6 +87,7 @@ public class ConfigurationsController(
             configs.Password = "********";
         }
 
+        if (!string.IsNullOrEmpty(configs.CallbackClientSecret)) configs.CallbackClientSecret = "********";
         return Ok(configs);
     }
 

@@ -437,7 +437,7 @@ public sealed class OutgoingTransactionHandler(
         System.Net.HttpStatusCode statusCode,
         CancellationToken ct)
     {
-        _logger.LogError("Failed to receive valid response from IPS: {Message}", logMessage);
+        _logger.LogError("IPS response rejected with HTTP status {StatusCode}", (int)statusCode);
         await _isoService.MarkForCheckStatusAsync(record, persistMessage, ct);
         return Response<PaymentResponseDto>.Fail(failMessage, statusCode);
     }

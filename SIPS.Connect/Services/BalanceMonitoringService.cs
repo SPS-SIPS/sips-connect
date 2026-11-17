@@ -58,14 +58,11 @@ public class BalanceMonitoringService : IBalanceMonitoringService
 
             if (!httpResponse.IsSuccessStatusCode)
             {
-                var errorContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogWarning("Request failed with status {StatusCode}. Response: {Response}", 
-                    httpResponse.StatusCode, errorContent);
+                _logger.LogWarning("Balance request failed with status {StatusCode}", httpResponse.StatusCode);
                 return null;
             }
 
             var responseContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogInformation("Response content: {Content}", responseContent);
             
             var options = new JsonSerializerOptions
             {
@@ -77,11 +74,7 @@ public class BalanceMonitoringService : IBalanceMonitoringService
             
             if (apiResponse?.Data != null)
             {
-                _logger.LogInformation(
-                    "Successfully fetched balance status - BIC: {Bic}, Zone: {Zone}, Balance: {Balance}", 
-                    apiResponse.Data.Bic, 
-                    apiResponse.Data.CurrentZone, 
-                    apiResponse.Data.LastKnownBalance);
+                _logger.LogInformation("Balance status fetched successfully");
                 return apiResponse.Data;
             }
 

@@ -48,7 +48,7 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning("Type mismatch for field '{UserField}' in endpoint '{EndpointName}' expected as '{ExpectedType}': {Message}", userField, endpointName, expectedType, ex.Message);
+                    _logger.LogWarning("Type mismatch for field {UserField} in endpoint {EndpointName}; expected {ExpectedType}; error type {ErrorType}", userField, endpointName, expectedType, ex.GetType().Name);
                     outputJson[internalField] = null; // Set default or handle as needed
                 }
             }
@@ -129,7 +129,7 @@ public class JsonAdapter(JsonAdapterOptions options, ILogger<JsonAdapter> logger
             }
             catch (Exception ex)
             {
-                _logger.LogWarning($"Type mismatch or transformation failure for field '{internalField}' expected as '{expectedType}': {ex.Message}");
+                _logger.LogWarning("Transformation failed for field {InternalField}; expected {ExpectedType}; error type {ErrorType}", internalField, expectedType, ex.GetType().Name);
                 outputJson[userField] = null;
             }
         }

@@ -752,7 +752,6 @@ public sealed class IncomingPaymentStatusReportHandler(
 
     _logger.LogDebug("[IncomingPaymentStatusReportHandler] tx is null? {IsNull}", tx == null);
     tx ??= new SIPS.PostgreSQL.Models.Transaction();
-    _logger.LogDebug("[IncomingPaymentStatusReportHandler] tx.TxId={TxId} DebtorName={Debtor} CreditorName={Creditor}", tx.TxId, tx.DebtorName, tx.CreditorName);
     response.Original.Debtor.Name = !string.IsNullOrWhiteSpace(tx.DebtorName)
         ? tx.DebtorName!
         : (!string.IsNullOrWhiteSpace(request.Original?.Debtor?.Name) ? request.Original!.Debtor!.Name : "NA");

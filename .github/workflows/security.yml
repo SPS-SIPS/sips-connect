@@ -27,8 +27,10 @@ jobs:
           done
       - name: Run security regressions
         run: |
-          dotnet test SIPS.Connect.Tests/SIPS.Connect.Tests.csproj --no-restore --filter 'FullyQualifiedName~ApiKeySecurityTests|FullyQualifiedName~SecretManagementSecurityTests|FullyQualifiedName~SecurityConfigurationTests|FullyQualifiedName~DiagnosticsSecurityTests'
+          dotnet test SIPS.Connect.Tests/SIPS.Connect.Tests.csproj --no-restore --filter 'FullyQualifiedName~ApiKeySecurityTests|FullyQualifiedName~SecretManagementSecurityTests|FullyQualifiedName~SecurityConfigurationTests|FullyQualifiedName~DiagnosticsSecurityTests|FullyQualifiedName~RuntimeConfigurationSecurityTests|FullyQualifiedName~SensitiveLoggingSecurityTests'
           dotnet test Packages/SIPS.XMLDsig.Xades.Tests/SIPS.XMLDsig.Xades.Tests.csproj --no-restore
+      - name: Check deployment sample hygiene
+        run: python3 scripts/check-repository-hygiene.py
       - name: Scan committed files and complete reachable history
         shell: bash
         run: |

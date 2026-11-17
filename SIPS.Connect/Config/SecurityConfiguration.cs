@@ -26,7 +26,7 @@ public static class SecurityConfiguration
             throw new InvalidOperationException("The identity-provider protocol must be HTTPS outside Development.");
 
         static bool MissingOrDefault(string? value) => string.IsNullOrWhiteSpace(value) || value.Contains('<') ||
-            new[] { "123", "admin", "postgres", "password", "changeme" }.Contains(value, StringComparer.OrdinalIgnoreCase);
+            new[] { "123", "admin", "postgres", "password", "changeme", "api_key", "api_secret", "change-me", "change_me", "replace-me", "replace_me" }.Contains(value, StringComparer.OrdinalIgnoreCase);
         if (configuration.GetValue<bool>("Core:CallbackAuthEnabled"))
         {
             if (string.IsNullOrWhiteSpace(configuration["Core:CallbackTokenEndpoint"]) ||
@@ -40,6 +40,10 @@ public static class SecurityConfiguration
         connection = connection?.Replace("{{PASSWORD}}", Environment.GetEnvironmentVariable("POSTGRESQL_PASSWORD"));
         if (!string.IsNullOrWhiteSpace(connection) && MissingOrDefault(new Npgsql.NpgsqlConnectionStringBuilder(connection).Password))
             throw new InvalidOperationException("Production requires a nondefault database password.");
+
+        var switchPins = configuration.GetSection("Xades:DomesticSwitchCertificateSha256").Get<string[]>() ?? [];
+        if (switchPins.Length == 0 || switchPins.Any(pin => pin.Length != 64 || !pin.All(Uri.IsHexDigit)))
+            throw new InvalidOperationException("Xades:DomesticSwitchCertificateSha256 requires valid SHA-256 switch certificate fingerprints outside Development.");
 
         var directory = configuration["DataProtection:KeyDirectory"] ?? "./keys";
         if (!Directory.Exists(directory)) return;

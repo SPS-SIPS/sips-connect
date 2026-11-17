@@ -27,6 +27,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         try
         {
         var envelope = GetAsXmlDocument(message);
+        ValidateEnvelopeStructure(envelope);
         var signature = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "ds:Signature");
         var keyInfo = GetReferencedKeyInfo(signature);
         var serial = keyInfo.GetElementsByTagName("X509SerialNumber", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single().InnerText;
@@ -80,11 +81,8 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
         try
         {
             XmlDocument envelope = GetAsXmlDocument(message);
+            var businessDocument = ValidateEnvelopeStructure(envelope);
 
-            XmlNamespaceManager ns = new(envelope.NameTable);
-            ns.AddNamespace("document", GetDocumentNamespace(envelope));
-            ns.AddNamespace("ds", GetDocumentNamespace(envelope, "ds"));
-            ns.AddNamespace(XadesPrefix, GetDocumentNamespace(envelope, XadesPrefix));
             XmlElement? signatureElement = GetFirstOfXmlElementsByTagOrNull(envelope.DocumentElement!, "ds:Signature");
             if (signatureElement == null)
             {
@@ -92,9 +90,9 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
                 vr.SignatureStatus = "Signature element missing";
                 return (false, vr);
             }
-            XmlElement signedInfoElement = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "ds:SignedInfo");
+            XmlElement signedInfoElement = signatureElement.GetElementsByTagName("SignedInfo", SignedXml.XmlDsigNamespaceUrl).Cast<XmlElement>().Single();
             XmlElement signatureAlgorithm = GetFirstOfXmlElementsByTagWithPrefix(signedInfoElement, "ds:SignatureMethod");
-            XmlElement SigningTime = GetFirstOfXmlElementsByTagWithPrefix(envelope.DocumentElement!, "xades:SigningTime");
+            XmlElement SigningTime = signatureElement.GetElementsByTagName("SigningTime", XadesNamespaceUri).Cast<XmlElement>().Single();
             if (profile == XadesProfile.WpSipsPapss)
                 ValidateWpSipsProfile(envelope, signatureElement, signedInfoElement, signatureAlgorithm);
             else
@@ -123,7 +121,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
                 vr.OwnershSIPStatus = "Valid";
             }
 
-            if (!VerifyReferences(envelope, ns, signatureElement, signedInfoElement, profile, vr))
+            if (!VerifyReferences(envelope, businessDocument, signedInfoElement, profile, vr))
             {
                 return (false, vr);
             }
@@ -148,6 +146,42 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             _logger.LogError(ex, "An error occurred while verifying the signature.");
             vr.SignatureStatus = ex.Message;
             return (false, vr);
+        }
+    }
+
+    // The generated ISO parsers consume the direct Document child. Reject any
+    // alternate document, header, signature or ID interpretation before trust lookup.
+    private static XmlElement ValidateEnvelopeStructure(XmlDocument envelope)
+    {
+        var root = envelope.DocumentElement ?? throw new CryptographicException("FPEnvelope is missing.");
+        if (root.LocalName is not ("FPEnvelope" or "BusinessLayer")) throw new CryptographicException("An FPEnvelope or BusinessLayer root is required.");
+        var elements = envelope.SelectNodes("//*")!.Cast<XmlElement>().ToArray();
+        var documents = elements.Where(x => x.LocalName == "Document").ToArray();
+        if (documents.Length != 1 || !ReferenceEquals(documents[0].ParentNode, root) ||
+            !documents[0].NamespaceURI.StartsWith("urn:iso:std:iso:20022:tech:xsd:", StringComparison.Ordinal))
+            throw new CryptographicException("Exactly one direct ISO Document is required.");
+        var headers = elements.Where(x => x.LocalName == "AppHdr").ToArray();
+        if (headers.Length != 1 || !ReferenceEquals(headers[0].ParentNode, root) ||
+            headers[0].NamespaceURI != "urn:iso:std:iso:20022:tech:xsd:head.001.001.03")
+            throw new CryptographicException("Exactly one direct AppHdr is required.");
+        var signatures = elements.Where(x => x.LocalName == "Signature").ToArray();
+        if (signatures.Length != 1 || signatures[0].NamespaceURI != SignedXml.XmlDsigNamespaceUrl ||
+            !IsDescendantOf(signatures[0], headers[0]))
+            throw new CryptographicException("Exactly one header Signature is required.");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var attribute in elements.SelectMany(x => x.Attributes.Cast<XmlAttribute>())
+                     .Where(x => x.LocalName.Equals("id", StringComparison.OrdinalIgnoreCase)))
+        {
+            XmlConvert.VerifyNCName(attribute.Value);
+            if (!ids.Add(attribute.Value)) throw new CryptographicException("Duplicate XML ID is not permitted.");
+        }
+        return documents[0];
+
+        static bool IsDescendantOf(XmlNode node, XmlNode parent)
+        {
+            for (var current = node.ParentNode; current is not null; current = current.ParentNode)
+                if (ReferenceEquals(current, parent)) return true;
+            return false;
         }
     }
 
@@ -254,7 +288,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             throw new CryptographicException("SigningCertificate IssuerSerial does not bind the downloaded certificate.");
     }
 
-    private bool VerifyReferences(XmlDocument envelope, XmlNamespaceManager ns, XmlElement signatureElement, XmlElement signedInfoElement, XadesProfile profile, VerboseResult vr)
+    private bool VerifyReferences(XmlDocument envelope, XmlElement businessDocument, XmlElement signedInfoElement, XadesProfile profile, VerboseResult vr)
     {
         // Verify the digest values for each reference
         XmlNodeList references = signedInfoElement.GetElementsByTagName("Reference", SignedXml.XmlDsigNamespaceUrl);
@@ -264,8 +298,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             if (uri.StartsWith('#'))
             {
                 string id = uri[1..];
-                XmlNode referenceScope = profile == XadesProfile.IpsVendorLegacy ? signatureElement : envelope;
-                XmlElement? referencedElement = referenceScope.SelectSingleNode($"//*[@Id='{id}']", ns) as XmlElement
+                XmlElement? referencedElement = envelope.SelectNodes("//*")!.Cast<XmlElement>().SingleOrDefault(element => element.GetAttribute("Id") == id)
                     ?? throw new InvalidOperationException($"Referenced element with Id '{id}' not found.");
                 var (isDigestValid, expected, computed) = VerifyDigest(reference, referencedElement, profile);
                 if (!isDigestValid)
@@ -277,8 +310,7 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             }
             else if (profile == XadesProfile.IpsVendorLegacy && string.IsNullOrEmpty(uri))
             {
-                var document = (XmlElement?)envelope.SelectSingleNode("//document:Document", ns)
-                    ?? throw new InvalidOperationException("document:Document not found.");
+                var document = businessDocument;
                 var (isDigestValid, expected, computed) = VerifyDigest(reference, document, profile);
                 if (!isDigestValid)
                 {
@@ -309,12 +341,22 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
 
         var certificate=suppliedRecord;string? error=null;
         if(certificate is null)(certificate,error)=await _cdService.GetCertificatesAsync(sn.InnerText, normalizedIssuer, cancellationToken, applyPapssTrustBinding: profile == XadesProfile.WpSipsPapss);
-        if (certificate is null)
+        if (certificate is null || certificate.Revoked)
         {
-            _logger.LogError("Could not download the certificate: {error}", error);
+            _logger.LogError("Signing certificate is unavailable or revoked.");
             return (false, null, null);
         }
         var SigningCert = _cs.CertificateFromPem(certificate.Content);
+        if (profile == XadesProfile.IpsVendorLegacy)
+        {
+            var fingerprint = SHA256.HashData(SigningCert.GetEncoded());
+            var pins = _configuration.DomesticSwitchCertificateSha256;
+            if (pins.Length == 0 || !pins.Any(pin => IsMatchingPin(pin, fingerprint)))
+            {
+                _logger.LogWarning("Domestic signer is not in the configured switch certificate allowlist.");
+                return (false, null, null);
+            }
+        }
         if (profile == XadesProfile.WpSipsPapss)
         {
             if (certificate.Revoked) return (false, null, null);
@@ -335,6 +377,13 @@ public class NativeVerifier(XadesOptions options, ILogger<NativeVerifier> logger
             ? certificate.RepresentedParticipant
             : certificate.Owner;
         return (true, SigningCert, ownershipIdentity);
+    }
+
+    private static bool IsMatchingPin(string pin, byte[] fingerprint)
+    {
+        if (pin is null || pin.Length != 64) return false;
+        try { return CryptographicOperations.FixedTimeEquals(Convert.FromHexString(pin), fingerprint); }
+        catch (FormatException) { return false; }
     }
 
     private static byte[] CanonicalizeElement(XmlElement element, XadesProfile profile)

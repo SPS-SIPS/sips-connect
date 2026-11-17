@@ -69,9 +69,7 @@ public class CoreAuthService : ICoreAuthService
             
             if (!response.IsSuccessStatusCode)
             {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError("Authentication failed with status {StatusCode}: {Error}", 
-                    response.StatusCode, errorContent);
+                _logger.LogError("Authentication failed with status {StatusCode}", response.StatusCode);
                 return null;
             }
 

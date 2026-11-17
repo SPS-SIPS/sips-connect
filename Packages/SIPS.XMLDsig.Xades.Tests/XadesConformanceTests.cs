@@ -19,11 +19,23 @@ namespace SIPS.XMLDsig.Xades.Tests;
 public sealed class XadesConformanceTests : IDisposable
 {
     readonly string dir=Path.Combine(Path.GetTempPath(),"wp-sips-xades-"+Guid.NewGuid().ToString("N")); readonly CertificateDownloadResponse record; readonly NativeSigner signer; readonly NativeVerifier verifier; readonly CertificateService certificateService; readonly XadesOptions options;
+    readonly CertificateDownloadResponse otherRecord; readonly NativeSigner otherSigner;
     public XadesConformanceTests()
     {
         Directory.CreateDirectory(dir);using var rootKey=RSA.Create(2048);var rr=new CertificateRequest("CN=SPS Root",rootKey,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1);rr.CertificateExtensions.Add(new X509BasicConstraintsExtension(true,false,0,true));rr.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign|X509KeyUsageFlags.CrlSign,true));using var root=rr.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddDays(30));using var leafKey=RSA.Create(2048);var lr=new CertificateRequest("CN=SPS-A",leafKey,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1);lr.CertificateExtensions.Add(new X509BasicConstraintsExtension(false,false,0,true));lr.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature,true));lr.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection{new("1.3.6.1.5.5.7.3.2")},true));var serial=RandomNumberGenerator.GetBytes(16);using var unsigned=lr.Create(root,DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddDays(10),serial);using var leaf=unsigned.CopyWithPrivateKey(leafKey);
         var cert=PemEncoding.Write("CERTIFICATE",leaf.Export(X509ContentType.Cert));var rootPem=PemEncoding.Write("CERTIFICATE",root.Export(X509ContentType.Cert));var key=leafKey.ExportPkcs8PrivateKeyPem();File.WriteAllText(Path.Combine(dir,"leaf.pem"),new string(cert));File.WriteAllText(Path.Combine(dir,"root.pem"),new string(rootPem));File.WriteAllText(Path.Combine(dir,"key.pem"),key);
-        options=new XadesOptions{CertificatePath=Path.Combine(dir,"leaf.pem"),ChainPath=Path.Combine(dir,"root.pem"),PrivateKeyPath=Path.Combine(dir,"key.pem"),BaseDN=leaf.Issuer,Algorithms=["SHA256withRSA"],DefaultSignatureMethod="SHA256withRSA",VerificationWindowMinutes=100};certificateService=new CertificateService(options);record=new(new string(cert),"SPS-A",false,"SPS-AUTH","TEST","SPS-A",Convert.ToHexString(SHA256.HashData(leaf.Export(X509ContentType.Cert))).ToLowerInvariant(),"SPS.XADES.BES.001@1.0.0","1.3.6.1.5.5.7.3.2");signer=new(options,NullLogger<NativeSigner>.Instance,certificateService);verifier=Verifier(record);
+        options=new XadesOptions{CertificatePath=Path.Combine(dir,"leaf.pem"),ChainPath=Path.Combine(dir,"root.pem"),PrivateKeyPath=Path.Combine(dir,"key.pem"),BaseDN=leaf.Issuer,Algorithms=["SHA256withRSA"],DefaultSignatureMethod="SHA256withRSA",VerificationWindowMinutes=100};certificateService=new CertificateService(options);record=new(new string(cert),"SPS-A",false,"SPS-AUTH","TEST","SPS-A",Convert.ToHexString(SHA256.HashData(leaf.Export(X509ContentType.Cert))).ToLowerInvariant(),"SPS.XADES.BES.001@1.0.0","1.3.6.1.5.5.7.3.2");using var otherKey = RSA.Create(2048);
+        var otherRequest = new CertificateRequest("CN=OTHER-PARTICIPANT", otherKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        otherRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        otherRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+        using var otherCertificate = otherRequest.Create(root, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(10), RandomNumberGenerator.GetBytes(16));
+        var otherPem = otherCertificate.ExportCertificatePem();
+        File.WriteAllText(Path.Combine(dir, "other.pem"), otherPem);
+        File.WriteAllText(Path.Combine(dir, "other-key.pem"), otherKey.ExportPkcs8PrivateKeyPem());
+        otherRecord = new(otherPem, "OTHER-PARTICIPANT", false, CertificateSha256: Convert.ToHexString(SHA256.HashData(otherCertificate.RawData)));
+        var otherOptions = new XadesOptions { CertificatePath=Path.Combine(dir,"other.pem"), PrivateKeyPath=Path.Combine(dir,"other-key.pem"), ChainPath=Path.Combine(dir,"root.pem"), BaseDN=otherCertificate.Issuer, Algorithms=["SHA256withRSA"] };
+        otherSigner = new(otherOptions, NullLogger<NativeSigner>.Instance, new CertificateService(otherOptions));
+        options.DomesticSwitchCertificateSha256=[record.CertificateSha256!];signer=new(options,NullLogger<NativeSigner>.Instance,certificateService);verifier=Verifier(record);
     }
     [Fact] public async Task Signature_verifies_and_tamper_fails()
     {var now=DateTimeOffset.UtcNow;var xml=WpSipsInformationMessageBuilder.BuildFxRequest(new("SPS-A","SPS-B","REQ-MSG","admi.009.001.02",WpSipsProfiles.Fx,now),"REQ-1",new("US","KE","USD","KES","BANK1","INST",10,false,null));var signed=PapssSign(xml);var ok=await PapssVerify(signed);Assert.True(ok.Result,$"cert={ok.Verbose.CertificateStatus};sig={ok.Verbose.SignatureStatus};refs={ok.Verbose.ReferencesStatus};owner={ok.Verbose.OwnershSIPStatus}");Assert.Equal("SPS-AUTH",ok.Signer!.Authority);var bad=signed.Replace(">10<",">11<",StringComparison.Ordinal);Assert.False((await PapssVerify(bad)).Result);}
@@ -120,6 +132,93 @@ public sealed class XadesConformanceTests : IDisposable
         var signerMismatch=await PapssVerify(PapssSign(Message("SPS-B","ORIGINAL-RECALLING-BANK")));
         Assert.False(signerMismatch.Result);
     }
+    [Fact]
+    public async Task Legacy_wrapping_cannot_verify_a_different_document_from_the_direct_child()
+    {
+        var signed = signer.SignEnvelope(PaymentRequestBuilder.Build(Payment("SPS-A", "SPS-B", DateTime.UtcNow)).document);
+        Assert.True((await verifier.VerifySignature(signed, false, default)).result);
+        var xml = XDocument.Parse(signed, LoadOptions.PreserveWhitespace);
+        var document = xml.Root!.Elements().Single(x => x.Name.LocalName == "Document");
+        // Keep the original signed document first in descendant order, then alter
+        // the direct child consumed by the generated payment/message parsers.
+        document.AddBeforeSelf(new XElement("Wrapper", new XElement(document)));
+        document.Descendants().First(x => x.Name.LocalName == "InstdAmt").Value = "999";
+        var wrapped = xml.ToString(SaveOptions.DisableFormatting);
+        Assert.Equal(999m, PaymentRequestBuilder.Parse(wrapped).Amount);
+        var result = await verifier.VerifySignature(wrapped, false, default);
+        Assert.False(result.result, "The verifier accepted a wrapped original while the direct document was altered.");
+    }
+
+    [Theory]
+    [InlineData("nested-document")]
+    [InlineData("duplicate-direct-document")]
+    [InlineData("duplicate-id")]
+    [InlineData("alternate-id")]
+    [InlineData("duplicate-header")]
+    [InlineData("duplicate-signature")]
+    public async Task Legacy_rejects_ambiguous_envelopes(string variant)
+    {
+        var signed = signer.SignEnvelope(PaymentRequestBuilder.Build(Payment("SPS-A", "SPS-B", DateTime.UtcNow)).document);
+        Assert.True((await verifier.VerifySignature(signed, false, default)).result);
+        var xml = XDocument.Parse(signed, LoadOptions.PreserveWhitespace);
+        var document = xml.Root!.Elements().Single(x => x.Name.LocalName == "Document");
+        var header = xml.Root.Elements().Single(x => x.Name.LocalName == "AppHdr");
+        var signature = xml.Descendants().Single(x => x.Name.LocalName == "Signature");
+        switch (variant)
+        {
+            case "nested-document": document.AddBeforeSelf(new XElement("Wrapper", new XElement(document))); break;
+            case "duplicate-direct-document": document.AddAfterSelf(new XElement(document)); break;
+            case "duplicate-id": document.SetAttributeValue("Id", xml.Descendants().Single(x => x.Name.LocalName == "KeyInfo").Attribute("Id")!.Value); break;
+            case "alternate-id": document.SetAttributeValue(XNamespace.Xml + "id", xml.Descendants().Single(x => x.Name.LocalName == "KeyInfo").Attribute("Id")!.Value); break;
+            case "duplicate-header": header.AddAfterSelf(new XElement(header)); break;
+            case "duplicate-signature": signature.AddAfterSelf(new XElement(signature)); break;
+        }
+        Assert.False((await verifier.VerifySignature(xml.ToString(SaveOptions.DisableFormatting), false, default)).result);
+    }
+
+    [Fact]
+    public async Task Domestic_switch_pin_rejects_another_valid_participant_and_supports_rotation()
+    {
+        var message = otherSigner.SignEnvelope(Fx(DateTimeOffset.UtcNow));
+        // The other participant chains to the exact same trusted test CA.
+        Assert.True(certificateService.CheckValidity(certificateService.CertificateFromPem(otherRecord.Content), XadesProfile.IpsVendorLegacy).isValid);
+        Assert.False((await Verifier(otherRecord).VerifySignature(message, false, default)).result);
+        options.DomesticSwitchCertificateSha256 = [record.CertificateSha256!, otherRecord.CertificateSha256!];
+        Assert.True((await Verifier(otherRecord).VerifySignature(message, false, default)).result);
+        Assert.False((await Verifier(otherRecord with { Revoked = true }).VerifySignature(message, false, default)).result);
+        options.DomesticSwitchCertificateSha256 = [otherRecord.CertificateSha256!];
+        Assert.False((await verifier.VerifySignature(signer.SignEnvelope(Fx(DateTimeOffset.UtcNow)), false, default)).result);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("bad")]
+    [InlineData("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")]
+    public async Task Domestic_switch_pin_is_required_and_fails_closed(string? pin)
+    {
+        options.DomesticSwitchCertificateSha256 = pin is null ? [] : [pin];
+        Assert.False((await verifier.VerifySignature(signer.SignEnvelope(Fx(DateTimeOffset.UtcNow)), false, default)).result);
+    }
+
+    [Fact]
+    public async Task Legacy_rejects_dtd_processing()
+    {
+        var signed = signer.SignEnvelope(Fx(DateTimeOffset.UtcNow));
+        var withDtd = "<!DOCTYPE BusinessLayer [<!ENTITY injected 'test'>]>" + signed;
+        Assert.False((await verifier.VerifySignature(withDtd, false, default)).result);
+    }
+
+    [Fact]
+    public void Certificate_expiry_checks_follow_the_injected_clock_and_remain_fail_closed()
+    {
+        var clock = new MutableTimeProvider { Now = DateTimeOffset.UtcNow };
+        var service = new CertificateService(options, clock);
+        clock.Now = clock.Now.AddDays(20);
+        Assert.False(service.CheckValidity(service.CertificateFromPem(record.Content), XadesProfile.IpsVendorLegacy).isValid);
+        Assert.False(service.CheckValidity(service.CertificateFromPem(record.Content), XadesProfile.WpSipsPapss).isValid);
+    }
+
     static PaymentRequestBuilder.Request Payment(string from,string to,DateTime now)=>new(){From=from,To=to,CreDt=now,MsgId="PAY-REQ",TxId="TX1",EndToEndId="E2E",Amount=1,Currency="USD",LocalInstrument="INST",CategoryPurpose="CASH",Ustrd="test",SettlementMethod=SettlementMethod1Code.CLRG,ChargeBearer=ChargeBearerType1Code.SLEV,Debtor=new Person{Name="D",Address="A",Account="D1",AccountType="ACCT",AgentBIC=from,Issuer="I"},Creditor=new Person{Name="C",Address="A",Account="C1",AccountType="ACCT",AgentBIC=to,Issuer="I"}};
     static string Fx(DateTimeOffset at)=>WpSipsInformationMessageBuilder.BuildFxRequest(new("SPS-A","SPS-B","REQ-MSG","admi.009.001.02",WpSipsProfiles.Fx,at),"REQ-1",new("US","KE","USD","KES","BANK1","INST",10,false,null));
     public void Dispose(){Directory.Delete(dir,true);}
@@ -128,5 +227,6 @@ public sealed class XadesConformanceTests : IDisposable
     string PapssSign(string xml)=>signer.SignEnvelope(xml,XadesProfile.WpSipsPapss);
     Task<SignatureVerificationResult> PapssVerify(string xml)=>verifier.VerifyWithProvenance(xml,XadesProfile.WpSipsPapss,default);
     string Resign(Action<XmlDocument,XmlElement> mutate){var document=new XmlDocument{PreserveWhitespace=false};document.LoadXml(PapssSign(Fx(DateTimeOffset.UtcNow)));var signature=document.GetElementsByTagName("Signature","http://www.w3.org/2000/09/xmldsig#").Cast<XmlElement>().Single();mutate(document,signature);typeof(NativeSigner).GetMethod("UpdateReferences",BindingFlags.Static|BindingFlags.NonPublic,null,[typeof(XmlElement),typeof(XmlDocument),typeof(XadesProfile)],null)!.Invoke(null,[signature,document,XadesProfile.WpSipsPapss]);typeof(NativeSigner).GetMethod("RecomputeSignatureWithBouncyCastle",BindingFlags.Instance|BindingFlags.NonPublic,null,[typeof(XmlElement),typeof(string),typeof(XadesProfile)],null)!.Invoke(signer,[signature,"SHA256withRSA",XadesProfile.WpSipsPapss]);return document.OuterXml;}
+    sealed class MutableTimeProvider : TimeProvider { public DateTimeOffset Now { get; set; } public override DateTimeOffset GetUtcNow() => Now; }
     sealed class FixedTimeProvider(DateTimeOffset value):TimeProvider{public override DateTimeOffset GetUtcNow()=>value;}
 }

@@ -219,8 +219,8 @@ public sealed class IncomingReturnTransactionHandler(
             if (validationErrors.Any())
             {
                 var errorMessage = string.Join("; ", validationErrors);
-                _logger.LogWarning("[{CorrelationId}] Return rejected: Validation failed for {TxId}: {Errors}",
-                    cid, request.OrgnlTxId, errorMessage);
+                _logger.LogWarning("[{CorrelationId}] Return rejected: Validation failed for {TxId}; error count {ErrorCount}",
+                    cid, request.OrgnlTxId, validationErrors.Count);
                 response.AdditionalInfo = $"Return validation failed: {errorMessage}";
                 response.Reason = "NARR"; // Narrative Reason
                 response.Status = RJCT;
@@ -296,7 +296,7 @@ public sealed class IncomingReturnTransactionHandler(
                     else
                     {
                         var returnedStatus = string.IsNullOrWhiteSpace(cbResult?.Status) ? "<empty>" : cbResult.Status;
-                        _logger.LogWarning("[{CorrelationId}] Return rejected by CoreBank for TxId {TxId}. Status={Status}, Reason={Reason}", cid, request.OrgnlTxId, returnedStatus, cbResult?.Reason);
+                        _logger.LogWarning("[{CorrelationId}] Return rejected by CoreBank for TxId {TxId}. Status={Status}", cid, request.OrgnlTxId, returnedStatus);
                         response.Status = RJCT;
                         response.Reason = "MS03";
                         response.AdditionalInfo = IsoText.StatusAdditionalInfo(

@@ -105,8 +105,8 @@ public sealed class IncomingVerificationResponseHandler(
         if (!string.IsNullOrWhiteSpace(options.Secret)) headers[Constants.API_Secret] = options.Secret;
 
         logger.LogInformation(
-            "[{CorrelationId}] Delivering verification result RequestMessageId={RequestMessageId} VerificationId={VerificationId} Verified={Verified} Reason={Reason}",
-            cid, dto.RequestMessageId, dto.VerificationId, dto.Verified, dto.Reason);
+            "[{CorrelationId}] Delivering verification result RequestMessageId={RequestMessageId} VerificationId={VerificationId} Verified={Verified}",
+            cid, dto.RequestMessageId, dto.VerificationId, dto.Verified);
 
         SIPS.ISO20022.Models.DTOs.Response<System.Text.Json.Nodes.JsonObject?> result;
         try
@@ -135,8 +135,8 @@ public sealed class IncomingVerificationResponseHandler(
 
         if (result is null || (int)result.StatusCode is < 200 or > 299)
         {
-            logger.LogError("[{CorrelationId}] Bank callback rejected verification result {RequestMessageId} with status {StatusCode}: {Message}",
-                cid, dto.RequestMessageId, result?.StatusCode, result?.Message);
+            logger.LogError("[{CorrelationId}] Bank callback rejected verification result {RequestMessageId} with status {StatusCode}",
+                cid, dto.RequestMessageId, result?.StatusCode);
             throw new CallbackDeliveryException("The participant callback did not acknowledge the verification result.", result?.StatusCode);
         }
 

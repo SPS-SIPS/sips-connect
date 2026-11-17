@@ -20,9 +20,8 @@ public sealed class SignatureService(INativeVerifier verifier, ILogger<Signature
 
     public async Task<(bool ok, string? verbose)> VerifyAsync(string message, CancellationToken ct)
     {
-        // SmartVista/IPS uses the vendor legacy signature profile. The shared IPS
-        // certificate authenticates the signature, but is not bound to one BAH
-        // sender. Participant ownership remains enforced by the PAPSS profile.
+        // The domestic verifier binds the shared IPS signer to a deployment-managed
+        // certificate allowlist. BAH sender ownership remains a PAPSS-specific check.
         var (result, verbose) = await _verifier.VerifySignature(
             message,
             checkOwnerShip: false,

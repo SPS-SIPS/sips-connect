@@ -40,7 +40,9 @@ public static class XmlSecurityHelpers
         {
             PreserveWhitespace = true
         };
-        doc.LoadXml(xml);
+        using var input = new StringReader(xml);
+        using var reader = XmlReader.Create(input, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+        doc.Load(reader);
         return doc;
     }
 

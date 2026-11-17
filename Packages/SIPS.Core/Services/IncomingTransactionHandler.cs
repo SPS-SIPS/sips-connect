@@ -371,7 +371,7 @@ public sealed class IncomingTransactionHandler(
                             }
                             else if (string.Equals(cbResponse.Status?.Trim(), RJCT, StringComparison.OrdinalIgnoreCase))
                             {
-                                _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}. Reason: {Reason}", cid, request.TxId, cbResponse.Reason);
+                                _logger.LogInformation("[{CorrelationId}] CoreBank explicitly rejected transaction {TxId}", cid, request.TxId);
                                 response.Status = RJCT;
                                 response.Reason = requiresCoreBankAcceptance ? PapssReasonCodes.FromCoreBankReason(cbResponse.Reason) : PapssReasonCodes.GenericError;
                                 response.AdditionalInfo = IsoText.StatusAdditionalInfo(

@@ -154,9 +154,8 @@ public class LiveParticipantsService : ILiveParticipantsService
 
             if (httpResponse.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
             {
-                var errorContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogWarning("Live participants request returned {StatusCode}. Refreshing Core API token and retrying once. Response: {Response}",
-                    httpResponse.StatusCode, errorContent);
+                _logger.LogWarning("Live participants request returned {StatusCode}. Refreshing Core API token and retrying once.",
+                    httpResponse.StatusCode);
 
                 _authService.InvalidateCachedToken();
                 token = await _authService.GetAuthTokenAsync(cancellationToken);
@@ -172,9 +171,7 @@ public class LiveParticipantsService : ILiveParticipantsService
             
             if (!httpResponse.IsSuccessStatusCode)
             {
-                var errorContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogWarning("Request failed with status {StatusCode}. Response: {Response}", 
-                    httpResponse.StatusCode, errorContent);
+                _logger.LogWarning("Participant request failed with status {StatusCode}", httpResponse.StatusCode);
                 return null;
             }
 
