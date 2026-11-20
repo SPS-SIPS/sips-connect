@@ -11,13 +11,11 @@ The SIPS PostgreSQL DB for Message Logging package provides a PostgreSQL databas
 
 ## Installation
 
-To install the package, follow these steps:
+1. These libraries are not published to NuGet. Reference the project from this repository instead:
 
-1. Add the package to your project.
-
-```bash
-dotnet add package SIPS.PostgreSQL
-```
+   ```xml
+   <ProjectReference Include="..\Packages\SIPS.PostgreSQL\SIPS.PostgreSQL.csproj" />
+   ```
 
 2. Add the following configuration to your `appsettings.json` file:
 

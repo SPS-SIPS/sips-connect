@@ -251,7 +251,7 @@ An inbound PAPSS `pacs.008.001.10` is verified with `WpSipsPapss`, delivered to 
 
 For every SPS Connect deployment, Guevara must contain exactly one unambiguous active certificate record matching the signing certificate's issuer DN and serial number. The record must contain the certificate owner, exact represented participant BIC, environment, WP-SIPS security profile, required EKU, SHA-256 fingerprint, SPS authority, and a non-revoked/non-suspended status. The participant keeps its certificate and private key locally; no private key is sent to PAPSS Adapter or Guevara. PAPSS Adapter mTLS and PAPSS XML-signing certificates are not SPS Connect settings.
 
-Use `Sps.Sips.XmlSecurity.Xades` version `1.0.3` or later. Version `1.0.3` keeps the PAPSS identified-envelope signature while removing the PAPSS-only `FPEnvelope/@Id` from legacy IPS messages. Version `1.0.6` replaces the unmaintained `BouncyCastle.NetCore` 2.2.1 with the official `BouncyCastle.Cryptography` 2.7.0; earlier versions should not be used.
+SPS Connect builds the XML-signature library (`Packages/SIPS.XMLDsig.Xades`) and the other `Packages/` libraries from source through project references; they are not consumed from or published to NuGet. The signature library keeps the PAPSS identified-envelope signature while removing the PAPSS-only `FPEnvelope/@Id` from legacy IPS messages, and uses the official `BouncyCastle.Cryptography` 2.7.0. The previously published `Sps.Sips.*` NuGet packages (including `Sps.Sips.XmlSecurity.Xades` 1.0.5 and earlier, which depend on the unmaintained `BouncyCastle.NetCore`) must not be used.
 
 Detailed integration and mapping guidance:
 

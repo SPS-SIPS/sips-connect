@@ -11,10 +11,8 @@ The SIPS EMV SomQR Standard package provides functionality to generate SomQR cod
 
 ## Installation
 
-To install the package, follow these steps:
+1. These libraries are not published to NuGet. Reference the project from this repository instead:
 
-1. Add the package to your project.
-
-```bash
-dotnet add package SIPS.Emv
-```
+   ```xml
+   <ProjectReference Include="..\Packages\SIPS.Emv\SIPS.Emv.csproj" />
+   ```

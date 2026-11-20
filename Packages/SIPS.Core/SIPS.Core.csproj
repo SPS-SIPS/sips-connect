@@ -3,13 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PackageId>SIPS.Core</PackageId>
-    <Version>2.3.7</Version>
-    <Authors>Abdulshakur Ahmed</Authors>
-    <Product>SIPS Core</Product>
-    <Description>SIPS CORE</Description>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageLicenseExpression>LGPL-2.0-only</PackageLicenseExpression>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,12 +13,6 @@
     <PackageReference Include="prometheus-net" Version="8.2.1" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="README.md">
-      <Pack>true</Pack>
-      <PackagePath>README.md</PackagePath>
-    </None>
-  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../SIPS.Adapter/SIPS.Adapter.csproj" />

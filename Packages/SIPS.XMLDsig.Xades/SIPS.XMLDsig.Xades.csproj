@@ -4,18 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PackageId>Sps.Sips.XmlSecurity.Xades</PackageId>
-    <Version>1.0.6</Version>
-    <Authors>Abdulshakur Ahmed</Authors>
-    <Product>SPS SIPS XML Security and XAdES</Product>
-    <Title>SPS SIPS XML Security and XAdES</Title>
-    <Description>Qualified XML-DSig, XAdES-BES, certificate-chain, signer-provenance, and SPS trust-profile enforcement for WP-SIPS-01.</Description>
-    <PackageTags>XMLDSig;XAdES;SIPS;SPS;ISO20022;security</PackageTags>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageLicenseExpression>LGPL-2.0-only</PackageLicenseExpression>
-    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <IsPackable>false</IsPackable>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
@@ -26,10 +15,4 @@
     <PackageReference Include="System.Security.Cryptography.Xml" Version="9.0.21" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="README.md">
-      <Pack>true</Pack>
-      <PackagePath>README.md</PackagePath>
-    </None>
-  </ItemGroup>
 </Project>

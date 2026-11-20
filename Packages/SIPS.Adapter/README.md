@@ -5,7 +5,6 @@ This package provides a JSON adapter for SIPS.
 ## Overview
 
 - Implements essential JSON **conversion** for SIPS integration.
-- Follows NuGet best practices for package documentation.
 
 ## JSON Mapping Details
 
@@ -19,8 +18,8 @@ The adapter translates JSON from the request body to the internal system JSON fo
 
 To use the adapter, follow these steps:
 
-1. Install the package.
-2. Add the package to your IServiceCollection.
+1. Reference `Packages/SIPS.Adapter/SIPS.Adapter.csproj` with a `ProjectReference` (the library is not published to NuGet).
+2. Register the adapter in your IServiceCollection.
 3. Use the IJsonAdapter interface to convert the JSON.
 
 ```csharp

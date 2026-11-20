@@ -13,13 +13,11 @@ The SIPS ISO 20022 package provides a set of classes for working with ISO 20022 
 
 ## Installation
 
-To install the package, follow these steps:
+1. These libraries are not published to NuGet. Reference the project from this repository instead:
 
-1. Add the package to your project.
-
-```bash
-dotnet add package Sps.Sips.Iso20022 --version 1.0.0
-```
+   ```xml
+   <ProjectReference Include="..\Packages\SIPS.ISO20022\SIPS.ISO20022.csproj" />
+   ```
 
 Version 1.x includes the qualified WP-SIPS-01 ISO schemas and profiles. It does
 not define PAPSS trust, transport, credential, or authorization policy.

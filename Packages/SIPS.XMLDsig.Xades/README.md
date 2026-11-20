@@ -30,13 +30,11 @@ The SIPS XMLDSig Xades package provides XML Digital Signature (XMLDSig) and XML 
 
 ## Installation
 
-To install the package, follow these steps:
+1. These libraries are not published to NuGet. Reference the project from this repository instead:
 
-1. Add the package to your project.
-
-```bash
-dotnet add package Sps.Sips.XmlSecurity.Xades --version 1.0.6
-```
+   ```xml
+   <ProjectReference Include="..\Packages\SIPS.XMLDsig.Xades\SIPS.XMLDsig.Xades.csproj" />
+   ```
 
 2. Add the following configuration to your `appsettings.json` file:
 

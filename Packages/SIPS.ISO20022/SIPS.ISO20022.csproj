@@ -4,18 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PackageId>Sps.Sips.Iso20022</PackageId>
-    <Version>1.0.3</Version>
-    <Authors>Abdulshakur Ahmed</Authors>
-    <Product>SPS SIPS ISO 20022</Product>
-    <Title>SPS SIPS ISO 20022</Title>
-    <Description>Qualified ISO 20022, Business Application Header, schema validation, and WP-SIPS-01 protocol models for the SPS SIPS boundary.</Description>
-    <PackageTags>ISO20022;SIPS;SPS;BAH;payments</PackageTags>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageLicenseExpression>LGPL-2.0-only</PackageLicenseExpression>
-    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <IsPackable>false</IsPackable>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
@@ -25,12 +14,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.1" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="README.md">
-      <Pack>true</Pack>
-      <PackagePath>README.md</PackagePath>
-    </None>
-  </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Schemas/*.xsd" />

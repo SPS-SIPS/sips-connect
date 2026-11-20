@@ -4,13 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PackageId>SIPS.PostgreSQL</PackageId>
-    <Version>1.0.6</Version>
-    <Authors>Abdulshakur Ahmed</Authors>
-    <Product>SIPS PostgreSQL</Product>
-    <Description>SIPS PostgreSQL</Description>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageLicenseExpression>LGPL-2.0-only</PackageLicenseExpression>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,12 +17,6 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.3" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="README.md">
-      <Pack>true</Pack>
-      <PackagePath>README.md</PackagePath>
-    </None>
-  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../SIPS.ISO20022/SIPS.ISO20022.csproj" />
